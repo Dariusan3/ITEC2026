@@ -1,6 +1,7 @@
 const dotenv = require("dotenv");
 dotenv.config({ path: "../.env" });
 
+const Groq = require("groq-sdk");
 const express = require("express");
 const cors = require("cors");
 const http = require("http");
@@ -18,6 +19,113 @@ app.use(express.json());
 
 app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", timestamp: Date.now() });
+});
+
+// --- AI suggestion endpoint ---
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+
+app.post("/api/ai/suggest", async (req, res) => {
+  const { code, prompt, language } = req.body;
+  if (!prompt) {
+    return res.status(400).json({ error: "prompt is required" });
+  }
+
+  try {
+    const chatCompletion = await groq.chat.completions.create({
+      model: "llama-3.3-70b-versatile",
+      max_tokens: 1024,
+      messages: [
+        {
+          role: "system",
+          content: "You are an AI coding assistant inside a collaborative editor called iTECify. Respond with ONLY a JSON object (no markdown, no code fences) in this exact format: {\"suggestion\": \"<the code to insert>\", \"explanation\": \"<one-line explanation>\"}. The \"suggestion\" field must contain ONLY code, no markdown fences. Use \\n for newlines inside the code string.",
+        },
+        {
+          role: "user",
+          content: `The user is editing a ${language || "javascript"} file. Here is their current code:\n\n\`\`\`${language || "javascript"}\n${code || ""}\n\`\`\`\n\nThe user asks: "${prompt}"`,
+        },
+      ],
+    });
+
+    const text = chatCompletion.choices[0].message.content.trim();
+    let parsed;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      parsed = { suggestion: text, explanation: "AI suggestion" };
+    }
+
+    res.json({
+      id: `block_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      suggestion: parsed.suggestion,
+      explanation: parsed.explanation || "AI suggestion",
+    });
+  } catch (err) {
+    console.error("[AI Error]", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- Code execution endpoint ---
+const { execFile } = require("child_process");
+const fs = require("fs");
+const path = require("path");
+const os = require("os");
+
+const LANG_CONFIG = {
+  javascript: { ext: ".js", cmd: "node" },
+  typescript: { ext: ".ts", cmd: "node" },
+  python: { ext: ".py", cmd: "python3" },
+};
+
+const DANGEROUS_PATTERNS = {
+  javascript: [/\brequire\s*\(\s*['"]child_process['"]\s*\)/, /\beval\s*\(/, /\bexecSync\s*\(/, /\bspawnSync\s*\(/],
+  typescript: [/\brequire\s*\(\s*['"]child_process['"]\s*\)/, /\beval\s*\(/, /\bexecSync\s*\(/, /\bspawnSync\s*\(/],
+  python: [/\bos\.system\s*\(/, /\bsubprocess\./, /\beval\s*\(/, /\bexec\s*\(/, /\b__import__\s*\(/],
+};
+
+app.post("/api/run", async (req, res) => {
+  const { code, language } = req.body;
+  if (!code) return res.status(400).json({ error: "No code provided" });
+
+  const config = LANG_CONFIG[language];
+  if (!config) return res.status(400).json({ error: `Unsupported language: ${language}` });
+
+  // Safety scan
+  const patterns = DANGEROUS_PATTERNS[language] || [];
+  const warnings = [];
+  for (const pattern of patterns) {
+    if (pattern.test(code)) {
+      warnings.push(`Warning: potentially dangerous pattern detected: ${pattern.source}`);
+    }
+  }
+
+  // Write code to temp file
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "itecify-"));
+  const tmpFile = path.join(tmpDir, `code${config.ext}`);
+  fs.writeFileSync(tmpFile, code);
+
+  try {
+    const result = await new Promise((resolve) => {
+      execFile(config.cmd, [tmpFile], { timeout: 10000, maxBuffer: 1024 * 512 }, (err, stdout, stderr) => {
+        if (err && err.killed) {
+          resolve({ stdout, stderr, error: "Execution timed out (10s limit)" });
+        } else if (err) {
+          resolve({ stdout, stderr: stderr || err.message });
+        } else {
+          resolve({ stdout, stderr });
+        }
+      });
+    });
+
+    const warningText = warnings.length > 0 ? warnings.join("\n") + "\n" : "";
+    res.json({
+      stdout: result.stdout,
+      stderr: warningText + (result.stderr || ""),
+      error: result.error,
+    });
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
 });
 
 const apiServer = http.createServer(app);

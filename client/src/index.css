@@ -42,6 +42,81 @@ html, body, #root {
   border-radius: 4px;
 }
 
+/* AI Block widget styling */
+.ai-block-decoration {
+  background: rgba(203, 166, 247, 0.08) !important;
+}
+.ai-block-glyph {
+  background: var(--accent);
+  border-radius: 2px;
+  margin-left: 3px;
+  width: 4px !important;
+}
+.ai-block-widget {
+  background: #1e1e2e;
+  border: 1.5px dashed #cba6f7;
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin: 4px 0;
+  max-width: 600px;
+  font-family: -apple-system, sans-serif;
+  z-index: 20;
+}
+.ai-block-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.ai-block-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: #cba6f7;
+}
+.ai-block-explanation {
+  font-size: 11px;
+  color: #a6adc8;
+}
+.ai-block-code {
+  background: #181825;
+  border: 1px solid #45475a;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 12px;
+  color: #cdd6f4;
+  overflow-x: auto;
+  margin: 0 0 8px;
+  white-space: pre-wrap;
+  line-height: 1.5;
+}
+.ai-block-actions {
+  display: flex;
+  gap: 8px;
+}
+.ai-block-accept,
+.ai-block-reject {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 14px;
+  border-radius: 4px;
+  border: none;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+.ai-block-accept:hover,
+.ai-block-reject:hover {
+  opacity: 0.85;
+}
+.ai-block-accept {
+  background: #a6e3a1;
+  color: #1e1e2e;
+}
+.ai-block-reject {
+  background: #f38ba8;
+  color: #1e1e2e;
+}
+
 /* Remote cursor label styling */
 .yRemoteSelectionHead {
   position: relative;

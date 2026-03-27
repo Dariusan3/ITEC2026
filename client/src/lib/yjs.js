@@ -32,5 +32,6 @@ wsProvider.awareness.setLocalStateField('user', {
 })
 
 const ytext = ydoc.getText('monaco')
+const yAiBlocks = ydoc.getMap('aiBlocks')
 
-export { ydoc, wsProvider, ytext, color, name }
+export { ydoc, wsProvider, ytext, yAiBlocks, color, name }

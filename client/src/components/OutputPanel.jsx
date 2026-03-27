@@ -1,7 +1,15 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 
-export default function OutputPanel() {
+export default function OutputPanel({ output }) {
   const [collapsed, setCollapsed] = useState(false)
+  const scrollRef = useRef(null)
+
+  useEffect(() => {
+    if (output && !collapsed) {
+      setCollapsed(false)
+      scrollRef.current?.scrollTo(0, scrollRef.current.scrollHeight)
+    }
+  }, [output, collapsed])
 
   if (collapsed) {
     return (
@@ -35,11 +43,19 @@ export default function OutputPanel() {
           ▼
         </button>
       </div>
-      <div className="flex-1 p-3 overflow-auto font-mono text-xs"
-        style={{ color: 'var(--text-secondary)' }}>
-        <span style={{ color: 'var(--accent-dim)' }}>
-          // Run your code to see output here
-        </span>
+      <div ref={scrollRef} className="flex-1 p-3 overflow-auto font-mono text-xs whitespace-pre-wrap"
+        style={{ color: 'var(--text-primary)' }}>
+        {output ? (
+          output.map((line, i) => (
+            <div key={i} style={{ color: line.type === 'stderr' ? 'var(--red)' : 'var(--text-primary)' }}>
+              {line.text}
+            </div>
+          ))
+        ) : (
+          <span style={{ color: 'var(--accent-dim)' }}>
+            // Run your code to see output here
+          </span>
+        )}
       </div>
     </div>
   )

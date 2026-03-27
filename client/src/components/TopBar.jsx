@@ -3,15 +3,17 @@ import { wsProvider } from '../lib/yjs'
 
 const LANGUAGES = ['javascript', 'python', 'rust', 'typescript', 'html', 'css', 'json']
 
-export default function TopBar({ language, onLanguageChange }) {
+export default function TopBar({ language, onLanguageChange, onRun, running }) {
   const [users, setUsers] = useState([])
 
   useEffect(() => {
     const awareness = wsProvider.awareness
     const update = () => {
+      const seen = new Set()
       const states = []
       awareness.getStates().forEach((state, clientId) => {
-        if (state.user) {
+        if (state.user && !seen.has(state.user.name)) {
+          seen.add(state.user.name)
           states.push({ ...state.user, clientId })
         }
       })
@@ -51,10 +53,16 @@ export default function TopBar({ language, onLanguageChange }) {
         </select>
 
         <button
-          className="text-xs font-semibold px-3 py-1 rounded"
-          style={{ background: 'var(--green)', color: 'var(--bg-primary)' }}
+          onClick={onRun}
+          disabled={running}
+          className="text-xs font-semibold px-3 py-1 rounded transition-opacity"
+          style={{
+            background: 'var(--green)',
+            color: 'var(--bg-primary)',
+            opacity: running ? 0.5 : 1,
+          }}
         >
-          ▶ Run
+          {running ? '⏳ Running...' : '▶ Run'}
         </button>
 
         <div className="flex items-center -space-x-2">
