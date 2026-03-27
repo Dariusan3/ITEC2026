@@ -1,7 +1,12 @@
 {
   "permissions": {
     "allow": [
-      "Bash(node -e \"try { require\\(''''./index.js''''\\); } catch\\(e\\) { console.log\\(''''PARSE ERROR:'''', e.message\\); }\")"
+      "Bash(node -e \"try { require\\(''''./index.js''''\\); } catch\\(e\\) { console.log\\(''''PARSE ERROR:'''', e.message\\); }\")",
+      "Bash(docker --version)",
+      "Bash(docker info:*)",
+      "Bash(node -e \"require\\(''''./index.js''''\\)\")",
+      "Bash(node -c index.js)",
+      "Bash(echo $SHELL)"
     ]
   }
 }

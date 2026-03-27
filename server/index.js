@@ -65,48 +65,131 @@ app.post("/api/ai/suggest", async (req, res) => {
   }
 });
 
-// --- Code execution endpoint ---
+// --- Code execution engine (Docker + fallback) ---
+const Docker = require("dockerode");
 const { execFile } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
 
+const docker = new Docker();
+
 const LANG_CONFIG = {
-  javascript: { ext: ".js", cmd: "node" },
-  typescript: { ext: ".ts", cmd: "node" },
-  python: { ext: ".py", cmd: "python3" },
+  javascript: { ext: ".js", image: "node:20-slim", cmd: ["node", "/sandbox/code.js"] },
+  typescript: { ext: ".ts", image: "node:20-slim", cmd: ["node", "/sandbox/code.ts"] },
+  python:     { ext: ".py", image: "python:3.11-slim", cmd: ["python", "/sandbox/code.py"] },
+  rust:       { ext: ".rs", image: "rust:slim", cmd: ["sh", "-c", "rustc /sandbox/code.rs -o /sandbox/code && /sandbox/code"] },
+};
+
+const FALLBACK_CMD = {
+  javascript: "node",
+  typescript: "node",
+  python: "python3",
 };
 
 const DANGEROUS_PATTERNS = {
   javascript: [/\brequire\s*\(\s*['"]child_process['"]\s*\)/, /\beval\s*\(/, /\bexecSync\s*\(/, /\bspawnSync\s*\(/],
   typescript: [/\brequire\s*\(\s*['"]child_process['"]\s*\)/, /\beval\s*\(/, /\bexecSync\s*\(/, /\bspawnSync\s*\(/],
   python: [/\bos\.system\s*\(/, /\bsubprocess\./, /\beval\s*\(/, /\bexec\s*\(/, /\b__import__\s*\(/],
+  rust: [],
 };
 
-app.post("/api/run", async (req, res) => {
-  const { code, language } = req.body;
-  if (!code) return res.status(400).json({ error: "No code provided" });
+// Check Docker on every run (so it picks up Docker starting/stopping)
+async function isDockerAvailable() {
+  try {
+    await docker.ping();
+    return true;
+  } catch {
+    return false;
+  }
+}
 
-  const config = LANG_CONFIG[language];
-  if (!config) return res.status(400).json({ error: `Unsupported language: ${language}` });
-
-  // Safety scan
+function scanCode(code, language) {
   const patterns = DANGEROUS_PATTERNS[language] || [];
   const warnings = [];
   for (const pattern of patterns) {
     if (pattern.test(code)) {
-      warnings.push(`Warning: potentially dangerous pattern detected: ${pattern.source}`);
+      warnings.push(`Warning: dangerous pattern detected: ${pattern.source}`);
     }
   }
+  return warnings;
+}
 
-  // Write code to temp file
+async function runInDocker(code, config) {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "itecify-"));
+  const tmpFile = path.join(tmpDir, `code${config.ext}`);
+  fs.writeFileSync(tmpFile, code);
+
+  let container;
+  try {
+    container = await docker.createContainer({
+      Image: config.image,
+      Cmd: config.cmd,
+      HostConfig: {
+        Memory: 128 * 1024 * 1024,   // 128 MB
+        CpuPeriod: 100000,
+        CpuQuota: 50000,              // 0.5 CPUs
+        NetworkMode: "none",          // no network access
+        Binds: [`${tmpDir}:/sandbox:ro`],
+        AutoRemove: true,
+      },
+      AttachStdout: true,
+      AttachStderr: true,
+      Tty: false,
+    });
+
+    const stream = await container.attach({ stream: true, stdout: true, stderr: true });
+
+    let stdout = "";
+    let stderr = "";
+    const stdoutStream = new (require("stream").PassThrough)();
+    const stderrStream = new (require("stream").PassThrough)();
+
+    container.modem.demuxStream(stream, stdoutStream, stderrStream);
+
+    stdoutStream.on("data", (chunk) => { stdout += chunk.toString(); });
+    stderrStream.on("data", (chunk) => { stderr += chunk.toString(); });
+
+    await container.start();
+
+    // Wait for completion with timeout
+    const result = await Promise.race([
+      container.wait(),
+      new Promise((_, reject) =>
+        setTimeout(async () => {
+          try { await container.kill(); } catch {}
+          reject(new Error("Execution timed out (30s limit)"));
+        }, 30000)
+      ),
+    ]);
+
+    return {
+      stdout,
+      stderr,
+      exitCode: result.StatusCode,
+    };
+  } catch (err) {
+    if (err.message.includes("timed out")) {
+      return { stdout: "", stderr: "", error: err.message };
+    }
+    throw err;
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+}
+
+async function runDirect(code, language) {
+  const cmd = FALLBACK_CMD[language];
+  if (!cmd) throw new Error(`No fallback for ${language} — Docker required`);
+
+  const config = LANG_CONFIG[language];
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "itecify-"));
   const tmpFile = path.join(tmpDir, `code${config.ext}`);
   fs.writeFileSync(tmpFile, code);
 
   try {
-    const result = await new Promise((resolve) => {
-      execFile(config.cmd, [tmpFile], { timeout: 10000, maxBuffer: 1024 * 512 }, (err, stdout, stderr) => {
+    return await new Promise((resolve) => {
+      execFile(cmd, [tmpFile], { timeout: 10000, maxBuffer: 1024 * 512 }, (err, stdout, stderr) => {
         if (err && err.killed) {
           resolve({ stdout, stderr, error: "Execution timed out (10s limit)" });
         } else if (err) {
@@ -116,17 +199,168 @@ app.post("/api/run", async (req, res) => {
         }
       });
     });
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+}
+
+app.post("/api/run", async (req, res) => {
+  const { code, language } = req.body;
+  if (!code) return res.status(400).json({ error: "No code provided" });
+
+  const config = LANG_CONFIG[language];
+  if (!config) return res.status(400).json({ error: `Unsupported language: ${language}` });
+
+  const warnings = scanCode(code, language);
+
+  try {
+    let result;
+    let mode;
+
+    if (await isDockerAvailable()) {
+      mode = "docker";
+      result = await runInDocker(code, config);
+    } else {
+      if (!FALLBACK_CMD[language]) {
+        return res.status(400).json({ error: `${language} requires Docker — start Docker Desktop and restart the server` });
+      }
+      mode = "direct";
+      result = await runDirect(code, language);
+    }
 
     const warningText = warnings.length > 0 ? warnings.join("\n") + "\n" : "";
     res.json({
       stdout: result.stdout,
       stderr: warningText + (result.stderr || ""),
       error: result.error,
+      mode,
     });
-  } finally {
-    fs.rmSync(tmpDir, { recursive: true, force: true });
+  } catch (err) {
+    console.error("[Run Error]", err.message);
+    res.status(500).json({ error: err.message });
   }
 });
+
+// --- Time-travel: snapshots endpoint ---
+const Redis = require("ioredis");
+const redisUrl = process.env.REDIS_URL || "redis://localhost:6379";
+let redis = null;
+
+try {
+  redis = new Redis(redisUrl, { maxRetriesPerRequest: 1, retryStrategy: () => null });
+  redis.on("error", () => {});
+  redis.ping().then(() => {
+    console.log("[iTECify] Redis connected — time-travel enabled");
+  }).catch(() => {
+    console.log("[iTECify] Redis not available — time-travel disabled");
+    redis = null;
+  });
+} catch {
+  console.log("[iTECify] Redis not available — time-travel disabled");
+}
+
+const SNAPSHOT_KEY = "itecify:snapshots";
+
+app.get("/api/snapshots", async (_req, res) => {
+  if (!redis) return res.json({ snapshots: [] });
+  try {
+    const raw = await redis.lrange(SNAPSHOT_KEY, 0, -1);
+    const snapshots = raw.map((entry) => {
+      const parsed = JSON.parse(entry);
+      return { timestamp: parsed.timestamp, label: parsed.label };
+    });
+    res.json({ snapshots });
+  } catch {
+    res.json({ snapshots: [] });
+  }
+});
+
+app.get("/api/snapshots/:timestamp", async (req, res) => {
+  if (!redis) return res.status(503).json({ error: "Redis not available" });
+  try {
+    const raw = await redis.lrange(SNAPSHOT_KEY, 0, -1);
+    const target = parseInt(req.params.timestamp);
+    for (const entry of raw) {
+      const parsed = JSON.parse(entry);
+      if (parsed.timestamp === target) {
+        return res.json({ snapshot: parsed.snapshot, timestamp: parsed.timestamp });
+      }
+    }
+    res.status(404).json({ error: "Snapshot not found" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- Shared terminal (node-pty) ---
+const pty = require("node-pty");
+
+let sharedPty = null;
+const termClients = new Set();
+
+function getOrCreatePty() {
+  if (sharedPty) return sharedPty;
+  try {
+    const shell = process.env.SHELL || "/bin/zsh";
+    sharedPty = pty.spawn(shell, [], {
+      name: "xterm-256color",
+      cols: 120,
+      rows: 30,
+      cwd: os.homedir(),
+      env: { ...process.env },
+    });
+    sharedPty.onData((data) => {
+      termClients.forEach((ws) => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: "term:output", data }));
+        }
+      });
+    });
+    sharedPty.onExit(() => {
+      sharedPty = null;
+      termClients.forEach((ws) => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: "term:exit" }));
+        }
+      });
+    });
+    return sharedPty;
+  } catch (err) {
+    console.error("[iTECify] Failed to spawn terminal:", err.message);
+    return null;
+  }
+}
+
+const TERM_WS_PORT = 1235;
+const termWss = new WebSocketServer({ port: TERM_WS_PORT });
+
+termWss.on("connection", (ws) => {
+  termClients.add(ws);
+  const terminal = getOrCreatePty();
+
+  if (!terminal) {
+    ws.send(JSON.stringify({ type: "term:output", data: "[Terminal unavailable — node-pty spawn failed]\r\n" }));
+    ws.on("close", () => termClients.delete(ws));
+    return;
+  }
+
+  ws.on("message", (raw) => {
+    try {
+      const msg = JSON.parse(raw);
+      if (msg.type === "term:input" && sharedPty) {
+        sharedPty.write(msg.data);
+      } else if (msg.type === "term:resize" && msg.cols && msg.rows && sharedPty) {
+        sharedPty.resize(msg.cols, msg.rows);
+      }
+    } catch {}
+  });
+
+  ws.on("close", () => {
+    termClients.delete(ws);
+  });
+});
+
+console.log(`[iTECify] Shared terminal WebSocket on ws://localhost:${TERM_WS_PORT}`);
 
 const apiServer = http.createServer(app);
 apiServer.listen(PORT, () => {
@@ -151,6 +385,23 @@ function getYDoc(docName) {
   doc.conns = new Map();
   doc.awareness = { states: new Map(), meta: new Map() };
   docs.set(docName, doc);
+
+  // Time-travel: snapshot every 10 seconds while doc has connections
+  doc._snapshotInterval = setInterval(async () => {
+    if (!redis || doc.conns.size === 0) return;
+    try {
+      const snapshot = Buffer.from(Y.encodeStateAsUpdate(doc)).toString("base64");
+      const entry = JSON.stringify({
+        timestamp: Date.now(),
+        label: new Date().toLocaleTimeString(),
+        snapshot,
+      });
+      await redis.rpush(SNAPSHOT_KEY, entry);
+      // Keep max 360 snapshots (1 hour at 10s intervals)
+      await redis.ltrim(SNAPSHOT_KEY, -360, -1);
+    } catch {}
+  }, 10000);
+
   return doc;
 }
 
@@ -278,6 +529,7 @@ function setupConnection(ws, req) {
       broadcastUpdate(doc, msg, null);
     }
     if (doc.conns.size === 0) {
+      clearInterval(doc._snapshotInterval);
       doc.destroy();
       docs.delete(doc.name);
     }

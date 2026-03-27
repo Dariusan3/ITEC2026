@@ -54,9 +54,9 @@ ITEC2026/
 | Phase | Name | Status | Description |
 |-------|------|--------|-------------|
 | 1 | Core Editor + Collaboration | Done | Monaco Editor with Yjs CRDT sync and multi-cursor awareness |
-| 2 | AI Block Suggestions | In Progress | Claude API integration with accept/reject code blocks |
-| 3 | Sandboxing | Planned | Docker-based code execution with stdout/stderr streaming |
-| 4 | Side Quests | Planned | Shared terminal, time-travel, resource limits |
+| 2 | AI Block Suggestions | Done | Groq/Llama AI integration with accept/reject code blocks |
+| 3 | Sandboxing | Done | Docker-based code execution with safety scanning and resource limits |
+| 4 | Side Quests | Done | Shared terminal, time-travel replay, resource limits |
 
 See the [docs/](docs/) folder for detailed feature documentation per phase.
 

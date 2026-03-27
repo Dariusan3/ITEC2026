@@ -12,10 +12,13 @@
   "license": "ISC",
   "dependencies": {
     "cors": "^2.8.6",
+    "dockerode": "^4.0.10",
     "dotenv": "^17.3.1",
     "express": "^5.2.1",
     "groq-sdk": "^1.1.2",
+    "ioredis": "^5.10.1",
     "lib0": "^0.2.117",
+    "node-pty": "^1.1.0",
     "ws": "^8.20.0",
     "y-websocket": "^3.0.0",
     "yjs": "^13.6.30"

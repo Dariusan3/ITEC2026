@@ -4,6 +4,7 @@ import FileTree from './components/FileTree'
 import Editor from './components/Editor'
 import Sidebar from './components/Sidebar'
 import OutputPanel from './components/OutputPanel'
+import TimeTravel from './components/TimeTravel'
 import { ytext } from './lib/yjs'
 
 export default function App() {
@@ -28,6 +29,9 @@ export default function App() {
       const data = await res.json()
 
       const lines = []
+      if (data.mode) {
+        lines.push({ type: 'info', text: `[${data.mode === 'docker' ? 'Docker sandbox' : 'Direct execution'}]` })
+      }
       if (data.stdout) {
         lines.push(...data.stdout.split('\n').map(text => ({ type: 'stdout', text })))
       }
@@ -37,7 +41,7 @@ export default function App() {
       if (data.error) {
         lines.push({ type: 'stderr', text: data.error })
       }
-      if (lines.length === 0) {
+      if (lines.length <= 1) {
         lines.push({ type: 'info', text: '(no output)' })
       }
       setOutput(lines)
@@ -61,6 +65,7 @@ export default function App() {
         <FileTree />
 
         <div className="flex flex-col flex-1 overflow-hidden">
+          <TimeTravel editorRef={editorRef} />
           <div className="flex-1 overflow-hidden">
             <Editor ref={editorRef} language={language} />
           </div>
