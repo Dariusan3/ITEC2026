@@ -52,6 +52,8 @@ wsProvider.awareness.setLocalStateField('user', { name, color })
 // yFiles: Map of filename -> { language }
 export const yFiles = ydoc.getMap('files')
 export const yAiBlocks = ydoc.getMap('aiBlocks')
+// yReactions: Array of { id, file, line, emoji, author }
+export const yReactions = ydoc.getArray('reactions')
 
 // Get or create a Yjs text for a given filename
 export function getYText(filename) {

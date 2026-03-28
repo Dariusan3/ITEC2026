@@ -492,7 +492,7 @@ const QUICK_ACTIONS = [
   { key: "review", icon: "◌", label: "Review", title: "Review current file" },
 ];
 
-export default function Sidebar({ editorRef, activeFile, language, output }) {
+export default function Sidebar({ editorRef, activeFile, language, output, onFileSelect }) {
   const [tab, setTab] = useState("ai");
   const [prompt, setPrompt] = useState("");
   const [messages, setMessages] = useState([]);
@@ -711,11 +711,33 @@ export default function Sidebar({ editorRef, activeFile, language, output }) {
     [loading, activeFile, language, output, editorRef],
   );
 
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState(null);
+
+  const runSearch = useCallback(
+    (q) => {
+      if (!q.trim()) { setSearchResults(null); return; }
+      const results = [];
+      yFiles.forEach((meta, filename) => {
+        const content = getYText(filename).toString();
+        const lines = content.split("\n");
+        lines.forEach((lineText, i) => {
+          if (lineText.toLowerCase().includes(q.toLowerCase())) {
+            results.push({ filename, line: i + 1, text: lineText.trim(), lang: meta?.language || "javascript" });
+          }
+        });
+      });
+      setSearchResults(results);
+    },
+    [],
+  );
+
   const TABS = [
     { id: "ai", label: "AI" },
-    { id: "chat", label: "Chat" },
+    { id: "search", label: "Search" },
     { id: "outline", label: "Outline" },
     { id: "presence", label: "Who's Here" },
+    { id: "chat", label: "Chat" },
   ];
 
   return (
@@ -733,7 +755,7 @@ export default function Sidebar({ editorRef, activeFile, language, output }) {
             key={t.id}
             type="button"
             onClick={() => setTab(t.id)}
-            className="liquid-surface flex min-h-[2.9rem] flex-1 items-center justify-center rounded-2xl border px-2 py-3 text-[11px] font-semibold uppercase tracking-[0.16em] shadow-[0_12px_24px_rgba(0,0,0,0.14)] transition-all duration-150 hover:-translate-y-px hover:brightness-110 active:scale-[0.95] sm:min-h-[3rem] sm:text-xs"
+            className="liquid-surface flex min-h-[2.9rem] flex-1 items-center justify-center rounded-2xl border px-2 py-3 text-[11px] font-semibold uppercase tracking-[0.16em] shadow-[0_12px_24px_rgba(0,0,0,0.14)] transition-all duration-150 hover:-translate-y-px hover:brightness-110 active:scale-[0.95] sm:min-h-12 sm:text-xs"
             style={{
               background: tab === t.id ? "var(--accent)" : "var(--bg-tertiary)",
               color:
@@ -751,7 +773,7 @@ export default function Sidebar({ editorRef, activeFile, language, output }) {
         <>
           {/* AI header */}
           <div
-            className="flex min-h-[3rem] shrink-0 items-center justify-between gap-2 border-b px-3 py-2.5"
+            className="flex min-h-12 shrink-0 items-center justify-between gap-2 border-b px-3 py-2.5"
             style={{ borderColor: "var(--border)" }}
           >
             <div className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-2.5">
@@ -929,6 +951,89 @@ export default function Sidebar({ editorRef, activeFile, language, output }) {
         </>
       )}
 
+      {/* ── Search tab ── */}
+      {tab === "search" && (
+        <div className="flex min-h-0 flex-1 flex-col">
+          <div
+            className="flex shrink-0 flex-col gap-2 border-b px-3 py-2.5"
+            style={{ borderColor: "var(--border)" }}
+          >
+            <span
+              className="text-[11px] font-bold uppercase tracking-wider"
+              style={{ color: "var(--accent)" }}
+            >
+              Find across files
+            </span>
+            <div className="flex gap-2">
+              <input
+                autoFocus
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  runSearch(e.target.value);
+                }}
+                onKeyDown={(e) => e.key === "Escape" && setSearchQuery("")}
+                placeholder="Search all files…"
+                className="flex-1 rounded-xl border px-3 py-2 text-[11px] font-mono outline-none"
+                style={{
+                  background: "var(--bg-tertiary)",
+                  borderColor: "var(--border)",
+                  color: "var(--text-primary)",
+                }}
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => { setSearchQuery(""); setSearchResults(null); }}
+                  className="shrink-0 rounded-xl border px-2.5 text-[11px]"
+                  style={{ background: "var(--bg-tertiary)", borderColor: "var(--border)", color: "var(--text-secondary)" }}
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+            {searchResults !== null && (
+              <p className="text-[9px] uppercase tracking-[0.16em]" style={{ color: "var(--text-secondary)" }}>
+                {searchResults.length} match{searchResults.length !== 1 ? "es" : ""}{searchQuery ? ` for "${searchQuery}"` : ""}
+              </p>
+            )}
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-2 space-y-0.5">
+            {searchResults === null ? (
+              <EmptyState
+                title="Search your workspace"
+                description="Type above to find text across all open files. Results show file, line number and matching content."
+              />
+            ) : searchResults.length === 0 ? (
+              <EmptyState title="No matches" description={`"${searchQuery}" was not found in any file.`} />
+            ) : (
+              searchResults.map((r, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => onFileSelect?.(r.filename, r.lang, { line: r.line })}
+                  className="w-full rounded-xl border px-3 py-2 text-left transition-all duration-150 hover:brightness-110"
+                  style={{ background: "var(--bg-tertiary)", borderColor: "var(--border)" }}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="truncate text-[10px] font-semibold" style={{ color: "var(--accent)" }}>
+                      {r.filename.includes("/") ? r.filename.split("/").pop() : r.filename}
+                    </span>
+                    <span className="shrink-0 text-[9px] tabular-nums" style={{ color: "var(--text-secondary)" }}>
+                      L{r.line}
+                    </span>
+                  </div>
+                  <p className="mt-0.5 truncate font-mono text-[10px]" style={{ color: "var(--text-secondary)" }}>
+                    {r.text.slice(0, 80)}
+                  </p>
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+
       {/* ── Chat tab ── */}
       {tab === "chat" && <Chat />}
 
@@ -936,7 +1041,7 @@ export default function Sidebar({ editorRef, activeFile, language, output }) {
       {tab === "outline" && (
         <div className="flex min-h-0 flex-1 flex-col">
           <div
-            className="flex min-h-[3rem] shrink-0 flex-wrap items-center gap-2 border-b px-3 py-2.5 sm:gap-2.5"
+            className="flex min-h-12 shrink-0 flex-wrap items-center gap-2 border-b px-3 py-2.5 sm:gap-2.5"
             style={{ borderColor: "var(--border)" }}
           >
             <span
@@ -1021,7 +1126,7 @@ export default function Sidebar({ editorRef, activeFile, language, output }) {
       {tab === "presence" && (
         <div className="flex min-h-0 flex-1 flex-col">
           <div
-            className="flex min-h-[3rem] shrink-0 flex-wrap items-center gap-2 border-b px-3 py-2.5 sm:gap-2.5"
+            className="flex min-h-12 shrink-0 flex-wrap items-center gap-2 border-b px-3 py-2.5 sm:gap-2.5"
             style={{ borderColor: "var(--border)" }}
           >
             <span
