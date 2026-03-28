@@ -1,10 +1,12 @@
 import { useState, useEffect, useRef } from 'react'
-import { ydoc, name, color } from '../lib/yjs'
+import { ydoc, name, color, wsProvider } from '../lib/yjs'
 
 export default function Chat() {
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
+  const [typers, setTypers] = useState([])
   const endRef = useRef(null)
+  const typingTimer = useRef(null)
   const yMessages = useRef(ydoc.getArray('chat'))
 
   useEffect(() => {
@@ -18,6 +20,34 @@ export default function Chat() {
     endRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
+  // C5: Typing indicators via awareness
+  useEffect(() => {
+    const awareness = wsProvider.awareness
+    const update = () => {
+      const typing = []
+      awareness.getStates().forEach((state, clientId) => {
+        if (clientId === awareness.clientID) return
+        if (state.typing && state.user?.name) {
+          typing.push(state.user.name)
+        }
+      })
+      setTypers(typing)
+    }
+    awareness.on('change', update)
+    return () => awareness.off('change', update)
+  }, [])
+
+  const setTyping = (isTyping) => {
+    wsProvider.awareness.setLocalStateField('typing', isTyping)
+  }
+
+  const handleInput = (e) => {
+    setInput(e.target.value)
+    setTyping(true)
+    clearTimeout(typingTimer.current)
+    typingTimer.current = setTimeout(() => setTyping(false), 2000)
+  }
+
   const send = () => {
     if (!input.trim()) return
     yMessages.current.push([{
@@ -28,6 +58,8 @@ export default function Chat() {
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     }])
     setInput('')
+    clearTimeout(typingTimer.current)
+    setTyping(false)
   }
 
   return (
@@ -49,12 +81,17 @@ export default function Chat() {
             </div>
           </div>
         ))}
+        {typers.length > 0 && (
+          <p className="text-[10px] italic" style={{ color: 'var(--text-secondary)' }}>
+            {typers.join(', ')} {typers.length === 1 ? 'is' : 'are'} typing...
+          </p>
+        )}
         <div ref={endRef} />
       </div>
       <div className="p-2 border-t flex gap-2" style={{ borderColor: 'var(--border)' }}>
         <input
           value={input}
-          onChange={e => setInput(e.target.value)}
+          onChange={handleInput}
           onKeyDown={e => e.key === 'Enter' && send()}
           placeholder="Message..."
           className="flex-1 text-xs px-2 py-1 rounded outline-none"

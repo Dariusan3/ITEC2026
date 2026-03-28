@@ -8,6 +8,40 @@ import TimeTravel from './components/TimeTravel'
 import ConnectionBanner from './components/ConnectionBanner'
 import { yFiles, getYText, roomId } from './lib/yjs'
 
+// C2: Read-only mode — ?view=1 in URL
+const viewOnly = new URLSearchParams(window.location.search).has('view')
+
+// P4: Session history — track visited rooms in localStorage
+function recordSession(id) {
+  try {
+    const hist = JSON.parse(localStorage.getItem('itecify:history') || '[]')
+    const filtered = hist.filter(h => h.id !== id)
+    filtered.unshift({ id, visitedAt: Date.now() })
+    localStorage.setItem('itecify:history', JSON.stringify(filtered.slice(0, 20)))
+  } catch {}
+}
+recordSession(roomId)
+
+// P2: Fork import — load forked files from sessionStorage into this room's Yjs doc
+const forkParam = new URLSearchParams(window.location.search).get('fork')
+if (forkParam) {
+  try {
+    const forkedFiles = JSON.parse(sessionStorage.getItem(`itecify-fork-${forkParam}`) || 'null')
+    if (forkedFiles) {
+      Object.entries(forkedFiles).forEach(([fname, { meta, content }]) => {
+        yFiles.set(fname, meta)
+        const yText = getYText(fname)
+        if (yText.length === 0) yText.insert(0, content)
+      })
+      sessionStorage.removeItem(`itecify-fork-${forkParam}`)
+      // Clean up URL
+      const url = new URL(window.location.href)
+      url.searchParams.delete('fork')
+      window.history.replaceState({}, '', url)
+    }
+  } catch {}
+}
+
 const DEFAULT_SETTINGS = {
   theme: 'vs-dark',
   keymap: 'default',
@@ -138,10 +172,11 @@ export default function App() {
         filename={activeFile}
         language={language}
         onLanguageChange={handleLanguageChange}
-        onRun={handleRun}
+        onRun={viewOnly ? null : handleRun}
         running={running}
         settings={settings}
         onSettingsChange={handleSettingsChange}
+        viewOnly={viewOnly}
       />
 
       <div className="flex flex-1 overflow-hidden">
@@ -150,7 +185,7 @@ export default function App() {
         <div className="flex flex-col flex-1 overflow-hidden">
           <TimeTravel editorRef={editorRef} />
           <div className="flex-1 overflow-hidden">
-            <Editor ref={editorRef} language={language} activeFile={activeFile} settings={settings} />
+            <Editor ref={editorRef} language={language} activeFile={activeFile} settings={settings} readOnly={viewOnly} />
           </div>
           <OutputPanel
             output={output}

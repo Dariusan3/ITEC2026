@@ -39,9 +39,9 @@ This document tracks all planned features grouped by category, with effort estim
 | X1 | **Run history** | S | Store last N runs (timestamp, language, exit code, first line of output) in localStorage or Yjs |
 | X2 | **Environment variables panel** | S | Key-value UI in OutputPanel; passed to Docker via `Env: ["KEY=value"]` in createContainer |
 | X3 | **Output download** | XS | "Save output" button — `Blob` + `URL.createObjectURL` to download stdout as `.txt` |
-| X4 | **Docker image pre-pull** | S | On server start, `docker.pull(image)` for all LANG_CONFIG images so first run is instant |
-| X5 | **Rate limiting** | S | `express-rate-limit` on `/api/run` — e.g. 20 runs/min per IP |
-| X6 | **More languages** | S | Add Go (`golang:1.21-alpine`), Java (`openjdk:21-slim`), C (`gcc:latest`) to LANG_CONFIG |
+| X4 | **Docker image pre-pull** | S | ✅ Done — pre-pulls all LANG_CONFIG images on server start |
+| X5 | **Rate limiting** | S | ✅ Done — `express-rate-limit` 20 runs/min per IP on `/api/run` |
+| X6 | **More languages** | S | ✅ Done — Go, Java, C added to LANG_CONFIG and language selector |
 | X7 | **Interactive REPL** | L | Keep a container alive between runs; send lines incrementally via stdin stream |
 
 ---
@@ -51,10 +51,10 @@ This document tracks all planned features grouped by category, with effort estim
 | # | Feature | Effort | Notes |
 |---|---------|--------|-------|
 | C1 | **Follow mode** | M | Click avatar → your viewport scrolls to that user's cursor position; Monaco `revealLine()` |
-| C2 | **Read-only share link** | S | URL param `?view=1` → set Monaco `readOnly: true`, hide run/edit controls |
+| C2 | **Read-only share link** | S | ✅ Done — `?view=1` sets Monaco readOnly, shows "👁 View only" badge |
 | C3 | **Inline code comments** | M | Anchor a Yjs-backed comment to a line number; render as Monaco glyph margin + tooltip |
 | C4 | **Emoji reactions** | S | Float emoji over a line — stored in `ydoc.getArray('reactions')` with line + emoji + author |
-| C5 | **Typing indicators** | XS | Show "Alex is typing…" in the chat panel using Yjs awareness |
+| C5 | **Typing indicators** | XS | ✅ Done — "Alex is typing…" shown in chat via Yjs awareness |
 
 ---
 
@@ -62,10 +62,10 @@ This document tracks all planned features grouped by category, with effort estim
 
 | # | Feature | Effort | Notes |
 |---|---------|--------|-------|
-| P1 | **Export as ZIP** | S | Use `jszip` on the client — iterate `yFiles`, zip all file contents, trigger download |
-| P2 | **Fork session** | S | Copy all files from current Yjs doc into a new room ID; redirect to new URL |
+| P1 | **Export as ZIP** | S | ✅ Done — "↓ ZIP" button in TopBar uses jszip to download all files |
+| P2 | **Fork session** | S | ✅ Done — "⑂ Fork" opens a new room pre-loaded with current files |
 | P3 | **Open from GitHub** | M | Paste a GitHub repo URL → fetch file list via GitHub API → load files into yFiles |
-| P4 | **Session history** | S | Store visited room IDs + timestamps in localStorage; show a "Recent sessions" list |
+| P4 | **Session history** | S | ✅ Done — room IDs + timestamps stored in `itecify:history` localStorage key |
 | P5 | **Project templates** | S | Dropdown to start from a pre-filled template (React app, Express API, Python CLI, etc.) |
 
 ---

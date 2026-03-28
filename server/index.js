@@ -188,11 +188,37 @@ const DOCKER_LINUX_PLATFORM = getDockerLinuxPlatform();
 const DOCKER_PLATFORM_SPEC = `${DOCKER_LINUX_PLATFORM.os}/${DOCKER_LINUX_PLATFORM.architecture}`;
 
 const LANG_CONFIG = {
-  javascript: { ext: ".js", image: "node:20-slim", cmd: ["node", "/sandbox/code.js"], pkgMgr: "npm" },
-  typescript: { ext: ".ts", image: "node:20-slim", cmd: ["node", "/sandbox/code.ts"], pkgMgr: "npm" },
-  python:     { ext: ".py", image: "python:3.11-slim", cmd: ["python", "/sandbox/code.py"], pkgMgr: "pip" },
-  rust:       { ext: ".rs", image: "rust:slim", cmd: ["sh", "-c", "rustc /sandbox/code.rs -o /sandbox/code && /sandbox/code"], pkgMgr: null },
+  javascript: { ext: ".js",   image: "node:20-slim",       cmd: ["node", "/sandbox/code.js"], pkgMgr: "npm" },
+  typescript: { ext: ".ts",   image: "node:20-slim",       cmd: ["node", "/sandbox/code.ts"], pkgMgr: "npm" },
+  python:     { ext: ".py",   image: "python:3.11-slim",   cmd: ["python", "/sandbox/code.py"], pkgMgr: "pip" },
+  rust:       { ext: ".rs",   image: "rust:slim",           cmd: ["sh", "-c", "rustc /sandbox/code.rs -o /sandbox/code && /sandbox/code"], pkgMgr: null },
+  go:         { ext: ".go",   image: "golang:1.21-alpine",  cmd: ["sh", "-c", "go run /sandbox/code.go"], pkgMgr: null },
+  java:       { ext: ".java", image: "openjdk:21-slim",    cmd: ["sh", "-c", "cd /sandbox && javac code.java && java code"], pkgMgr: null },
+  c:          { ext: ".c",    image: "gcc:latest",          cmd: ["sh", "-c", "gcc /sandbox/code.c -o /sandbox/code && /sandbox/code"], pkgMgr: null },
 };
+
+// X4: Pre-pull all Docker images on startup so first run is instant
+async function prePullImages() {
+  const available = await isDockerAvailable().catch(() => false);
+  if (!available) return;
+  for (const [lang, cfg] of Object.entries(LANG_CONFIG)) {
+    try {
+      await docker.getImage(cfg.image).inspect();
+    } catch {
+      console.log(`[Docker] Pre-pulling ${cfg.image} for ${lang}...`);
+      await new Promise((resolve) => {
+        docker.pull(cfg.image, { platform: DOCKER_PLATFORM_SPEC }, (err, stream) => {
+          if (err || !stream) return resolve();
+          docker.modem.followProgress(stream, () => {
+            console.log(`[Docker] ${cfg.image} ready`);
+            resolve();
+          });
+        });
+      });
+    }
+  }
+}
+prePullImages().catch(() => {});
 
 function buildCmdWithPackages(config, packages) {
   if (!packages || packages.length === 0) return { cmd: config.cmd, network: "none" };
@@ -399,7 +425,17 @@ async function runDirect(code, language, onData, stdin = "") {
   }
 }
 
-app.post("/api/run", async (req, res) => {
+// X5: Rate limit — 20 runs/min per IP
+const rateLimit = require("express-rate-limit");
+const runLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many runs — max 20 per minute. Please wait." },
+});
+
+app.post("/api/run", runLimiter, async (req, res) => {
   const { code, language, stdin = "", packages = [], env = {}, roomId } = req.body;
   if (!code) return res.status(400).json({ error: "No code provided" });
 

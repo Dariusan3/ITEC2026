@@ -1,13 +1,17 @@
 import { useState, useEffect } from "react";
-import { wsProvider, roomId, getYText } from "../lib/yjs";
+import JSZip from "jszip";
+import { wsProvider, roomId, getYText, yFiles } from "../lib/yjs";
 import { useAuth } from "../lib/auth";
 import SettingsPanel from "./SettingsPanel";
 
 const LANGUAGES = [
   "javascript",
+  "typescript",
   "python",
   "rust",
-  "typescript",
+  "go",
+  "java",
+  "c",
   "html",
   "css",
   "json",
@@ -19,6 +23,7 @@ export default function TopBar({ settings, onSettingsChange,
   onLanguageChange,
   onRun,
   running,
+  viewOnly = false,
 }) {
   const [users, setUsers] = useState([]);
   const [copied, setCopied] = useState(false);
@@ -83,6 +88,41 @@ export default function TopBar({ settings, onSettingsChange,
     });
   };
 
+  // C2: Read-only share link
+  const handleShareReadOnly = () => {
+    const url = `${window.location.origin}${window.location.pathname}?view=1#${roomId}`;
+    navigator.clipboard.writeText(url).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  // P2: Fork session — open new room with same files
+  const handleFork = () => {
+    const newRoom = Math.random().toString(36).slice(2, 10);
+    const forkedFiles = {};
+    yFiles.forEach((meta, fname) => {
+      forkedFiles[fname] = { meta, content: getYText(fname).toString() };
+    });
+    // Store fork payload in sessionStorage for the new tab to pick up
+    sessionStorage.setItem(`itecify-fork-${newRoom}`, JSON.stringify(forkedFiles));
+    window.open(`${window.location.origin}${window.location.pathname}?fork=${newRoom}#${newRoom}`, "_blank");
+  };
+
+  // P1: ZIP export
+  const handleZip = async () => {
+    const zip = new JSZip();
+    yFiles.forEach((_, fname) => {
+      zip.file(fname, getYText(fname).toString());
+    });
+    const blob = await zip.generateAsync({ type: "blob" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `itecify-${roomId}.zip`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+
   return (
     <div
       className="flex h-12 w-full items-center justify-between gap-3 border-b px-4 sm:gap-4 sm:px-5"
@@ -145,6 +185,48 @@ export default function TopBar({ settings, onSettingsChange,
 
         <button
           type="button"
+          onClick={handleShareReadOnly}
+          title="Copy read-only link"
+          className="rounded px-3 py-1 text-xs font-semibold transition-all"
+          style={{
+            background: "var(--bg-tertiary)",
+            color: "var(--text-secondary)",
+            border: "1px solid var(--border)",
+          }}
+        >
+          👁 View link
+        </button>
+
+        <button
+          type="button"
+          onClick={handleFork}
+          title="Fork this session into a new room"
+          className="rounded px-3 py-1 text-xs font-semibold transition-all"
+          style={{
+            background: "var(--bg-tertiary)",
+            color: "var(--text-secondary)",
+            border: "1px solid var(--border)",
+          }}
+        >
+          ⑂ Fork
+        </button>
+
+        <button
+          type="button"
+          onClick={handleZip}
+          title="Download all files as ZIP"
+          className="rounded px-3 py-1 text-xs font-semibold transition-all"
+          style={{
+            background: "var(--bg-tertiary)",
+            color: "var(--text-secondary)",
+            border: "1px solid var(--border)",
+          }}
+        >
+          ↓ ZIP
+        </button>
+
+        <button
+          type="button"
           onClick={handleGist}
           disabled={gistState === "saving"}
           className="rounded px-3 py-1 text-xs font-semibold transition-all"
@@ -172,19 +254,27 @@ export default function TopBar({ settings, onSettingsChange,
                 : "↗ Gist"}
         </button>
 
-        <button
-          type="button"
-          onClick={onRun}
-          disabled={running}
-          className="rounded px-3 py-1 text-xs font-semibold transition-opacity"
-          style={{
-            background: "var(--green)",
-            color: "var(--bg-primary)",
-            opacity: running ? 0.5 : 1,
-          }}
-        >
-          {running ? "⏳ Running..." : "▶ Run"}
-        </button>
+        {viewOnly && (
+          <span className="rounded px-2 py-0.5 text-[10px] font-semibold"
+            style={{ background: "var(--bg-tertiary)", color: "var(--text-secondary)", border: "1px solid var(--border)" }}>
+            👁 View only
+          </span>
+        )}
+        {!viewOnly && onRun && (
+          <button
+            type="button"
+            onClick={onRun}
+            disabled={running}
+            className="rounded px-3 py-1 text-xs font-semibold transition-opacity"
+            style={{
+              background: "var(--green)",
+              color: "var(--bg-primary)",
+              opacity: running ? 0.5 : 1,
+            }}
+          >
+            {running ? "⏳ Running..." : "▶ Run"}
+          </button>
+        )}
 
         {user === null && (
           <button

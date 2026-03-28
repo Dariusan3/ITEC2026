@@ -37,7 +37,7 @@ self.MonacoEnvironment = {
 
 const AI_BLOCK_CLASS = 'ai-block-decoration'
 
-const Editor = forwardRef(function Editor({ language, activeFile, settings = {} }, ref) {
+const Editor = forwardRef(function Editor({ language, activeFile, settings = {}, readOnly = false }, ref) {
   const keymap = settings.keymap || 'default'
   const containerRef = useRef(null)
   const editorRef = useRef(null)
@@ -135,6 +135,7 @@ const Editor = forwardRef(function Editor({ language, activeFile, settings = {} 
       smoothScrolling: true,
       renderLineHighlight: 'gutter',
       tabSize: 2,
+      readOnly,
     })
     editorRef.current = editor
 
