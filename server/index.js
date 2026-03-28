@@ -746,30 +746,54 @@ app.post("/api/gist", async (req, res) => {
   }
 });
 
-// --- Time-travel: snapshots endpoint ---
+// --- Time-travel: Redis + snapshots (per-room lists, auto-reconnect) ---
 const Redis = require("ioredis");
-const redisUrl = process.env.REDIS_URL || "redis://localhost:6379";
-let redis = null;
+const redisUrl = process.env.REDIS_URL || "redis://127.0.0.1:6379";
 
-try {
-  redis = new Redis(redisUrl, { maxRetriesPerRequest: 1, retryStrategy: () => null });
-  redis.on("error", () => {});
-  redis.ping().then(() => {
-    console.log("[iTECify] Redis connected — time-travel enabled");
-  }).catch(() => {
-    console.log("[iTECify] Redis not available — time-travel disabled");
-    redis = null;
-  });
-} catch {
-  console.log("[iTECify] Redis not available — time-travel disabled");
+let redisClient = null;
+
+function isRedisUsable() {
+  return redisClient !== null && redisClient.status === "ready";
 }
 
-const SNAPSHOT_KEY = "itecify:snapshots";
+function createRedisClient() {
+  const client = new Redis(redisUrl, {
+    maxRetriesPerRequest: 20,
+    retryStrategy(times) {
+      if (times > 60) return null;
+      return Math.min(times * 200, 3000);
+    },
+    connectTimeout: 10000,
+  });
+  client.on("error", (err) => {
+    console.error("[iTECify] Redis error:", err.message);
+  });
+  client.on("ready", () => {
+    console.log("[iTECify] Redis connected — time-travel enabled");
+  });
+  return client;
+}
 
-app.get("/api/snapshots", async (_req, res) => {
-  if (!redis) return res.json({ snapshots: [] });
+try {
+  redisClient = createRedisClient();
+} catch (err) {
+  console.error("[iTECify] Redis client failed:", err.message);
+  redisClient = null;
+}
+
+/** List key for time-travel snapshots; null if room id is missing or invalid. */
+function snapshotListKey(roomId) {
+  const safe = String(roomId ?? "").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 128);
+  if (!safe) return null;
+  return `itecify:snapshots:${safe}`;
+}
+
+app.get("/api/snapshots", async (req, res) => {
+  const key = snapshotListKey(req.query.room);
+  if (!key) return res.json({ snapshots: [] });
+  if (!isRedisUsable()) return res.json({ snapshots: [] });
   try {
-    const raw = await redis.lrange(SNAPSHOT_KEY, 0, -1);
+    const raw = await redisClient.lrange(key, 0, -1);
     const snapshots = raw.map((entry) => {
       const parsed = JSON.parse(entry);
       return { timestamp: parsed.timestamp, label: parsed.label };
@@ -781,10 +805,12 @@ app.get("/api/snapshots", async (_req, res) => {
 });
 
 app.get("/api/snapshots/:timestamp", async (req, res) => {
-  if (!redis) return res.status(503).json({ error: "Redis not available" });
+  const key = snapshotListKey(req.query.room);
+  if (!key) return res.status(400).json({ error: "room query parameter required" });
+  if (!isRedisUsable()) return res.status(503).json({ error: "Redis not available" });
   try {
-    const raw = await redis.lrange(SNAPSHOT_KEY, 0, -1);
-    const target = parseInt(req.params.timestamp);
+    const raw = await redisClient.lrange(key, 0, -1);
+    const target = parseInt(req.params.timestamp, 10);
     for (const entry of raw) {
       const parsed = JSON.parse(entry);
       if (parsed.timestamp === target) {
@@ -962,9 +988,10 @@ function getYDoc(docName) {
     console.error(`[DB] loadRoom failed for ${roomId}:`, err.message);
   });
 
+  const snapshotKey = snapshotListKey(roomId);
   // Time-travel: snapshot every 10 seconds while doc has connections
   doc._snapshotInterval = setInterval(async () => {
-    if (!redis || doc.conns.size === 0) return;
+    if (!snapshotKey || !isRedisUsable() || doc.conns.size === 0) return;
     try {
       const snapshot = Buffer.from(Y.encodeStateAsUpdate(doc)).toString("base64");
       const entry = JSON.stringify({
@@ -972,9 +999,9 @@ function getYDoc(docName) {
         label: new Date().toLocaleTimeString(),
         snapshot,
       });
-      await redis.rpush(SNAPSHOT_KEY, entry);
+      await redisClient.rpush(snapshotKey, entry);
       // Keep max 360 snapshots (1 hour at 10s intervals)
-      await redis.ltrim(SNAPSHOT_KEY, -360, -1);
+      await redisClient.ltrim(snapshotKey, -360, -1);
     } catch {}
   }, 10000);
 

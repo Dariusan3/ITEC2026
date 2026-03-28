@@ -1,17 +1,19 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import * as Y from "yjs";
-import { ytext, ydoc } from "../lib/yjs";
+import { getYText, ydoc, roomId } from "../lib/yjs";
 
-export default function TimeTravel({ editorRef }) {
+export default function TimeTravel({ editorRef, activeFile }) {
   const [snapshots, setSnapshots] = useState([]);
   const [sliderValue, setSliderValue] = useState(-1);
   const [replaying, setReplaying] = useState(false);
-  const [liveContent, setLiveContent] = useState(null);
+  /** Backup text pentru replay; ținut în ref ca să nu rulăm side-effect-uri în updateri de setState (Monaco → awareness → TopBar). */
+  const liveBackupRef = useRef(null);
   const liveBackupDoneRef = useRef(false);
 
   const fetchSnapshots = useCallback(async () => {
     try {
-      const res = await fetch("/api/snapshots");
+      const q = new URLSearchParams({ room: roomId });
+      const res = await fetch(`/api/snapshots?${q}`);
       const data = await res.json();
       setSnapshots(data.snapshots || []);
     } catch {}
@@ -26,18 +28,18 @@ export default function TimeTravel({ editorRef }) {
   const exitReplay = useCallback(
     (opts = {}) => {
       const restoreLive = opts.restoreLive !== false;
+      const backup = liveBackupRef.current;
+      liveBackupRef.current = null;
       liveBackupDoneRef.current = false;
       setReplaying(false);
       setSliderValue(-1);
-      setLiveContent((prev) => {
+      queueMicrotask(() => {
         const editor = editorRef?.current?.getEditor();
-        if (editor) {
-          editor.updateOptions({ readOnly: false });
-          if (restoreLive && prev !== null) {
-            editor.getModel()?.setValue(prev);
-          }
+        if (!editor) return;
+        editor.updateOptions({ readOnly: false });
+        if (restoreLive && backup !== null) {
+          editor.getModel()?.setValue(backup);
         }
-        return null;
       });
     },
     [editorRef],
@@ -56,13 +58,14 @@ export default function TimeTravel({ editorRef }) {
       if (!snapshot) return;
 
       if (!liveBackupDoneRef.current) {
-        setLiveContent(ytext.toString());
+        liveBackupRef.current = getYText(activeFile).toString();
         liveBackupDoneRef.current = true;
       }
       setReplaying(true);
 
       try {
-        const res = await fetch(`/api/snapshots/${snapshot.timestamp}`);
+        const sq = new URLSearchParams({ room: roomId });
+        const res = await fetch(`/api/snapshots/${snapshot.timestamp}?${sq}`);
         const data = await res.json();
         if (data.snapshot) {
           const update = Uint8Array.from(atob(data.snapshot), (c) =>
@@ -70,7 +73,8 @@ export default function TimeTravel({ editorRef }) {
           );
           const tmpDoc = new Y.Doc();
           Y.applyUpdate(tmpDoc, update);
-          const text = tmpDoc.getText("monaco").toString();
+          const yChunk = tmpDoc.getText(`file:${activeFile}`);
+          const text = yChunk.toString();
           tmpDoc.destroy();
 
           const editor = editorRef?.current?.getEditor();
@@ -81,7 +85,7 @@ export default function TimeTravel({ editorRef }) {
         }
       } catch {}
     },
-    [snapshots, editorRef, exitReplay],
+    [snapshots, editorRef, exitReplay, activeFile],
   );
 
   const handleSliderChange = (e) => {
@@ -109,13 +113,14 @@ export default function TimeTravel({ editorRef }) {
     const model = editor?.getModel();
     if (!model) return;
     const text = model.getValue();
+    const yFileText = getYText(activeFile);
     ydoc.transact(() => {
-      const len = ytext.length;
-      if (len > 0) ytext.delete(0, len);
-      ytext.insert(0, text);
+      const len = yFileText.length;
+      if (len > 0) yFileText.delete(0, len);
+      yFileText.insert(0, text);
     });
     exitReplay({ restoreLive: false });
-  }, [replaying, editorRef, exitReplay]);
+  }, [replaying, editorRef, exitReplay, activeFile]);
 
   const liveIndex = snapshots.length > 0 ? snapshots.length - 1 : 0;
   const canStepBack =

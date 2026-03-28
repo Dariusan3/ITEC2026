@@ -258,7 +258,7 @@ export default function App() {
         <FileTree activeFile={activeFile} onFileSelect={handleFileSelect} />
 
         <div className="flex flex-col flex-1 overflow-hidden">
-          <TimeTravel editorRef={editorRef} />
+          <TimeTravel editorRef={editorRef} activeFile={activeFile} />
           <div className="flex-1 overflow-hidden">
             {idbReady
               ? <Editor ref={editorRef} language={language} activeFile={activeFile} settings={settings} readOnly={viewOnly} />
