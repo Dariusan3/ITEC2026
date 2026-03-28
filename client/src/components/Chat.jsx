@@ -1,13 +1,13 @@
-import { useState, useEffect, useRef } from 'react'
-import { ydoc, name, color, wsProvider } from '../lib/yjs'
+import { useState, useEffect, useRef } from "react";
+import { ydoc, name, color, wsProvider } from "../lib/yjs";
 
 export default function Chat() {
-  const [messages, setMessages] = useState([])
-  const [input, setInput] = useState('')
-  const [typers, setTypers] = useState([])
-  const endRef = useRef(null)
-  const typingTimer = useRef(null)
-  const yMessages = useRef(ydoc.getArray('chat'))
+  const [messages, setMessages] = useState([]);
+  const [input, setInput] = useState("");
+  const [typers, setTypers] = useState([]);
+  const endRef = useRef(null);
+  const typingTimer = useRef(null);
+  const yMessages = useRef(ydoc.getArray("chat"));
 
   useEffect(() => {
     const update = () => setMessages(yMessages.current.toArray());
@@ -17,50 +17,55 @@ export default function Chat() {
   }, []);
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
+    endRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
 
   // Typing indicators via Yjs awareness
   useEffect(() => {
-    const awareness = wsProvider.awareness
+    const awareness = wsProvider.awareness;
     const update = () => {
-      const typing = []
+      const typing = [];
       awareness.getStates().forEach((state, clientId) => {
-        if (clientId === awareness.clientID) return
+        if (clientId === awareness.clientID) return;
         if (state.typing && state.user?.name) {
-          typing.push(state.user.name)
+          typing.push(state.user.name);
         }
-      })
-      setTypers(typing)
-    }
-    awareness.on('change', update)
-    return () => awareness.off('change', update)
-  }, [])
+      });
+      setTypers(typing);
+    };
+    awareness.on("change", update);
+    return () => awareness.off("change", update);
+  }, []);
 
   const setTyping = (isTyping) => {
-    wsProvider.awareness.setLocalStateField('typing', isTyping)
-  }
+    wsProvider.awareness.setLocalStateField("typing", isTyping);
+  };
 
   const handleInput = (e) => {
-    setInput(e.target.value)
-    setTyping(true)
-    clearTimeout(typingTimer.current)
-    typingTimer.current = setTimeout(() => setTyping(false), 2000)
-  }
+    setInput(e.target.value);
+    setTyping(true);
+    clearTimeout(typingTimer.current);
+    typingTimer.current = setTimeout(() => setTyping(false), 2000);
+  };
 
   const send = () => {
-    if (!input.trim()) return
-    yMessages.current.push([{
-      id: `${Date.now()}-${Math.random()}`,
-      author: name,
-      color,
-      text: input.trim(),
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-    }])
-    setInput('')
-    clearTimeout(typingTimer.current)
-    setTyping(false)
-  }
+    if (!input.trim()) return;
+    yMessages.current.push([
+      {
+        id: `${Date.now()}-${Math.random()}`,
+        author: name,
+        color,
+        text: input.trim(),
+        time: new Date().toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
+      },
+    ]);
+    setInput("");
+    clearTimeout(typingTimer.current);
+    setTyping(false);
+  };
 
   return (
     <div className="flex h-full flex-col">
@@ -148,9 +153,9 @@ export default function Chat() {
         {typers.length > 0 && (
           <p
             className="text-[10px] italic px-0.5"
-            style={{ color: 'var(--text-secondary)' }}
+            style={{ color: "var(--text-secondary)" }}
           >
-            {typers.join(', ')} {typers.length === 1 ? 'is' : 'are'} typing...
+            {typers.join(", ")} {typers.length === 1 ? "is" : "are"} typing...
           </p>
         )}
         <div ref={endRef} />
@@ -164,10 +169,14 @@ export default function Chat() {
         <input
           value={input}
           onChange={handleInput}
-          onKeyDown={e => e.key === 'Enter' && send()}
+          onKeyDown={(e) => e.key === "Enter" && send()}
           placeholder="Message..."
-          className="flex-1 text-xs px-2 py-1 rounded outline-none"
-          style={{ background: 'var(--bg-tertiary)', color: 'var(--text-primary)', border: '1px solid var(--border)' }}
+          className="flex-1 text-xs px-2 py-1 rounded outline-none h-full"
+          style={{
+            background: "var(--bg-tertiary)",
+            color: "var(--text-primary)",
+            border: "1px solid var(--border)",
+          }}
         />
         <button
           onClick={send}

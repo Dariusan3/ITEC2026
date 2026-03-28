@@ -32,7 +32,9 @@ if (process.env.DATABASE_URL) {
   });
   console.log("[iTECify] Session store: Postgres");
 } else {
-  console.log("[iTECify] Session store: in-memory (set DATABASE_URL for persistence)");
+  console.log(
+    "[iTECify] Session store: in-memory (set DATABASE_URL for persistence)",
+  );
 }
 
 app.use(cors({ origin: true, credentials: true }));
@@ -51,7 +53,8 @@ app.get("/api/health", (_req, res) => {
 });
 
 app.get("/api/db/status", async (_req, res) => {
-  if (!db.isEnabled()) return res.json({ enabled: false, reason: "SUPABASE_URL not configured" });
+  if (!db.isEnabled())
+    return res.json({ enabled: false, reason: "SUPABASE_URL not configured" });
   const ok = await db.ping();
   res.json({ enabled: true, connected: ok });
 });
@@ -72,7 +75,8 @@ app.post("/api/ai/suggest", async (req, res) => {
       messages: [
         {
           role: "system",
-          content: "You are an AI coding assistant inside a collaborative editor called iTECify. Respond with ONLY a JSON object (no markdown, no code fences) in this exact format: {\"suggestion\": \"<the code to insert>\", \"explanation\": \"<one-line explanation>\"}. The \"suggestion\" field must contain ONLY code, no markdown fences. Use \\n for newlines inside the code string.",
+          content:
+            'You are an AI coding assistant inside a collaborative editor called iTECify. Respond with ONLY a JSON object (no markdown, no code fences) in this exact format: {"suggestion": "<the code to insert>", "explanation": "<one-line explanation>"}. The "suggestion" field must contain ONLY code, no markdown fences. Use \\n for newlines inside the code string.',
         },
         {
           role: "user",
@@ -83,7 +87,10 @@ app.post("/api/ai/suggest", async (req, res) => {
 
     const raw = chatCompletion.choices[0].message.content.trim();
     // Strip markdown code fences if the model wrapped the JSON
-    const stripped = raw.replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "").trim();
+    const stripped = raw
+      .replace(/^```(?:json)?\n?/, "")
+      .replace(/\n?```$/, "")
+      .trim();
     let parsed;
     try {
       parsed = JSON.parse(stripped);
@@ -93,7 +100,10 @@ app.post("/api/ai/suggest", async (req, res) => {
     // Guard against double-encoded suggestion (JSON string inside JSON string)
     let suggestion = parsed.suggestion ?? stripped;
     if (typeof suggestion === "string" && suggestion.trim().startsWith("{")) {
-      try { const inner = JSON.parse(suggestion); suggestion = inner.suggestion ?? suggestion; } catch {}
+      try {
+        const inner = JSON.parse(suggestion);
+        suggestion = inner.suggestion ?? suggestion;
+      } catch {}
     }
 
     res.json({
@@ -123,11 +133,12 @@ async function askGroq(systemPrompt, userMessage, maxTokens = 1024) {
 // A1: Explain selected code
 app.post("/api/ai/explain", async (req, res) => {
   const { selection, language } = req.body;
-  if (!selection) return res.status(400).json({ error: "selection is required" });
+  if (!selection)
+    return res.status(400).json({ error: "selection is required" });
   try {
     const explanation = await askGroq(
       "You are an expert coding tutor. Explain the provided code snippet clearly and concisely in plain English. Focus on what it does, not how to rewrite it. Use bullet points if helpful. No markdown code fences.",
-      `Language: ${language || "code"}\n\nCode to explain:\n${selection}`
+      `Language: ${language || "code"}\n\nCode to explain:\n${selection}`,
     );
     res.json({ explanation });
   } catch (err) {
@@ -138,15 +149,19 @@ app.post("/api/ai/explain", async (req, res) => {
 // A2: Fix errors
 app.post("/api/ai/fix", async (req, res) => {
   const { code, error: errorText, language } = req.body;
-  if (!code || !errorText) return res.status(400).json({ error: "code and error are required" });
+  if (!code || !errorText)
+    return res.status(400).json({ error: "code and error are required" });
   try {
     const raw = await askGroq(
-      "You are an expert programmer. The user's code produced an error. Respond with ONLY a JSON object: {\"fixed\": \"<complete corrected code>\", \"explanation\": \"<one-line description of what was wrong>\"}. No markdown fences.",
-      `Language: ${language || "code"}\n\nCode:\n${code}\n\nError:\n${errorText}`
+      'You are an expert programmer. The user\'s code produced an error. Respond with ONLY a JSON object: {"fixed": "<complete corrected code>", "explanation": "<one-line description of what was wrong>"}. No markdown fences.',
+      `Language: ${language || "code"}\n\nCode:\n${code}\n\nError:\n${errorText}`,
     );
     let parsed;
-    try { parsed = JSON.parse(raw); }
-    catch { parsed = { fixed: raw, explanation: "Code fixed" }; }
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      parsed = { fixed: raw, explanation: "Code fixed" };
+    }
     res.json(parsed);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -162,7 +177,7 @@ app.post("/api/ai/tests", async (req, res) => {
     const raw = await askGroq(
       `You are an expert in ${testFramework}. Generate a complete test file for the provided code using ${testFramework}. Return ONLY the test code, no explanation, no markdown fences.`,
       `Language: ${language || "javascript"}\n\nCode to test:\n${code}`,
-      2048
+      2048,
     );
     res.json({ tests: raw });
   } catch (err) {
@@ -187,8 +202,8 @@ function getDockerLinuxPlatform() {
     return { os: parts[0] || "linux", architecture: parts[1] || "amd64" };
   }
   const architecture =
-    process.env.DOCKER_PLATFORM_ARCH?.trim()
-    || (process.arch === "arm64" ? "arm64" : "amd64");
+    process.env.DOCKER_PLATFORM_ARCH?.trim() ||
+    (process.arch === "arm64" ? "arm64" : "amd64");
   return { os: "linux", architecture };
 }
 
@@ -196,13 +211,52 @@ const DOCKER_LINUX_PLATFORM = getDockerLinuxPlatform();
 const DOCKER_PLATFORM_SPEC = `${DOCKER_LINUX_PLATFORM.os}/${DOCKER_LINUX_PLATFORM.architecture}`;
 
 const LANG_CONFIG = {
-  javascript: { ext: ".js",   image: "node:20-slim",       cmd: ["node", "/sandbox/code.js"], pkgMgr: "npm" },
-  typescript: { ext: ".ts",   image: "node:20-slim",       cmd: ["node", "/sandbox/code.ts"], pkgMgr: "npm" },
-  python:     { ext: ".py",   image: "python:3.11-slim",   cmd: ["python", "/sandbox/code.py"], pkgMgr: "pip" },
-  rust:       { ext: ".rs",   image: "rust:slim",           cmd: ["sh", "-c", "rustc /sandbox/code.rs -o /sandbox/code && /sandbox/code"], pkgMgr: null },
-  go:         { ext: ".go",   image: "golang:1.21-alpine",  cmd: ["sh", "-c", "go run /sandbox/code.go"], pkgMgr: null },
-  java:       { ext: ".java", image: "openjdk:21-slim",    cmd: ["sh", "-c", "cd /sandbox && javac code.java && java code"], pkgMgr: null },
-  c:          { ext: ".c",    image: "gcc:latest",          cmd: ["sh", "-c", "gcc /sandbox/code.c -o /sandbox/code && /sandbox/code"], pkgMgr: null },
+  javascript: {
+    ext: ".js",
+    image: "node:20-slim",
+    cmd: ["node", "/sandbox/code.js"],
+    pkgMgr: "npm",
+  },
+  typescript: {
+    ext: ".ts",
+    image: "node:20-slim",
+    cmd: ["node", "/sandbox/code.ts"],
+    pkgMgr: "npm",
+  },
+  python: {
+    ext: ".py",
+    image: "python:3.11-slim",
+    cmd: ["python", "/sandbox/code.py"],
+    pkgMgr: "pip",
+  },
+  rust: {
+    ext: ".rs",
+    image: "rust:slim",
+    cmd: [
+      "sh",
+      "-c",
+      "rustc /sandbox/code.rs -o /sandbox/code && /sandbox/code",
+    ],
+    pkgMgr: null,
+  },
+  go: {
+    ext: ".go",
+    image: "golang:1.21-alpine",
+    cmd: ["sh", "-c", "go run /sandbox/code.go"],
+    pkgMgr: null,
+  },
+  java: {
+    ext: ".java",
+    image: "openjdk:21-slim",
+    cmd: ["sh", "-c", "cd /sandbox && javac code.java && java code"],
+    pkgMgr: null,
+  },
+  c: {
+    ext: ".c",
+    image: "gcc:latest",
+    cmd: ["sh", "-c", "gcc /sandbox/code.c -o /sandbox/code && /sandbox/code"],
+    pkgMgr: null,
+  },
 };
 
 // X4: Pre-pull all Docker images on startup so first run is instant
@@ -215,13 +269,17 @@ async function prePullImages() {
     } catch {
       console.log(`[Docker] Pre-pulling ${cfg.image} for ${lang}...`);
       await new Promise((resolve) => {
-        docker.pull(cfg.image, { platform: DOCKER_PLATFORM_SPEC }, (err, stream) => {
-          if (err || !stream) return resolve();
-          docker.modem.followProgress(stream, () => {
-            console.log(`[Docker] ${cfg.image} ready`);
-            resolve();
-          });
-        });
+        docker.pull(
+          cfg.image,
+          { platform: DOCKER_PLATFORM_SPEC },
+          (err, stream) => {
+            if (err || !stream) return resolve();
+            docker.modem.followProgress(stream, () => {
+              console.log(`[Docker] ${cfg.image} ready`);
+              resolve();
+            });
+          },
+        );
       });
     }
   }
@@ -229,20 +287,32 @@ async function prePullImages() {
 prePullImages().catch(() => {});
 
 function buildCmdWithPackages(config, packages) {
-  if (!packages || packages.length === 0) return { cmd: config.cmd, network: "none" };
-  const safe = packages.map(p => p.replace(/[^a-zA-Z0-9@._/\-]/g, "")).filter(Boolean).slice(0, 10);
+  if (!packages || packages.length === 0)
+    return { cmd: config.cmd, network: "none" };
+  const safe = packages
+    .map((p) => p.replace(/[^a-zA-Z0-9@._/\-]/g, ""))
+    .filter(Boolean)
+    .slice(0, 10);
   if (safe.length === 0) return { cmd: config.cmd, network: "none" };
 
   const pkgList = safe.join(" ");
   let installCmd;
   if (config.pkgMgr === "npm") {
-    const runCmd = config.cmd.join(" ");
-    installCmd = `npm install --prefix /tmp/pkgs ${pkgList} --quiet 2>&1 && NODE_PATH=/tmp/pkgs/node_modules ${runCmd}`;
+    const usesJest = safe.some((p) => p === "jest" || /^jest@/.test(p));
+    const sandboxFile = `/sandbox/code${config.ext}`;
+    const runCmd = usesJest
+      ? `/tmp/pkgs/node_modules/.bin/jest ${sandboxFile} --runInBand --forceExit`
+      : `NODE_PATH=/tmp/pkgs/node_modules ${config.cmd.join(" ")}`;
+    installCmd = `npm install --prefix /tmp/pkgs ${pkgList} --quiet 2>&1 && ${runCmd}`;
   } else if (config.pkgMgr === "pip") {
     const runCmd = config.cmd.join(" ");
     installCmd = `pip install --quiet ${pkgList} 2>&1 && ${runCmd}`;
   } else {
-    return { cmd: config.cmd, network: "none", warning: "Package installs not supported for this language" };
+    return {
+      cmd: config.cmd,
+      network: "none",
+      warning: "Package installs not supported for this language",
+    };
   }
   return { cmd: ["sh", "-c", installCmd], network: "bridge" };
 }
@@ -254,9 +324,25 @@ const FALLBACK_CMD = {
 };
 
 const DANGEROUS_PATTERNS = {
-  javascript: [/\brequire\s*\(\s*['"]child_process['"]\s*\)/, /\beval\s*\(/, /\bexecSync\s*\(/, /\bspawnSync\s*\(/],
-  typescript: [/\brequire\s*\(\s*['"]child_process['"]\s*\)/, /\beval\s*\(/, /\bexecSync\s*\(/, /\bspawnSync\s*\(/],
-  python: [/\bos\.system\s*\(/, /\bsubprocess\./, /\beval\s*\(/, /\bexec\s*\(/, /\b__import__\s*\(/],
+  javascript: [
+    /\brequire\s*\(\s*['"]child_process['"]\s*\)/,
+    /\beval\s*\(/,
+    /\bexecSync\s*\(/,
+    /\bspawnSync\s*\(/,
+  ],
+  typescript: [
+    /\brequire\s*\(\s*['"]child_process['"]\s*\)/,
+    /\beval\s*\(/,
+    /\bexecSync\s*\(/,
+    /\bspawnSync\s*\(/,
+  ],
+  python: [
+    /\bos\.system\s*\(/,
+    /\bsubprocess\./,
+    /\beval\s*\(/,
+    /\bexec\s*\(/,
+    /\b__import__\s*\(/,
+  ],
   rust: [],
 };
 
@@ -278,16 +364,16 @@ async function ensureDockerImage(image) {
   } catch {
     // not present locally
   }
-  console.log(`[iTECify] Pulling Docker image ${image} (${DOCKER_PLATFORM_SPEC})...`);
+  console.log(
+    `[iTECify] Pulling Docker image ${image} (${DOCKER_PLATFORM_SPEC})...`,
+  );
   await new Promise((resolve, reject) => {
-    docker.pull(
-      image,
-      { platform: DOCKER_PLATFORM_SPEC },
-      (err, stream) => {
-        if (err) return reject(err);
-        docker.modem.followProgress(stream, (followErr) => (followErr ? reject(followErr) : resolve()));
-      },
-    );
+    docker.pull(image, { platform: DOCKER_PLATFORM_SPEC }, (err, stream) => {
+      if (err) return reject(err);
+      docker.modem.followProgress(stream, (followErr) =>
+        followErr ? reject(followErr) : resolve(),
+      );
+    });
   });
 }
 
@@ -302,7 +388,14 @@ function scanCode(code, language) {
   return warnings;
 }
 
-async function runInDocker(code, config, onData, stdin = "", packages = [], env = {}) {
+async function runInDocker(
+  code,
+  config,
+  onData,
+  stdin = "",
+  packages = [],
+  env = {},
+) {
   await ensureDockerImage(config.image);
 
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "itecify-"));
@@ -366,9 +459,11 @@ async function runInDocker(code, config, onData, stdin = "", packages = [], env 
       container.wait(),
       new Promise((_, reject) =>
         setTimeout(async () => {
-          try { await container.kill(); } catch {}
+          try {
+            await container.kill();
+          } catch {}
           reject(new Error("Execution timed out (30s limit)"));
-        }, 30000)
+        }, 30000),
       ),
     ]);
 
@@ -444,11 +539,19 @@ const runLimiter = rateLimit({
 });
 
 app.post("/api/run", runLimiter, async (req, res) => {
-  const { code, language, stdin = "", packages = [], env = {}, roomId } = req.body;
+  const {
+    code,
+    language,
+    stdin = "",
+    packages = [],
+    env = {},
+    roomId,
+  } = req.body;
   if (!code) return res.status(400).json({ error: "No code provided" });
 
   const config = LANG_CONFIG[language];
-  if (!config) return res.status(400).json({ error: `Unsupported language: ${language}` });
+  if (!config)
+    return res.status(400).json({ error: `Unsupported language: ${language}` });
 
   // SSE headers
   res.setHeader("Content-Type", "text/event-stream");
@@ -468,13 +571,19 @@ app.post("/api/run", runLimiter, async (req, res) => {
   try {
     const dockerAvailable = await isDockerAvailable();
     const mode = dockerAvailable ? "docker" : "direct";
-    send("info", `[${mode === "docker" ? "Docker sandbox" : "Direct execution"}]`);
+    send(
+      "info",
+      `[${mode === "docker" ? "Docker sandbox" : "Direct execution"}]`,
+    );
 
     if (dockerAvailable) {
       await runInDocker(code, config, send, stdin, packages, env);
     } else {
       if (!FALLBACK_CMD[language]) {
-        send("stderr", `${language} requires Docker — start Docker Desktop and restart the server`);
+        send(
+          "stderr",
+          `${language} requires Docker — start Docker Desktop and restart the server`,
+        );
         send("done", "");
         return res.end();
       }
@@ -507,7 +616,8 @@ const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || "http://localhost:5173";
 // OAuth callback must be registered in your GitHub OAuth app settings
 
 app.get("/auth/github", (req, res) => {
-  if (!GITHUB_CLIENT_ID) return res.status(503).send("GitHub OAuth not configured");
+  if (!GITHUB_CLIENT_ID)
+    return res.status(503).send("GitHub OAuth not configured");
   const params = new URLSearchParams({
     client_id: GITHUB_CLIENT_ID,
     scope: "read:user",
@@ -523,20 +633,30 @@ app.get("/auth/github/callback", async (req, res) => {
   if (!code) return res.redirect(`${CLIENT_ORIGIN}?auth=error${roomHash}`);
 
   try {
-    const tokenRes = await fetch("https://github.com/login/oauth/access_token", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Accept": "application/json" },
-      body: JSON.stringify({
-        client_id: GITHUB_CLIENT_ID,
-        client_secret: GITHUB_CLIENT_SECRET,
-        code,
-      }),
-    });
+    const tokenRes = await fetch(
+      "https://github.com/login/oauth/access_token",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify({
+          client_id: GITHUB_CLIENT_ID,
+          client_secret: GITHUB_CLIENT_SECRET,
+          code,
+        }),
+      },
+    );
     const tokenData = await tokenRes.json();
-    if (!tokenData.access_token) return res.redirect(`${CLIENT_ORIGIN}?auth=error`);
+    if (!tokenData.access_token)
+      return res.redirect(`${CLIENT_ORIGIN}?auth=error`);
 
     const userRes = await fetch("https://api.github.com/user", {
-      headers: { "Authorization": `Bearer ${tokenData.access_token}`, "User-Agent": "iTECify" },
+      headers: {
+        Authorization: `Bearer ${tokenData.access_token}`,
+        "User-Agent": "iTECify",
+      },
     });
     const user = await userRes.json();
 
@@ -549,7 +669,12 @@ app.get("/auth/github/callback", async (req, res) => {
     };
 
     // Persist user to DB (fire-and-forget)
-    db.upsertUser({ id: user.id, login: user.login, name: user.name || user.login, avatar: user.avatar_url }).catch(() => {});
+    db.upsertUser({
+      id: user.id,
+      login: user.login,
+      name: user.name || user.login,
+      avatar: user.avatar_url,
+    }).catch(() => {});
 
     res.redirect(`${CLIENT_ORIGIN}?auth=ok${roomHash}`);
   } catch (err) {
@@ -580,7 +705,8 @@ const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
 
 app.get("/auth/google", (req, res) => {
-  if (!GOOGLE_CLIENT_ID) return res.status(503).send("Google OAuth not configured");
+  if (!GOOGLE_CLIENT_ID)
+    return res.status(503).send("Google OAuth not configured");
   const params = new URLSearchParams({
     client_id: GOOGLE_CLIENT_ID,
     redirect_uri: `${CLIENT_ORIGIN}/auth/google/callback`,
@@ -611,15 +737,21 @@ app.get("/auth/google/callback", async (req, res) => {
       }),
     });
     const tokenData = await tokenRes.json();
-    if (!tokenData.access_token) return res.redirect(`${CLIENT_ORIGIN}?auth=error`);
+    if (!tokenData.access_token)
+      return res.redirect(`${CLIENT_ORIGIN}?auth=error`);
 
-    const userRes = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
-      headers: { Authorization: `Bearer ${tokenData.access_token}` },
-    });
+    const userRes = await fetch(
+      "https://www.googleapis.com/oauth2/v2/userinfo",
+      {
+        headers: { Authorization: `Bearer ${tokenData.access_token}` },
+      },
+    );
     const user = await userRes.json();
 
     // Use a stable numeric ID from Google's sub claim (hashed to fit BIGINT)
-    const stableId = BigInt("0x" + Buffer.from(user.id).toString("hex").slice(0, 15));
+    const stableId = BigInt(
+      "0x" + Buffer.from(user.id).toString("hex").slice(0, 15),
+    );
 
     req.session.user = {
       id: Number(stableId),
@@ -651,14 +783,15 @@ app.get("/api/room/:roomId/has-password", async (req, res) => {
   const { roomId } = req.params;
   if (!db.isEnabled()) return res.json({ hasPassword: false });
   const { data } = await db.getRoomMeta(roomId);
-  res.json({ hasPassword: !!(data?.password_hash) });
+  res.json({ hasPassword: !!data?.password_hash });
 });
 
 // Verify room password
 app.post("/api/room/:roomId/verify-password", async (req, res) => {
   const { roomId } = req.params;
   const { password } = req.body;
-  if (!password) return res.status(400).json({ ok: false, error: "password required" });
+  if (!password)
+    return res.status(400).json({ ok: false, error: "password required" });
 
   const { data } = await db.getRoomMeta(roomId);
   if (!data?.password_hash) return res.json({ ok: true }); // no password set
@@ -676,7 +809,10 @@ app.post("/api/room/:roomId/verify-password", async (req, res) => {
 app.post("/api/room/:roomId/set-password", async (req, res) => {
   const { roomId } = req.params;
   const { password } = req.body;
-  if (!req.session.user) return res.status(401).json({ error: "Login required to set room password" });
+  if (!req.session.user)
+    return res
+      .status(401)
+      .json({ error: "Login required to set room password" });
 
   const hash = password ? await bcrypt.hash(password, 10) : null;
   const ok = await db.setRoomPassword(roomId, hash);
@@ -696,13 +832,15 @@ app.post("/api/room/:roomId/save", async (req, res) => {
     // Save each file directly via Supabase
     if (!db.isEnabled()) return res.json({ ok: true, skipped: true });
 
-    const entries = Object.entries(files).map(([filename, { content, language }]) => ({
-      room_id: roomId,
-      filename,
-      language: language || "javascript",
-      content: content || "",
-      updated_at: new Date().toISOString(),
-    }));
+    const entries = Object.entries(files).map(
+      ([filename, { content, language }]) => ({
+        room_id: roomId,
+        filename,
+        language: language || "javascript",
+        content: content || "",
+        updated_at: new Date().toISOString(),
+      }),
+    );
 
     if (entries.length === 0) return res.json({ ok: true });
 
@@ -718,14 +856,15 @@ app.post("/api/room/:roomId/save", async (req, res) => {
 // --- GitHub Gist ---
 app.post("/api/gist", async (req, res) => {
   const { filename, content, description } = req.body;
-  if (!filename || !content) return res.status(400).json({ error: "filename and content required" });
+  if (!filename || !content)
+    return res.status(400).json({ error: "filename and content required" });
 
   const token = req.session?.user?.token || process.env.GITHUB_TOKEN;
   const headers = {
     "Content-Type": "application/json",
-    "Accept": "application/vnd.github+json",
+    Accept: "application/vnd.github+json",
     "User-Agent": "iTECify",
-    ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
   };
 
   try {
@@ -739,7 +878,10 @@ app.post("/api/gist", async (req, res) => {
       }),
     });
     const data = await response.json();
-    if (!response.ok) return res.status(response.status).json({ error: data.message || "GitHub API error" });
+    if (!response.ok)
+      return res
+        .status(response.status)
+        .json({ error: data.message || "GitHub API error" });
     res.json({ url: data.html_url, id: data.id });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -783,7 +925,9 @@ try {
 
 /** List key for time-travel snapshots; null if room id is missing or invalid. */
 function snapshotListKey(roomId) {
-  const safe = String(roomId ?? "").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 128);
+  const safe = String(roomId ?? "")
+    .replace(/[^a-zA-Z0-9_-]/g, "")
+    .slice(0, 128);
   if (!safe) return null;
   return `itecify:snapshots:${safe}`;
 }
@@ -806,15 +950,20 @@ app.get("/api/snapshots", async (req, res) => {
 
 app.get("/api/snapshots/:timestamp", async (req, res) => {
   const key = snapshotListKey(req.query.room);
-  if (!key) return res.status(400).json({ error: "room query parameter required" });
-  if (!isRedisUsable()) return res.status(503).json({ error: "Redis not available" });
+  if (!key)
+    return res.status(400).json({ error: "room query parameter required" });
+  if (!isRedisUsable())
+    return res.status(503).json({ error: "Redis not available" });
   try {
     const raw = await redisClient.lrange(key, 0, -1);
     const target = parseInt(req.params.timestamp, 10);
     for (const entry of raw) {
       const parsed = JSON.parse(entry);
       if (parsed.timestamp === target) {
-        return res.json({ snapshot: parsed.snapshot, timestamp: parsed.timestamp });
+        return res.json({
+          snapshot: parsed.snapshot,
+          timestamp: parsed.timestamp,
+        });
       }
     }
     res.status(404).json({ error: "Snapshot not found" });
@@ -875,7 +1024,9 @@ const TERM_WS_PORT = Number(process.env.TERM_WS_PORT) || 1235;
 const termWss = new WebSocketServer({ port: TERM_WS_PORT });
 termWss.on("error", (err) => {
   if (err.code === "EADDRINUSE") {
-    console.error(`[iTECify] Port ${TERM_WS_PORT} already in use (terminal WS). Stop the other \`npm run dev\` or change TERM_WS_PORT / VITE_TERM_WS_PORT in .env.`);
+    console.error(
+      `[iTECify] Port ${TERM_WS_PORT} already in use (terminal WS). Stop the other \`npm run dev\` or change TERM_WS_PORT / VITE_TERM_WS_PORT in .env.`,
+    );
   } else {
     console.error("[iTECify] Terminal WebSocket error:", err.message);
   }
@@ -887,7 +1038,12 @@ termWss.on("connection", (ws) => {
   const terminal = getOrCreatePty();
 
   if (!terminal) {
-    ws.send(JSON.stringify({ type: "term:output", data: "[Terminal unavailable — node-pty spawn failed]\r\n" }));
+    ws.send(
+      JSON.stringify({
+        type: "term:output",
+        data: "[Terminal unavailable — node-pty spawn failed]\r\n",
+      }),
+    );
     ws.on("close", () => termClients.delete(ws));
     return;
   }
@@ -897,7 +1053,12 @@ termWss.on("connection", (ws) => {
       const msg = JSON.parse(raw);
       if (msg.type === "term:input" && sharedPty) {
         sharedPty.write(msg.data);
-      } else if (msg.type === "term:resize" && msg.cols && msg.rows && sharedPty) {
+      } else if (
+        msg.type === "term:resize" &&
+        msg.cols &&
+        msg.rows &&
+        sharedPty
+      ) {
         sharedPty.resize(msg.cols, msg.rows);
       }
     } catch {}
@@ -908,7 +1069,9 @@ termWss.on("connection", (ws) => {
   });
 });
 
-console.log(`[iTECify] Shared terminal WebSocket on ws://localhost:${TERM_WS_PORT}`);
+console.log(
+  `[iTECify] Shared terminal WebSocket on ws://localhost:${TERM_WS_PORT}`,
+);
 
 const apiServer = http.createServer(app);
 apiServer.listen(PORT, () => {
@@ -930,11 +1093,16 @@ const saveTimers = new Map();
 
 function scheduleRoomSave(docName, doc) {
   clearTimeout(saveTimers.get(docName));
-  saveTimers.set(docName, setTimeout(async () => {
-    const roomId = docName.startsWith("itecify-") ? docName.slice("itecify-".length) : docName;
-    await db.saveRoom(roomId, doc).catch(() => {});
-    saveTimers.delete(docName);
-  }, 3000));
+  saveTimers.set(
+    docName,
+    setTimeout(async () => {
+      const roomId = docName.startsWith("itecify-")
+        ? docName.slice("itecify-".length)
+        : docName;
+      await db.saveRoom(roomId, doc).catch(() => {});
+      saveTimers.delete(docName);
+    }, 3000),
+  );
 }
 
 function getYDoc(docName) {
@@ -945,7 +1113,9 @@ function getYDoc(docName) {
   doc.awareness = { states: new Map(), meta: new Map() };
   docs.set(docName, doc);
 
-  const roomId = docName.startsWith("itecify-") ? docName.slice("itecify-".length) : docName;
+  const roomId = docName.startsWith("itecify-")
+    ? docName.slice("itecify-".length)
+    : docName;
 
   // Broadcast any update the server applies to the doc (e.g. from DB load)
   doc.on("update", (update, origin) => {
@@ -979,21 +1149,27 @@ function getYDoc(docName) {
   });
 
   // Load room from DB (non-blocking — updates broadcast via doc "update" listener above)
-  db.loadRoom(roomId, doc).then((result) => {
-    if (result?.fileCount) {
-      console.log(`[DB] Room ${roomId} loaded — ${result.fileCount} file(s), ${result.messageCount} message(s)`);
-      chatPersistedCount = result.messageCount ?? 0;
-    }
-  }).catch((err) => {
-    console.error(`[DB] loadRoom failed for ${roomId}:`, err.message);
-  });
+  db.loadRoom(roomId, doc)
+    .then((result) => {
+      if (result?.fileCount) {
+        console.log(
+          `[DB] Room ${roomId} loaded — ${result.fileCount} file(s), ${result.messageCount} message(s)`,
+        );
+        chatPersistedCount = result.messageCount ?? 0;
+      }
+    })
+    .catch((err) => {
+      console.error(`[DB] loadRoom failed for ${roomId}:`, err.message);
+    });
 
   const snapshotKey = snapshotListKey(roomId);
   // Time-travel: snapshot every 10 seconds while doc has connections
   doc._snapshotInterval = setInterval(async () => {
     if (!snapshotKey || !isRedisUsable() || doc.conns.size === 0) return;
     try {
-      const snapshot = Buffer.from(Y.encodeStateAsUpdate(doc)).toString("base64");
+      const snapshot = Buffer.from(Y.encodeStateAsUpdate(doc)).toString(
+        "base64",
+      );
       const entry = JSON.stringify({
         timestamp: Date.now(),
         label: new Date().toLocaleTimeString(),
@@ -1032,7 +1208,10 @@ function encodeAwarenessUpdate(states, changedClients) {
   // Wrap in the message envelope: [MSG_AWARENESS][varUint8Array(payload)]
   const outerEncoder = encoding.createEncoder();
   encoding.writeVarUint(outerEncoder, MSG_AWARENESS);
-  encoding.writeVarUint8Array(outerEncoder, encoding.toUint8Array(innerEncoder));
+  encoding.writeVarUint8Array(
+    outerEncoder,
+    encoding.toUint8Array(innerEncoder),
+  );
   return encoding.toUint8Array(outerEncoder);
 }
 
@@ -1075,7 +1254,9 @@ function setupConnection(ws, req) {
   doc.conns.set(ws, new Set());
 
   // Record room membership for logged-in users (session is available via cookies on the upgrade request)
-  const roomIdFromDoc = docName.startsWith("itecify-") ? docName.slice("itecify-".length) : docName;
+  const roomIdFromDoc = docName.startsWith("itecify-")
+    ? docName.slice("itecify-".length)
+    : docName;
   const userId = req.session?.user?.id ?? null;
   if (userId) {
     db.touchRoomMember(roomIdFromDoc, userId).catch(() => {});
@@ -1145,11 +1326,15 @@ function setupConnection(ws, req) {
       // Cancel any pending debounced save and flush immediately
       clearTimeout(saveTimers.get(docName));
       saveTimers.delete(docName);
-      const roomIdOnClose = docName.startsWith("itecify-") ? docName.slice("itecify-".length) : docName;
-      db.saveRoom(roomIdOnClose, doc).catch(() => {}).finally(() => {
-        doc.destroy();
-        docs.delete(doc.name);
-      });
+      const roomIdOnClose = docName.startsWith("itecify-")
+        ? docName.slice("itecify-".length)
+        : docName;
+      db.saveRoom(roomIdOnClose, doc)
+        .catch(() => {})
+        .finally(() => {
+          doc.destroy();
+          docs.delete(doc.name);
+        });
     }
   });
 
@@ -1164,7 +1349,9 @@ function setupConnection(ws, req) {
 const wss = new WebSocketServer({ port: WS_PORT });
 wss.on("error", (err) => {
   if (err.code === "EADDRINUSE") {
-    console.error(`[iTECify] Port ${WS_PORT} already in use (Yjs WS). Stop the other \`npm run dev\` or change WS_PORT / VITE_WS_PORT in .env.`);
+    console.error(
+      `[iTECify] Port ${WS_PORT} already in use (Yjs WS). Stop the other \`npm run dev\` or change WS_PORT / VITE_WS_PORT in .env.`,
+    );
   } else {
     console.error("[iTECify] Yjs WebSocket error:", err.message);
   }
