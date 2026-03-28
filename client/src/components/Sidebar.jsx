@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
+import * as monaco from "monaco-editor";
 import { yAiBlocks, getYText, yFiles, wsProvider } from "../lib/yjs";
 import { SERVER_URL } from "../lib/config";
 import Chat from "./Chat";
@@ -60,12 +61,81 @@ function parseSegments(text) {
   return parts;
 }
 
+function buildOutline(code, language) {
+  if (!code?.trim()) return [];
+
+  const patternsByLanguage = {
+    javascript: [
+      /^\s*(?:export\s+)?(?:async\s+)?function\s+([A-Za-z0-9_$]+)/,
+      /^\s*(?:export\s+)?const\s+([A-Za-z0-9_$]+)\s*=\s*(?:async\s*)?\(/,
+      /^\s*(?:export\s+)?class\s+([A-Za-z0-9_$]+)/,
+    ],
+    typescript: [
+      /^\s*(?:export\s+)?(?:async\s+)?function\s+([A-Za-z0-9_$]+)/,
+      /^\s*(?:export\s+)?const\s+([A-Za-z0-9_$]+)\s*=\s*(?:async\s*)?\(/,
+      /^\s*(?:export\s+)?class\s+([A-Za-z0-9_$]+)/,
+      /^\s*(?:export\s+)?interface\s+([A-Za-z0-9_$]+)/,
+      /^\s*(?:export\s+)?type\s+([A-Za-z0-9_$]+)/,
+    ],
+    python: [
+      /^\s*def\s+([A-Za-z0-9_]+)/,
+      /^\s*class\s+([A-Za-z0-9_]+)/,
+    ],
+    go: [
+      /^\s*func\s+([A-Za-z0-9_]+)/,
+      /^\s*type\s+([A-Za-z0-9_]+)/,
+    ],
+    java: [
+      /^\s*(?:public|private|protected)?\s*(?:static\s+)?(?:class|interface|enum)\s+([A-Za-z0-9_]+)/,
+      /^\s*(?:public|private|protected)?\s*(?:static\s+)?[\w<>\[\]]+\s+([A-Za-z0-9_]+)\s*\(/,
+    ],
+    c: [
+      /^\s*[A-Za-z_][\w\s\*]*\s+([A-Za-z_]\w*)\s*\([^;]*\)\s*\{/,
+      /^\s*struct\s+([A-Za-z_]\w*)/,
+    ],
+    rust: [
+      /^\s*fn\s+([A-Za-z0-9_]+)/,
+      /^\s*struct\s+([A-Za-z0-9_]+)/,
+      /^\s*enum\s+([A-Za-z0-9_]+)/,
+      /^\s*impl\s+([A-Za-z0-9_]+)/,
+    ],
+    html: [
+      /^\s*<([a-zA-Z][\w-]*)\b/,
+    ],
+    css: [
+      /^\s*([.#]?[A-Za-z0-9_-][^{]*)\s*\{/,
+    ],
+  };
+
+  const patterns = patternsByLanguage[language] || patternsByLanguage.javascript;
+
+  return code
+    .split("\n")
+    .map((lineText, index) => {
+      for (const pattern of patterns) {
+        const match = lineText.match(pattern);
+        if (match?.[1]) {
+          return {
+            id: `${index + 1}-${match[1]}`,
+            name: match[1].trim(),
+            line: index + 1,
+            preview: lineText.trim(),
+          };
+        }
+      }
+      return null;
+    })
+    .filter(Boolean)
+    .slice(0, 80);
+}
+
 const ROLE_META = {
   user: { label: "You", accent: "var(--blue)", bubble: true },
   ai: { label: "AI", accent: "var(--accent)", bubble: false, aiIcon: true },
   explain: { label: "Explain", accent: "var(--accent)", bubble: false },
   fix: { label: "Fixed", accent: "var(--green)", bubble: false },
   tests: { label: "Tests", accent: "var(--yellow)", bubble: false },
+  review: { label: "Review", accent: "var(--blue)", bubble: false },
   error: { label: "Error", accent: "var(--red)", bubble: false },
 };
 
@@ -419,6 +489,7 @@ const QUICK_ACTIONS = [
   },
   { key: "fix", icon: "⚡", label: "Fix", title: "Fix errors from last run" },
   { key: "tests", icon: "⬡", label: "Tests", title: "Generate test file" },
+  { key: "review", icon: "◌", label: "Review", title: "Review current file" },
 ];
 
 export default function Sidebar({ editorRef, activeFile, language, output }) {
@@ -430,6 +501,10 @@ export default function Sidebar({ editorRef, activeFile, language, output }) {
   const [users, setUsers] = useState([]);
   const scrollRef = useRef(null);
   const textareaRef = useRef(null);
+  const outline = buildOutline(
+    activeFile ? getYText(activeFile).toString() : "",
+    language,
+  );
 
   // Auto-scroll on new messages
   useEffect(() => {
@@ -582,6 +657,62 @@ export default function Sidebar({ editorRef, activeFile, language, output }) {
             role: "tests",
             content: `Test file created: **${testFile}**`,
           });
+        } else if (action === "review") {
+          if (!activeFile) throw new Error("No active file.");
+          const code = getYText(activeFile).toString();
+          if (!code.trim()) throw new Error("Current file is empty.");
+
+          const res = await fetch(`${SERVER_URL}/api/ai/review`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ code, language }),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || "Review failed.");
+
+          const editor = editorRef?.current?.getEditor?.();
+          const model = editor?.getModel?.();
+          const issues = Array.isArray(data.issues) ? data.issues : [];
+
+          if (model) {
+            monaco.editor.setModelMarkers(
+              model,
+              "ai-review",
+              issues.map((issue, index) => {
+                const line = Math.max(
+                  1,
+                  Math.min(issue.line || 1, model.getLineCount()),
+                );
+
+                return {
+                  startLineNumber: line,
+                  startColumn: 1,
+                  endLineNumber: line,
+                  endColumn: model.getLineMaxColumn(line),
+                  severity:
+                    issue.severity === "error"
+                      ? monaco.MarkerSeverity.Error
+                      : issue.severity === "warning"
+                        ? monaco.MarkerSeverity.Warning
+                        : monaco.MarkerSeverity.Info,
+                  message: issue.message || `Review issue ${index + 1}`,
+                  source: "AI Review",
+                };
+              }),
+            );
+          }
+
+          const summary = issues.length
+            ? issues
+                .map((issue) => {
+                  const sev = (issue.severity || "info").toUpperCase();
+                  const line = issue.line ? `L${issue.line}` : "L?";
+                  return `[${sev}] ${line} ${issue.message}`;
+                })
+                .join("\n")
+            : "No obvious issues found in the current file.";
+
+          addMsg({ role: "review", content: summary });
         }
       } catch (err) {
         addMsg({ role: "error", content: err.message });
@@ -595,6 +726,7 @@ export default function Sidebar({ editorRef, activeFile, language, output }) {
   const TABS = [
     { id: "ai", label: "AI" },
     { id: "chat", label: "Chat" },
+    { id: "outline", label: "Outline" },
     { id: "presence", label: "Who's Here" },
   ];
 
@@ -903,6 +1035,91 @@ export default function Sidebar({ editorRef, activeFile, language, output }) {
 
       {/* ── Chat tab ── */}
       {tab === "chat" && <Chat />}
+
+      {/* ── Outline tab ── */}
+      {tab === "outline" && (
+        <div className="flex min-h-0 flex-1 flex-col">
+          <div
+            className="flex min-h-[3rem] shrink-0 flex-wrap items-center gap-2 border-b px-3 py-2.5 sm:gap-2.5"
+            style={{ borderColor: "var(--border)" }}
+          >
+            <span
+              className="text-[11px] font-bold uppercase tracking-wider sm:text-xs"
+              style={{ color: "var(--accent)" }}
+            >
+              Outline
+            </span>
+            <span
+              className="shrink-0 rounded-none border px-2 py-1 font-mono text-[10px] sm:text-[11px]"
+              style={{
+                background: "var(--bg-tertiary)",
+                borderColor: "var(--border)",
+                color: "var(--text-secondary)",
+              }}
+            >
+              {activeFile || "No file"}
+            </span>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-3">
+            {outline.length === 0 ? (
+              <p
+                className="text-[11px] leading-relaxed"
+                style={{ color: "var(--text-secondary)" }}
+              >
+                No outline symbols detected for this file yet.
+              </p>
+            ) : (
+              <div className="space-y-1.5">
+                {outline.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => {
+                      const editor = editorRef?.current?.getEditor?.();
+                      const model = editor?.getModel?.();
+                      if (!editor || !model) return;
+                      const line = Math.max(
+                        1,
+                        Math.min(item.line, model.getLineCount()),
+                      );
+                      editor.revealLineInCenter(line);
+                      editor.setPosition({ lineNumber: line, column: 1 });
+                      editor.focus();
+                    }}
+                    className="w-full rounded-none border px-2.5 py-2 text-left transition-all hover:brightness-110"
+                    style={{
+                      background: "var(--bg-tertiary)",
+                      borderColor: "var(--border)",
+                    }}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span
+                        className="truncate text-[11px] font-semibold"
+                        style={{ color: "var(--text-primary)" }}
+                      >
+                        {item.name}
+                      </span>
+                      <span
+                        className="shrink-0 text-[9px] uppercase tracking-wide"
+                        style={{ color: "var(--accent)" }}
+                      >
+                        L{item.line}
+                      </span>
+                    </div>
+                    <p
+                      className="truncate pt-0.5 text-[10px]"
+                      style={{ color: "var(--text-secondary)" }}
+                    >
+                      {item.preview}
+                    </p>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ── Who's Here tab ── */}
       {tab === "presence" && (

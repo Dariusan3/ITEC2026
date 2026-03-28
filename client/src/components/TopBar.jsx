@@ -236,18 +236,25 @@ export default function TopBar({
   onLanguageChange,
   onRun,
   running,
+  onFollowUser,
+  diffTargetFile,
+  onOpenDiff,
+  onCloseDiff,
   viewOnly = false,
 }) {
   const [users, setUsers] = useState([]);
+  const [files, setFiles] = useState([]);
   const [copied, setCopied] = useState(false);
   const [gistState, setGistState] = useState("idle");
   const [showSettings, setShowSettings] = useState(false);
+  const [showDiffMenu, setShowDiffMenu] = useState(false);
   const [showLogin, setShowLogin] = useState(false);
   const [showPasswordPanel, setShowPasswordPanel] = useState(false);
   const [passwordInput, setPasswordInput] = useState("");
   const [passwordMsg, setPasswordMsg] = useState("");
   const [showMyRooms, setShowMyRooms] = useState(false);
   const [myRooms, setMyRooms] = useState([]);
+  const diffMenuRef = useRef(null);
   const { user, loginGitHub, loginGoogle, logout } = useAuth();
 
   useEffect(() => {
@@ -261,6 +268,31 @@ export default function TopBar({
   }, [user]);
 
   useEffect(() => {
+    const updateFiles = () => {
+      const next = [];
+      yFiles.forEach((meta, name) => {
+        next.push({ name, language: meta?.language || "javascript" });
+      });
+      next.sort((a, b) => a.name.localeCompare(b.name));
+      setFiles(next);
+    };
+    yFiles.observe(updateFiles);
+    updateFiles();
+    return () => yFiles.unobserve(updateFiles);
+  }, []);
+
+  useEffect(() => {
+    if (!showDiffMenu) return;
+    const onDoc = (event) => {
+      if (!diffMenuRef.current?.contains(event.target)) {
+        setShowDiffMenu(false);
+      }
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [showDiffMenu]);
+
+  useEffect(() => {
     const awareness = wsProvider.awareness;
     const update = () => {
       const seen = new Set();
@@ -268,7 +300,7 @@ export default function TopBar({
       awareness.getStates().forEach((state, clientId) => {
         if (state.user && !seen.has(state.user.name)) {
           seen.add(state.user.name);
-          states.push({ ...state.user, clientId });
+          states.push({ ...state.user, cursor: state.cursor, clientId });
         }
       });
       setUsers(states);
@@ -434,6 +466,69 @@ export default function TopBar({
             <ForkIcon className="h-3.5 w-3.5" />
             <span>Fork</span>
           </Btn>
+
+          <div className="relative" ref={diffMenuRef}>
+            <Btn
+              onClick={() => setShowDiffMenu((s) => !s)}
+              title="Compare current file with another file"
+              style={{
+                background: diffTargetFile ? "var(--bg-primary)" : "var(--bg-tertiary)",
+                color: diffTargetFile ? "var(--accent)" : "var(--text-secondary)",
+                borderColor: diffTargetFile ? "var(--accent)" : "var(--border)",
+              }}
+            >
+              {diffTargetFile ? "Diff On" : "Diff"}
+            </Btn>
+            {showDiffMenu && (
+              <div
+                className="absolute right-0 top-[calc(100%+4px)] z-50 max-h-72 min-w-[14rem] overflow-auto rounded-none border py-1"
+                style={{
+                  background: "var(--bg-secondary)",
+                  borderColor: "var(--border)",
+                  boxShadow: "0 12px 40px rgba(0,0,0,0.4)",
+                }}
+              >
+                {diffTargetFile && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onCloseDiff?.();
+                      setShowDiffMenu(false);
+                    }}
+                    className="w-full px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide"
+                    style={{ color: "var(--red)" }}
+                  >
+                    Close diff view
+                  </button>
+                )}
+                {files
+                  .filter((file) => file.name !== filename)
+                  .map((file) => (
+                    <button
+                      key={file.name}
+                      type="button"
+                      onClick={() => {
+                        onOpenDiff?.(file.name);
+                        setShowDiffMenu(false);
+                      }}
+                      className="w-full px-3 py-2 text-left text-[11px] transition-colors hover:opacity-90"
+                      style={{
+                        background:
+                          diffTargetFile === file.name
+                            ? "var(--bg-tertiary)"
+                            : "transparent",
+                        color:
+                          diffTargetFile === file.name
+                            ? "var(--accent)"
+                            : "var(--text-primary)",
+                      }}
+                    >
+                      {file.name}
+                    </button>
+                  ))}
+              </div>
+            )}
+          </div>
 
           <Btn onClick={handleZip} title="Download all files as ZIP">
             <ArchiveIcon className="h-3.5 w-3.5" />
@@ -717,18 +812,24 @@ export default function TopBar({
 
         <div className="flex min-w-0 items-center -space-x-2">
           {users.map((u) => (
-            <div
+            <button
+              type="button"
               key={u.clientId}
+              onClick={() => onFollowUser?.(u)}
               className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 text-xs font-bold transition-transform hover:scale-110 sm:h-9 sm:w-9 sm:text-sm"
               style={{
                 background: u.color,
                 borderColor: "var(--bg-secondary)",
                 color: "var(--bg-primary)",
               }}
-              title={u.name}
+              title={
+                u.cursor?.file
+                  ? `Follow ${u.name} at ${u.cursor.file}:${u.cursor.line || 1}`
+                  : u.name
+              }
             >
               {u.name?.[0]}
-            </div>
+            </button>
           ))}
         </div>
       </div>

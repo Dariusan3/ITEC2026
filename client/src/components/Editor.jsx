@@ -150,6 +150,18 @@ const Editor = forwardRef(function Editor(
   const widgetsRef = useRef(new Map());
   const keymapRef = useRef(null);
 
+  const publishCursor = useCallback(() => {
+    const editor = editorRef.current;
+    if (!editor || !activeFile) return;
+    const pos = editor.getPosition();
+    if (!pos) return;
+    wsProvider.awareness.setLocalStateField("cursor", {
+      file: activeFile,
+      line: pos.lineNumber,
+      column: pos.column,
+    });
+  }, [activeFile]);
+
   useImperativeHandle(ref, () => ({
     getPosition: () => editorRef.current?.getPosition(),
     getEditor: () => editorRef.current,
@@ -337,12 +349,13 @@ const Editor = forwardRef(function Editor(
       wsProvider.awareness,
     );
     bindingRef.current = binding;
+    publishCursor();
 
     return () => {
       binding.destroy();
       bindingRef.current = null;
     };
-  }, [activeFile]);
+  }, [activeFile, language, publishCursor]);
 
   // Update language when it changes without switching files
   useEffect(() => {
@@ -370,6 +383,22 @@ const Editor = forwardRef(function Editor(
   useEffect(() => {
     editorRef.current?.updateOptions({ readOnly });
   }, [readOnly]);
+
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor) return;
+
+    const subscriptions = [
+      editor.onDidChangeCursorPosition(() => publishCursor()),
+      editor.onDidFocusEditorText(() => publishCursor()),
+    ];
+
+    publishCursor();
+
+    return () => {
+      subscriptions.forEach((sub) => sub.dispose());
+    };
+  }, [publishCursor]);
 
   /** Culori Figma-like pentru selecții remote (y-monaco folosește clase yRemoteSelection-{id}). */
   useEffect(() => {

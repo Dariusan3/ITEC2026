@@ -6,6 +6,7 @@ import {
   FolderIcon,
   PlusIcon,
 } from "./ui/Icons";
+import { PROJECT_TEMPLATES } from "../lib/projectTemplates";
 
 const LANG_ICONS = {
   javascript: { icon: "JS", color: "#d7f58d" },
@@ -42,6 +43,45 @@ const contextActionClass =
 function guessLang(filename) {
   const ext = filename.split(".").pop();
   return EXT_TO_LANG[ext] || "javascript";
+}
+
+function searchFiles(files, query) {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return [];
+
+  const results = [];
+
+  files.forEach((file) => {
+    const nameMatch = file.name.toLowerCase().includes(needle);
+    if (nameMatch) {
+      results.push({
+        id: `${file.name}:name`,
+        file: file.name,
+        language: file.language,
+        line: 1,
+        column: 1,
+        kind: "file",
+        preview: file.name,
+      });
+    }
+
+    const lines = getYText(file.name).toString().split("\n");
+    lines.forEach((lineText, index) => {
+      const matchIndex = lineText.toLowerCase().indexOf(needle);
+      if (matchIndex === -1) return;
+      results.push({
+        id: `${file.name}:${index + 1}:${matchIndex + 1}`,
+        file: file.name,
+        language: file.language,
+        line: index + 1,
+        column: matchIndex + 1,
+        kind: "content",
+        preview: lineText.trim() || "(empty line)",
+      });
+    });
+  });
+
+  return results.slice(0, 60);
 }
 
 /** Build a nested tree from flat paths like ["src/index.js", "main.js"] */
@@ -269,19 +309,42 @@ function TreeNode({
 const explorerBtnClass =
   "liquid-surface inline-flex h-full items-center justify-center rounded-2xl border px-2.5 py-1.5 font-mono text-[10px] font-bold leading-none shadow-[0_10px_20px_rgba(0,0,0,0.14)] transition-all duration-150 hover:-translate-y-px hover:brightness-110 active:scale-[0.93] sm:px-3 sm:py-1.5 sm:text-[11px]";
 
+function TemplateIcon() {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.9"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M12 3v3M12 18v3M4.5 12h3M16.5 12h3" />
+      <path d="M7.8 7.8l2 2M14.2 14.2l2 2M7.8 16.2l2-2M14.2 9.8l2-2" />
+      <circle cx="12" cy="12" r="2.75" />
+    </svg>
+  );
+}
+
 export default function FileTree({ activeFile, onFileSelect }) {
   const [files, setFiles] = useState([]);
+  const [searchQuery, setSearchQuery] = useState("");
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
   const [creatingIn, setCreatingIn] = useState(null);
   const [renamingFile, setRenamingFile] = useState(null);
   const [renameTo, setRenameTo] = useState("");
   const [contextMenu, setContextMenu] = useState(null);
+  const [showTemplates, setShowTemplates] = useState(false);
   const [openFolders, setOpenFolders] = useState(new Set());
   /** null | "" (root) | folder path — highlight drop target while dragging */
   const [dropHighlight, setDropHighlight] = useState(null);
   const newInputRef = useRef(null);
   const renameInputRef = useRef(null);
+  const templateMenuRef = useRef(null);
 
   useEffect(() => {
     const update = () => {
@@ -482,6 +545,43 @@ export default function FileTree({ activeFile, onFileSelect }) {
     return () => window.removeEventListener("click", handler);
   }, []);
 
+  useEffect(() => {
+    if (!showTemplates) return;
+    const onDoc = (event) => {
+      if (!templateMenuRef.current?.contains(event.target)) {
+        setShowTemplates(false);
+      }
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [showTemplates]);
+
+  const applyTemplate = (template) => {
+    if (!template) return;
+    const hasExistingFiles = [...yFiles.keys()].some((name) => !name.endsWith(".gitkeep"));
+    if (hasExistingFiles && !confirm(`Replace current room files with "${template.label}" template?`)) {
+      return;
+    }
+
+    [...yFiles.keys()].forEach((name) => yFiles.delete(name));
+
+    Object.entries(template.files).forEach(([filename, file]) => {
+      yFiles.set(filename, { language: file.language });
+      const yText = getYText(filename);
+      if (yText.length > 0) yText.delete(0, yText.length);
+      if (file.content) yText.insert(0, file.content);
+    });
+
+    setOpenFolders(new Set(["src", "server"]));
+    setShowTemplates(false);
+    setSearchQuery("");
+
+    if (template.entryFile) {
+      const lang = yFiles.get(template.entryFile)?.language || guessLang(template.entryFile);
+      onFileSelect(template.entryFile, lang);
+    }
+  };
+
   function buildTreeWithPaths(files) {
     const tree = buildTree(files);
     function annotate(node, path) {
@@ -498,10 +598,12 @@ export default function FileTree({ activeFile, onFileSelect }) {
 
   /* Include .gitkeep în arbore ca să apară foldere goale; rândul .gitkeep e ascuns în TreeNode */
   const tree = buildTreeWithPaths(files);
+  const searchResults = searchFiles(files, searchQuery);
+  const showingSearch = searchQuery.trim().length > 0;
 
   return (
     <div
-      className="panel-shell flex h-full w-52 flex-col select-none border-r"
+      className="flex h-full w-64 min-w-64 flex-col select-none border-r"
       style={{
         borderColor: "var(--border)",
       }}
@@ -510,21 +612,129 @@ export default function FileTree({ activeFile, onFileSelect }) {
         className="flex min-h-[3.5rem] shrink-0 items-center justify-between gap-2 border-b px-3.5 py-2.5 sm:gap-2.5"
         style={{ borderColor: "var(--border)" }}
       >
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0">
           <span
-            className="block text-[11px] font-bold uppercase tracking-[0.24em] sm:text-xs"
+            className="block text-[11px] font-bold uppercase tracking-[0.16em] sm:text-xs"
             style={{ color: "var(--accent)" }}
           >
             Explorer
           </span>
           <span
-            className="mt-1 block text-[9px] uppercase tracking-[0.16em]"
+            className="block pt-0.5 text-[9px] uppercase tracking-[0.18em]"
             style={{ color: "var(--text-secondary)" }}
           >
-            {files.filter((f) => !f.name.endsWith(".gitkeep")).length} files
+            Files & templates
           </span>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1.5">
+          <div className="relative" ref={templateMenuRef}>
+            <button
+              type="button"
+              onClick={() => setShowTemplates((s) => !s)}
+              className="inline-flex h-9 w-9 items-center justify-center rounded-xl border transition-all duration-150 hover:brightness-110 active:scale-[0.94]"
+              style={{
+                background: showTemplates
+                  ? "linear-gradient(135deg, color-mix(in srgb, var(--accent) 20%, var(--bg-tertiary)) 0%, color-mix(in srgb, var(--blue) 14%, var(--bg-primary)) 100%)"
+                  : "var(--bg-tertiary)",
+                borderColor: showTemplates ? "var(--accent)" : "var(--border)",
+                color: showTemplates ? "var(--accent)" : "var(--text-secondary)",
+                boxShadow: showTemplates
+                  ? "0 0 0 2px color-mix(in srgb, var(--accent) 22%, transparent)"
+                  : "none",
+              }}
+              aria-label="Project templates"
+            >
+              <TemplateIcon />
+            </button>
+            {showTemplates && (
+              <div
+                className="absolute right-0 top-[calc(100%+8px)] z-50 w-[calc(100vw-3rem)] max-w-[20rem] min-w-full overflow-hidden rounded-2xl border"
+                style={{
+                  background: "var(--bg-secondary)",
+                  borderColor: "var(--border)",
+                  boxShadow: "0 18px 44px rgba(0,0,0,0.42)",
+                }}
+              >
+                <div
+                  className="border-b px-3 py-2.5"
+                  style={{
+                    borderColor: "var(--border)",
+                    background:
+                      "linear-gradient(180deg, color-mix(in srgb, var(--accent) 10%, var(--bg-tertiary)) 0%, var(--bg-secondary) 100%)",
+                  }}
+                >
+                  <div className="flex items-center gap-2">
+                    <div
+                      className="flex h-8 w-8 items-center justify-center rounded-lg border"
+                      style={{
+                        borderColor: "color-mix(in srgb, var(--accent) 35%, var(--border))",
+                        background: "color-mix(in srgb, var(--accent) 12%, var(--bg-primary))",
+                        color: "var(--accent)",
+                      }}
+                    >
+                      <TemplateIcon />
+                    </div>
+                    <div className="min-w-0">
+                      <p
+                        className="text-[11px] font-bold uppercase tracking-[0.16em]"
+                        style={{ color: "var(--text-primary)" }}
+                      >
+                        Project Templates
+                      </p>
+                      <p
+                        className="pt-0.5 text-[10px]"
+                        style={{ color: "var(--text-secondary)" }}
+                      >
+                        Start from a polished base.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                <div className="p-1.5">
+                  <p
+                    className="px-2 py-1 text-[9px] uppercase tracking-[0.18em]"
+                    style={{ color: "var(--text-secondary)" }}
+                  >
+                    {PROJECT_TEMPLATES.length} starter kits
+                  </p>
+                {PROJECT_TEMPLATES.map((template) => (
+                  <button
+                    key={template.id}
+                    type="button"
+                    onClick={() => applyTemplate(template)}
+                    className="mt-1 w-full rounded-xl border px-3 py-2.5 text-left transition-all duration-150 hover:brightness-110"
+                    style={{
+                      background:
+                        "linear-gradient(180deg, color-mix(in srgb, var(--bg-tertiary) 72%, transparent) 0%, color-mix(in srgb, var(--bg-primary) 82%, transparent) 100%)",
+                      borderColor: "var(--border)",
+                    }}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div
+                        className="text-[11px] font-semibold"
+                        style={{ color: "var(--text-primary)" }}
+                      >
+                        {template.label}
+                      </div>
+                      <span
+                        className="shrink-0 text-[9px] uppercase tracking-[0.14em]"
+                        style={{ color: "var(--accent)" }}
+                      >
+                        Use
+                      </span>
+                    </div>
+                    <p
+                      className="pt-1 text-[10px] leading-relaxed"
+                      style={{ color: "var(--text-secondary)" }}
+                    >
+                      {template.description}
+                    </p>
+                  </button>
+                ))}
+                </div>
+              </div>
+            )}
+          </div>
           <button
             type="button"
             onClick={() => startCreateFile()}
@@ -559,7 +769,36 @@ export default function FileTree({ activeFile, onFileSelect }) {
       </div>
 
       <div
-        className="flex-1 space-y-1 overflow-y-auto px-2.5 py-2.5"
+        className="shrink-0 border-b px-2 py-2"
+        style={{ borderColor: "var(--border)" }}
+      >
+        <div
+          className="rounded border px-2 py-1.5"
+          style={{
+            background: "var(--bg-tertiary)",
+            borderColor: "var(--border)",
+          }}
+        >
+          <input
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Find across files"
+            className="w-full bg-transparent text-xs outline-none"
+            style={{ color: "var(--text-primary)" }}
+          />
+        </div>
+        {showingSearch && (
+          <p
+            className="px-0.5 pt-1 text-[9px] uppercase tracking-wider"
+            style={{ color: "var(--text-secondary)" }}
+          >
+            {searchResults.length} result{searchResults.length === 1 ? "" : "s"}
+          </p>
+        )}
+      </div>
+
+      <div
+        className="flex-1 space-y-0.5 overflow-y-auto px-1"
         onDragOver={(e) => {
           if (
             Array.from(e.dataTransfer.types || []).some(
@@ -591,54 +830,109 @@ export default function FileTree({ activeFile, onFileSelect }) {
             : undefined
         }
       >
-        {Object.entries(tree)
-          .filter(([, node]) => !(node.__file && node.path?.endsWith(".gitkeep")))
-          .sort(([, a], [, b]) => {
-            if (!a.__file && b.__file) return -1;
-            if (a.__file && !b.__file) return 1;
-            return 0;
-          })
-          .map(([name, node]) => {
-            if (node.__file && renamingFile === node.path) {
-              return (
-                <input
-                  key={name}
-                  ref={renameInputRef}
-                  value={renameTo}
-                  onChange={(e) => setRenameTo(e.target.value)}
-                  onBlur={renameFile}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") renameFile();
-                    if (e.key === "Escape") setRenamingFile(null);
-                  }}
-                  className={treeInputClass}
+        {showingSearch ? (
+          searchResults.length > 0 ? (
+            <div className="space-y-1 py-1">
+              {searchResults.map((result) => (
+                <button
+                  key={result.id}
+                  type="button"
+                  onClick={() =>
+                    onFileSelect(result.file, result.language, {
+                      line: result.line,
+                      column: result.column,
+                    })
+                  }
+                  className="w-full rounded border px-2 py-1.5 text-left transition-all hover:brightness-110"
                   style={{
-                    background: "var(--bg-tertiary)",
-                    color: "var(--text-primary)",
-                    border: "1px solid var(--accent)",
+                    background:
+                      activeFile === result.file
+                        ? "var(--bg-tertiary)"
+                        : "transparent",
+                    borderColor: "var(--border)",
                   }}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span
+                      className="truncate text-[10px] font-semibold"
+                      style={{ color: "var(--accent)" }}
+                    >
+                      {result.file}
+                    </span>
+                    <span
+                      className="shrink-0 text-[9px] uppercase tracking-wide"
+                      style={{ color: "var(--text-secondary)" }}
+                    >
+                      {result.kind === "file" ? "file" : `L${result.line}`}
+                    </span>
+                  </div>
+                  <p
+                    className="truncate pt-0.5 text-[10px]"
+                    style={{ color: "var(--text-primary)" }}
+                  >
+                    {result.preview}
+                  </p>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <p
+              className="px-2 py-3 text-[11px]"
+              style={{ color: "var(--text-secondary)" }}
+            >
+              No matches found.
+            </p>
+          )
+        ) : (
+          Object.entries(tree)
+            .filter(([, node]) => !(node.__file && node.path?.endsWith(".gitkeep")))
+            .sort(([, a], [, b]) => {
+              if (!a.__file && b.__file) return -1;
+              if (a.__file && !b.__file) return 1;
+              return 0;
+            })
+            .map(([name, node]) => {
+              if (node.__file && renamingFile === node.path) {
+                return (
+                  <input
+                    key={name}
+                    ref={renameInputRef}
+                    value={renameTo}
+                    onChange={(e) => setRenameTo(e.target.value)}
+                    onBlur={renameFile}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") renameFile();
+                      if (e.key === "Escape") setRenamingFile(null);
+                    }}
+                    className="w-full rounded px-2 py-1 text-xs outline-none"
+                    style={{
+                      background: "var(--bg-tertiary)",
+                      color: "var(--text-primary)",
+                      border: "1px solid var(--accent)",
+                    }}
+                  />
+                );
+              }
+              return (
+                <TreeNode
+                  key={name}
+                  name={name}
+                  node={node}
+                  depth={0}
+                  activeFile={activeFile}
+                  onFileSelect={onFileSelect}
+                  onContextMenu={openContextMenu}
+                  openFolders={openFolders}
+                  toggleFolder={toggleFolder}
+                  creatingIn={creatingIn}
+                  setCreatingIn={(folder) => startCreateFile(folder)}
+                  onMoveFile={moveFile}
+                  dropHighlight={dropHighlight}
+                  setDropHighlight={setDropHighlight}
                 />
               );
-            }
-            return (
-              <TreeNode
-                key={name}
-                name={name}
-                node={node}
-                depth={0}
-                activeFile={activeFile}
-                onFileSelect={onFileSelect}
-                onContextMenu={openContextMenu}
-                openFolders={openFolders}
-                toggleFolder={toggleFolder}
-                creatingIn={creatingIn}
-                setCreatingIn={(folder) => startCreateFile(folder)}
-                onMoveFile={moveFile}
-                dropHighlight={dropHighlight}
-                setDropHighlight={setDropHighlight}
-              />
-            );
-          })}
+            })
+        )}
 
         {creating && (
           <div className="px-1">

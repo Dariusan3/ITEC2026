@@ -214,6 +214,15 @@ function stripOuterCodeFences(s) {
   return t;
 }
 
+function parseLooseJson(text) {
+  const stripped = stripOuterCodeFences(text);
+  try {
+    return JSON.parse(stripped);
+  } catch {
+    return null;
+  }
+}
+
 // A2: Fix errors
 app.post("/api/ai/fix", async (req, res) => {
   const { code, error: errorText, language, hintLine } = req.body;
@@ -301,6 +310,47 @@ app.post("/api/ai/tests", async (req, res) => {
       2048,
     );
     res.json({ tests: raw });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// A5: AI code review
+app.post("/api/ai/review", async (req, res) => {
+  const { code, language } = req.body;
+  if (!code) return res.status(400).json({ error: "code is required" });
+
+  try {
+    const raw = await askGroq(
+      `You are a senior code reviewer. Review the file and return ONLY valid JSON with one key: "issues".
+"issues" must be an array of objects. Each object must contain:
+- "line": integer line number
+- "severity": one of "info", "warning", "error"
+- "message": one short review comment
+
+Focus on correctness, bugs, risky behavior, or missing edge-case handling. Return an empty array when there are no meaningful findings. Do not include markdown or code fences.`,
+      `Language: ${language || "javascript"}\n\nReview this file:\n${codeWithLineNumbers(code)}`,
+      2048,
+    );
+
+    const parsed = parseLooseJson(raw);
+    const issues = Array.isArray(parsed?.issues)
+      ? parsed.issues
+          .map((issue) => ({
+            line:
+              Number.isFinite(Number(issue?.line)) && Number(issue.line) > 0
+                ? Number(issue.line)
+                : 1,
+            severity: ["info", "warning", "error"].includes(issue?.severity)
+              ? issue.severity
+              : "info",
+            message: String(issue?.message || "").trim(),
+          }))
+          .filter((issue) => issue.message)
+          .slice(0, 12)
+      : [];
+
+    res.json({ issues });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
