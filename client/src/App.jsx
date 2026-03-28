@@ -8,6 +8,8 @@ import TimeTravel from './components/TimeTravel'
 import ConnectionBanner from './components/ConnectionBanner'
 import { yFiles, getYText, roomId, idbPersistence } from './lib/yjs'
 import { saveRoomNow } from './lib/saveRoom'
+import { mergeVitePreviewTemplate } from './lib/vitePreviewTemplate'
+import { SANDBOX_RUN_LANGUAGES } from './lib/sandboxLanguages'
 
 // C2: Read-only mode — ?view=1 in URL
 const viewOnly = new URLSearchParams(window.location.search).has('view')
@@ -69,6 +71,12 @@ export default function App() {
   const [settings, setSettings] = useState(loadSettings)
   const [idbReady, setIdbReady] = useState(false)
   const editorRef = useRef(null)
+
+  const [previewIframeSrc, setPreviewIframeSrc] = useState(null)
+  const [previewBusy, setPreviewBusy] = useState(false)
+  const [previewError, setPreviewError] = useState(null)
+  const [previewNotice, setPreviewNotice] = useState(null)
+  const [previewFocus, setPreviewFocus] = useState(0)
 
   // Wait for IndexedDB to restore persisted content before mounting editor
   useEffect(() => {
@@ -141,9 +149,85 @@ export default function App() {
     }
   }, [])
 
+  const collectWorkspaceFiles = useCallback(() => {
+    const files = {}
+    yFiles.forEach((_, fname) => {
+      files[fname] = getYText(fname).toString()
+    })
+    return files
+  }, [])
+
+  const handlePreviewStart = useCallback(async (opts = {}) => {
+    setPreviewError(null)
+    setPreviewNotice(null)
+    setPreviewBusy(true)
+    try {
+      const files = collectWorkspaceFiles()
+      const res = await fetch('/api/preview/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ roomId, files, force: !!opts.force }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || 'Preview failed')
+      // Iframe pe portul Docker: căile absolute Vite trebuie să rămână pe același host:port ca dev serverul din container.
+      const port = Number(data.hostPort)
+      if (Number.isFinite(port) && port > 0) {
+        const host = window.location.hostname || 'localhost'
+        setPreviewIframeSrc(`http://${host}:${port}/`)
+      } else if (data.proxyPath) {
+        setPreviewIframeSrc(`${data.proxyPath}/`)
+      } else {
+        throw new Error('Preview: răspuns invalid de la server')
+      }
+      if (data.mode === 'sync') {
+        setPreviewNotice('Sincronizat în container — Vite/HMR reîncarcă de obicei automat. Ține Shift+Preview pentru repornire completă (ex. după schimbări în dependencies).')
+      } else if (opts.force) {
+        setPreviewNotice('Preview repornit de la zero (npm install + dev server).')
+      }
+      setPreviewFocus((n) => n + 1)
+    } catch (e) {
+      setPreviewError(e.message || String(e))
+      setPreviewFocus((n) => n + 1)
+    } finally {
+      setPreviewBusy(false)
+    }
+  }, [collectWorkspaceFiles, roomId])
+
+  const handlePreviewStop = useCallback(async () => {
+    try {
+      await fetch('/api/preview/stop', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ roomId }),
+      })
+    } catch { /* ignore */ }
+    setPreviewIframeSrc(null)
+    setPreviewError(null)
+    setPreviewNotice(null)
+  }, [roomId])
+
+  const handleViteDemo = useCallback(() => {
+    mergeVitePreviewTemplate(yFiles, getYText)
+    setActiveFile('src/App.jsx')
+    setLanguage('javascript')
+  }, [])
+
   const handleRun = useCallback(async () => {
     const code = getYText(activeFile).toString()
     if (!code.trim()) return
+
+    if (!SANDBOX_RUN_LANGUAGES.has(language)) {
+      setOutput([
+        { type: 'info', text: `▶ Run nu se aplică la „${language}”.` },
+        {
+          type: 'stderr',
+          text:
+            'Sandbox-ul rulează un singur fișier (JS/TS/Python/Rust/Go/Java/C). Pentru HTML/CSS/JSON sau proiecte Vite/React, folosește butonul Preview (Docker).',
+        },
+      ])
+      return
+    }
 
     setRunning(true)
     setOutput([{ type: 'info', text: `▶ Running ${activeFile}...` }])
@@ -205,7 +289,7 @@ export default function App() {
     } finally {
       setRunning(false)
     }
-  }, [activeFile, language])
+  }, [activeFile, language, stdin, packages, envVars, roomId])
 
   // Password gate — show before the full app if room is locked
   if (passwordRequired && !passwordUnlocked) {
@@ -249,6 +333,9 @@ export default function App() {
         onLanguageChange={handleLanguageChange}
         onRun={viewOnly ? null : handleRun}
         running={running}
+        onPreview={viewOnly ? null : handlePreviewStart}
+        previewBusy={previewBusy}
+        onViteDemo={viewOnly ? null : handleViteDemo}
         settings={settings}
         onSettingsChange={handleSettingsChange}
         viewOnly={viewOnly}
@@ -270,6 +357,12 @@ export default function App() {
             stdin={stdin} onStdinChange={setStdin}
             packages={packages} onPackagesChange={setPackages}
             envVars={envVars} onEnvVarsChange={setEnvVars}
+            previewIframeSrc={previewIframeSrc}
+            previewError={previewError}
+            previewNotice={previewNotice}
+            focusPreviewSignal={previewFocus}
+            onPreviewStop={viewOnly ? undefined : handlePreviewStop}
+            previewDisabled={viewOnly}
           />
         </div>
 

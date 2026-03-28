@@ -154,6 +154,9 @@ export default function TopBar({
   onLanguageChange,
   onRun,
   running,
+  onPreview,
+  previewBusy = false,
+  onViteDemo,
   viewOnly = false,
 }) {
   const [users, setUsers] = useState([]);
@@ -320,6 +323,27 @@ export default function TopBar({
               }}
             >
               {running ? "Running…" : "Run"}
+            </Btn>
+          )}
+          {!viewOnly && onPreview && (
+            <Btn
+              onClick={(e) => onPreview({ force: e.shiftKey })}
+              disabled={previewBusy || running}
+              title="Preview: sincronizează fișierele cu containerul (HMR). Shift+click = repornire completă după schimbări în package.json / dependencies."
+              style={{
+                background: "var(--blue)",
+                color: "var(--bg-primary)",
+                borderColor: "var(--blue)",
+                minWidth: "5.5rem",
+                opacity: previewBusy || running ? 0.55 : 1,
+              }}
+            >
+              {previewBusy ? "Preview…" : "Preview"}
+            </Btn>
+          )}
+          {!viewOnly && onViteDemo && (
+            <Btn onClick={onViteDemo} title="Încarcă un proiect Vite+React minimal în cameră">
+              Vite demo
             </Btn>
           )}
         </div>

@@ -38,7 +38,7 @@ if (process.env.DATABASE_URL) {
 }
 
 app.use(cors({ origin: true, credentials: true }));
-app.use(express.json());
+app.use(express.json({ limit: "8mb" }));
 const sessionMiddleware = session({
   store: sessionStore,
   secret: process.env.SESSION_SECRET || "itecify-dev-secret",
@@ -735,6 +735,74 @@ app.post("/api/run", runLimiter, async (req, res) => {
   }
 });
 
+// --- Project preview (Docker dev server; sesiune persistentă + sync fișiere) ---
+const preview = require("./preview");
+const previewLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many preview requests — try again later." },
+});
+
+app.post("/api/preview/start", previewLimiter, async (req, res) => {
+  const { roomId, files, force } = req.body;
+  if (!files || typeof files !== "object")
+    return res.status(400).json({ error: "files (path → content) required" });
+
+  const dockerOk = await isDockerAvailable().catch(() => false);
+  if (!dockerOk) {
+    return res.status(503).json({
+      error:
+        "Docker is required for preview — start Docker Desktop and restart the server",
+    });
+  }
+
+  try {
+    const result = await preview.startPreview(
+      roomId,
+      files,
+      docker,
+      DOCKER_PLATFORM_SPEC,
+      { force: !!force },
+    );
+    res.json({
+      ok: true,
+      proxyPath: `/api/preview/proxy/${result.safeRoomId}`,
+      hostPort: result.hostPort,
+      mode: result.mode || "cold",
+    });
+  } catch (err) {
+    console.error("[Preview start]", err.message);
+    res.status(500).json({ error: err.message || "Preview failed" });
+  }
+});
+
+app.post("/api/preview/stop", async (req, res) => {
+  const { roomId } = req.body || {};
+  try {
+    await preview.stopPreview(roomId, docker);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/preview/status", (req, res) => {
+  const roomId = req.query.room || req.query.roomId;
+  const safe = preview.sanitizeRoomId(roomId);
+  if (!safe) return res.json({ active: false });
+  const s = preview.previewSessions.get(safe);
+  res.json({
+    active: !!s,
+    proxyPath: s ? `/api/preview/proxy/${safe}` : null,
+    hostPort: s?.hostPort ?? null,
+    startedAt: s?.startedAt ?? null,
+  });
+});
+
+app.use("/api/preview/proxy/:roomId", preview.createPreviewProxy());
+
 // --- GitHub OAuth ---
 const GITHUB_CLIENT_ID = process.env.GITHUB_CLIENT_ID;
 const GITHUB_CLIENT_SECRET = process.env.GITHUB_CLIENT_SECRET;
@@ -1212,6 +1280,9 @@ console.log(
 );
 
 const apiServer = http.createServer(app);
+apiServer.on("upgrade", (req, socket, head) => {
+  if (preview.handlePreviewUpgrade(req, socket, head)) return;
+});
 apiServer.listen(PORT, () => {
   console.log(`[iTECify] API server running on http://localhost:${PORT}`);
 });
