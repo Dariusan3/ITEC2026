@@ -29,6 +29,33 @@ function Divider() {
   );
 }
 
+function BrandMark() {
+  return (
+    <div className="flex shrink-0 items-center gap-2.5 select-none">
+      <div
+        className="flex h-9 w-9 items-center justify-center rounded-lg border shadow-[0_8px_20px_rgba(0,0,0,0.24)] sm:h-10 sm:w-10"
+        style={{
+          background: "linear-gradient(135deg, color-mix(in srgb, var(--accent) 88%, white 12%) 0%, color-mix(in srgb, var(--accent) 68%, var(--blue) 32%) 100%)",
+          borderColor: "color-mix(in srgb, var(--accent) 40%, var(--border))",
+        }}
+        aria-hidden
+      >
+        <svg viewBox="0 0 24 24" className="h-5 w-5 sm:h-5.5 sm:w-5.5" fill="none">
+          <path d="M7 6.5h10M7 12h6.5M7 17.5h10" stroke="var(--bg-primary)" strokeWidth="2.2" strokeLinecap="round" />
+          <path d="M16.5 9.5v5" stroke="rgba(24,24,37,0.68)" strokeWidth="2" strokeLinecap="round" />
+        </svg>
+      </div>
+
+      <span
+        className="shrink-0 text-[18px] font-black uppercase tracking-[-0.06em] sm:text-[21px]"
+        style={{ color: "var(--text-primary)" }}
+      >
+        ITECIFY
+      </span>
+    </div>
+  );
+}
+
 function Btn({ onClick, disabled, className = "", style = {}, title, children }) {
   return (
     <button
@@ -260,41 +287,7 @@ export default function TopBar({
       style={{ background: "var(--bg-secondary)", borderColor: "var(--border)" }}
     >
       <div className="flex min-w-0 flex-1 items-center gap-1.5 sm:gap-2">
-        <span
-          className="shrink-0 select-none text-base font-bold tracking-tight sm:text-lg"
-          style={{ color: "var(--accent)" }}
-        >
-          iTECify
-        </span>
-
-        <span
-          className="hidden shrink-0 rounded-none border px-2 py-0.5 font-mono text-[10px] sm:inline"
-          style={{
-            background: "var(--bg-tertiary)",
-            borderColor: "var(--border)",
-            color: "var(--text-secondary)",
-          }}
-        >
-          #{roomId}
-        </span>
-
-        <span
-          className="hidden h-4 w-px shrink-0 sm:block"
-          style={{ background: "var(--border)" }}
-          aria-hidden
-        />
-
-        <span
-          className="min-w-0 truncate rounded-none border px-2 py-0.5 text-[11px] font-medium sm:text-xs"
-          style={{
-            background: "var(--bg-tertiary)",
-            borderColor: "var(--border)",
-            color: "var(--text-secondary)",
-          }}
-          title={filename}
-        >
-          {filename}
-        </span>
+        <BrandMark />
       </div>
 
       <div className="flex min-w-0 shrink-0 flex-wrap items-center justify-end gap-1.5 sm:gap-2">
