@@ -62,6 +62,46 @@ app.get("/api/db/status", async (_req, res) => {
 // --- AI suggestion endpoint ---
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
+/** Când modelul returnează JSON invalid, extragem manual string-ul din "suggestion". */
+function extractJsonStringField(text, field) {
+  if (!text || typeof text !== "string") return null;
+  const needle = `"${field}"`;
+  const idx = text.indexOf(needle);
+  if (idx === -1) return null;
+  const after = text.slice(idx + needle.length);
+  const colon = after.indexOf(":");
+  if (colon === -1) return null;
+  let rest = after.slice(colon + 1).trim();
+  if (!rest.startsWith('"')) return null;
+  let i = 1;
+  let out = "";
+  while (i < rest.length) {
+    const c = rest[i];
+    if (c === "\\" && i + 1 < rest.length) {
+      const n = rest[i + 1];
+      if (n === "n") out += "\n";
+      else if (n === "r") out += "\r";
+      else if (n === "t") out += "\t";
+      else if (n === '"' || n === "\\" || n === "/") out += n;
+      else if (n === "u" && i + 5 < rest.length) {
+        const hex = rest.slice(i + 2, i + 6);
+        if (/^[0-9a-fA-F]{4}$/.test(hex)) {
+          out += String.fromCharCode(parseInt(hex, 16));
+          i += 6;
+          continue;
+        }
+        out += n;
+      } else out += n;
+      i += 2;
+      continue;
+    }
+    if (c === '"') break;
+    out += c;
+    i++;
+  }
+  return out;
+}
+
 app.post("/api/ai/suggest", async (req, res) => {
   const { code, prompt, language } = req.body;
   if (!prompt) {
@@ -76,7 +116,7 @@ app.post("/api/ai/suggest", async (req, res) => {
         {
           role: "system",
           content:
-            'You are an AI coding assistant inside a collaborative editor called iTECify. Respond with ONLY a JSON object (no markdown, no code fences) in this exact format: {"suggestion": "<the code to insert>", "explanation": "<one-line explanation>"}. The "suggestion" field must contain ONLY code, no markdown fences. Use \\n for newlines inside the code string.',
+            'You are an AI coding assistant inside a collaborative editor called iTECify. Respond with ONLY valid JSON (no markdown, no code fences). The JSON must have exactly two keys: "suggestion" (string, the code only) and "explanation" (string, one short line). Both keys must be double-quoted. Example: {"suggestion":"#include <stdio.h>\\n...", "explanation":"Reads n numbers"}. Never use unquoted text as a JSON key.',
         },
         {
           role: "user",
@@ -91,25 +131,33 @@ app.post("/api/ai/suggest", async (req, res) => {
       .replace(/^```(?:json)?\n?/, "")
       .replace(/\n?```$/, "")
       .trim();
-    let parsed;
+    let suggestion;
+    let explanation = "AI suggestion";
     try {
-      parsed = JSON.parse(stripped);
+      const parsed = JSON.parse(stripped);
+      suggestion = parsed.suggestion;
+      explanation = parsed.explanation || explanation;
     } catch {
-      parsed = { suggestion: stripped, explanation: "AI suggestion" };
+      suggestion = extractJsonStringField(stripped, "suggestion");
+      const expl = extractJsonStringField(stripped, "explanation");
+      if (expl != null) explanation = expl;
+      if (suggestion == null) suggestion = stripped;
     }
-    // Guard against double-encoded suggestion (JSON string inside JSON string)
-    let suggestion = parsed.suggestion ?? stripped;
+    if (typeof suggestion !== "string") suggestion = String(suggestion ?? "");
     if (typeof suggestion === "string" && suggestion.trim().startsWith("{")) {
       try {
         const inner = JSON.parse(suggestion);
-        suggestion = inner.suggestion ?? suggestion;
-      } catch {}
+        if (inner.suggestion != null) suggestion = inner.suggestion;
+      } catch {
+        const loose = extractJsonStringField(suggestion, "suggestion");
+        if (loose != null) suggestion = loose;
+      }
     }
 
     res.json({
       id: `block_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       suggestion,
-      explanation: parsed.explanation || "AI suggestion",
+      explanation,
     });
   } catch (err) {
     console.error("[AI Error]", err.message);
@@ -146,23 +194,90 @@ app.post("/api/ai/explain", async (req, res) => {
   }
 });
 
+/** Prefixează fiecare linie ca modelul să poată ținti exact zona din mesajul de eroare. */
+function codeWithLineNumbers(src) {
+  return src
+    .split("\n")
+    .map((line, i) => `${String(i + 1).padStart(4, "0")} | ${line}`)
+    .join("\n");
+}
+
+function stripOuterCodeFences(s) {
+  let t = String(s ?? "").trim();
+  t = t.replace(/^```(?:[\w+#]+)?\n?/i, "").replace(/\n?```$/i, "").trim();
+  return t;
+}
+
 // A2: Fix errors
 app.post("/api/ai/fix", async (req, res) => {
-  const { code, error: errorText, language } = req.body;
+  const { code, error: errorText, language, hintLine } = req.body;
   if (!code || !errorText)
     return res.status(400).json({ error: "code and error are required" });
   try {
+    const hint =
+      typeof hintLine === "number" && hintLine > 0
+        ? `\n(The client suggests focusing near line ${hintLine} if the error message references a line number.)`
+        : "";
+    const userMsg = `Language: ${language || "code"}
+
+Below is the FULL current source with line numbers on the left (format: NNNN | code). You MUST return the ENTIRE file as "fixed" — same length/order of logic as much as possible, changing only what is needed to resolve the error. Do not omit valid parts of the file. Do not return a diff only.
+
+--- source ---
+${codeWithLineNumbers(code)}
+--- end source ---
+
+--- tool/runtime output ---
+${errorText.trim()}
+--- end output ---${hint}`;
+
     const raw = await askGroq(
-      'You are an expert programmer. The user\'s code produced an error. Respond with ONLY a JSON object: {"fixed": "<complete corrected code>", "explanation": "<one-line description of what was wrong>"}. No markdown fences.',
-      `Language: ${language || "code"}\n\nCode:\n${code}\n\nError:\n${errorText}`,
+      `You are an expert programmer. The user's code failed to compile or run. Analyze the error output and the numbered source.
+
+Respond with ONLY valid JSON (no markdown, no code fences). Exactly two keys, both double-quoted: "fixed" (string: the COMPLETE corrected source file, with real newlines as \\n in JSON) and "explanation" (string: one short sentence in plain language naming the bug and the fix).
+
+Rules:
+- "fixed" must be runnable source only — no line number prefixes, no explanations inside the string.
+- Preserve the user's style, comments, and unrelated correct code.
+- If the error points to a specific line, fix that cause without rewriting the whole program unnecessarily.`,
+      userMsg,
+      4096,
     );
-    let parsed;
+
+    const stripped = stripOuterCodeFences(raw)
+      .replace(/^```(?:json)?\n?/i, "")
+      .replace(/\n?```$/i, "")
+      .trim();
+
+    let fixed;
+    let explanation = "Am aplicat corecția sugerată.";
     try {
-      parsed = JSON.parse(raw);
+      const parsed = JSON.parse(stripped);
+      fixed = parsed.fixed;
+      explanation = parsed.explanation || explanation;
     } catch {
-      parsed = { fixed: raw, explanation: "Code fixed" };
+      fixed = extractJsonStringField(stripped, "fixed");
+      const expl = extractJsonStringField(stripped, "explanation");
+      if (expl != null) explanation = expl;
+      if (fixed == null) fixed = stripOuterCodeFences(stripped);
     }
-    res.json(parsed);
+
+    if (typeof fixed !== "string") fixed = String(fixed ?? "");
+    fixed = stripOuterCodeFences(fixed);
+    if (fixed.trim().startsWith("{")) {
+      try {
+        const inner = JSON.parse(fixed);
+        if (inner.fixed != null) fixed = String(inner.fixed);
+      } catch {
+        const loose = extractJsonStringField(fixed, "fixed");
+        if (loose != null) fixed = loose;
+      }
+    }
+
+    if (!fixed.trim()) {
+      return res.status(422).json({ error: "Model returned empty fix" });
+    }
+
+    res.json({ fixed, explanation });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -226,7 +341,7 @@ const LANG_CONFIG = {
   python: {
     ext: ".py",
     image: "python:3.11-slim",
-    cmd: ["python", "/sandbox/code.py"],
+    cmd: ["python", "-u", "/sandbox/code.py"],
     pkgMgr: "pip",
   },
   rust: {
@@ -235,7 +350,7 @@ const LANG_CONFIG = {
     cmd: [
       "sh",
       "-c",
-      "rustc /sandbox/code.rs -o /sandbox/code && /sandbox/code",
+      "rustc /sandbox/code.rs -o /tmp/itecify-bin && stdbuf -o0 -e0 /tmp/itecify-bin",
     ],
     pkgMgr: null,
   },
@@ -248,13 +363,22 @@ const LANG_CONFIG = {
   java: {
     ext: ".java",
     image: "openjdk:21-slim",
-    cmd: ["sh", "-c", "cd /sandbox && javac code.java && java code"],
+    cmd: [
+      "sh",
+      "-c",
+      "javac -d /tmp /sandbox/code.java && stdbuf -o0 -e0 java -cp /tmp code",
+    ],
     pkgMgr: null,
   },
   c: {
     ext: ".c",
     image: "gcc:latest",
-    cmd: ["sh", "-c", "gcc /sandbox/code.c -o /sandbox/code && /sandbox/code"],
+    /* stdbuf -o0: stdout nebufferizat — prompturi fără \\n se văd înainte de scanf */
+    cmd: [
+      "sh",
+      "-c",
+      "gcc /sandbox/code.c -o /tmp/itecify-bin && stdbuf -o0 -e0 /tmp/itecify-bin",
+    ],
     pkgMgr: null,
   },
 };
@@ -451,7 +575,9 @@ async function runInDocker(
     await container.start();
 
     if (hasStdin) {
-      stream.write(stdin.endsWith("\n") ? stdin : stdin + "\n");
+      const payload = stdin.endsWith("\n") ? stdin : `${stdin}\n`;
+      await new Promise((r) => setTimeout(r, 20));
+      stream.write(payload);
       stream.end();
     }
 

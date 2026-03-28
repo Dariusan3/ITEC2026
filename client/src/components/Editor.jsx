@@ -8,6 +8,7 @@ import {
 import * as monaco from "monaco-editor";
 import { MonacoBinding } from "y-monaco";
 import { ydoc, wsProvider, getYText, yAiBlocks } from "../lib/yjs";
+import { extractJsonStringField } from "../lib/extractJsonStringField";
 import * as prettier from "prettier/standalone";
 import prettierBabel from "prettier/plugins/babel";
 import prettierEstree from "prettier/plugins/estree";
@@ -47,15 +48,16 @@ self.MonacoEnvironment = {
 
 const AI_BLOCK_CLASS = "ai-block-decoration";
 
-/** Normalize AI suggestion: JSON wrapper, markdown fences */
+/** Normalize AI suggestion: JSON wrapper, markdown fences, JSON invalid de la model */
 function normalizeAiSuggestion(raw) {
   let code = raw ?? "";
   if (typeof code === "string" && code.trimStart().startsWith("{")) {
     try {
       const parsed = JSON.parse(code);
-      if (parsed.suggestion) code = parsed.suggestion;
+      if (parsed.suggestion != null) code = String(parsed.suggestion);
     } catch {
-      /* ignore */
+      const loose = extractJsonStringField(code, "suggestion");
+      if (loose != null) code = loose;
     }
   }
   return code

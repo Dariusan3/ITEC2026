@@ -9,6 +9,32 @@ function getCursorLine(editorRef) {
   return pos ? pos.lineNumber : 1;
 }
 
+/** Extrage un număr de linie din ieșirea compilatorului / runtime (pentru Fix AI). */
+function extractErrorLineHint(text) {
+  if (!text) return null;
+  const patterns = [/:(\d+):\d+:/, /:(\d+):(?:\d+:)?\s/, /line\s+(\d+)/i, /at line\s+(\d+)/i];
+  for (const re of patterns) {
+    const m = text.match(re);
+    if (m) return parseInt(m[1], 10);
+  }
+  return null;
+}
+
+/** Construiește contextul de eroare: stderr + linii stdout care par diagnostice. */
+function buildFixErrorContext(output) {
+  if (!output?.length) return "";
+  const lines = [];
+  const errLike = /error|traceback|syntaxerror|referenceerror|exception|warning:|fatal|cannot find|unexpected/i;
+  for (const row of output) {
+    if (row.type === "stderr") {
+      if (!row.text.includes("Warning: dangerous pattern")) lines.push(row.text);
+      continue;
+    }
+    if (row.type === "stdout" && errLike.test(row.text)) lines.push(row.text);
+  }
+  return lines.join("\n").trim();
+}
+
 /** Split text into alternating plain-text / fenced-code segments */
 function parseSegments(text) {
   const parts = [];
@@ -435,17 +461,22 @@ export default function Sidebar({ editorRef, activeFile, language, output }) {
           if (!res.ok) throw new Error(data.error);
           addMsg({ role: "explain", content: data.explanation });
         } else if (action === "fix") {
-          const stderrLines = (output || [])
-            .filter((l) => l.type === "stderr")
-            .map((l) => l.text)
-            .join("\n");
-          if (!stderrLines.trim())
-            throw new Error("No errors found in last run output.");
+          const errorBlob = buildFixErrorContext(output);
+          if (!errorBlob)
+            throw new Error(
+              "Nu am găsit erori în ultimul run. Rulează din nou cu stderr sau mesaj de compilare în panoul Output.",
+            );
           const code = activeFile ? getYText(activeFile).toString() : "";
+          const hintLine = extractErrorLineHint(errorBlob);
           const res = await fetch("/api/ai/fix", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ code, error: stderrLines, language }),
+            body: JSON.stringify({
+              code,
+              error: errorBlob,
+              language,
+              ...(hintLine != null ? { hintLine } : {}),
+            }),
           });
           const data = await res.json();
           if (!res.ok) throw new Error(data.error);
@@ -453,6 +484,12 @@ export default function Sidebar({ editorRef, activeFile, language, output }) {
             const yText = getYText(activeFile);
             yText.delete(0, yText.length);
             yText.insert(0, data.fixed);
+            const ed = editorRef?.current?.getEditor?.();
+            if (ed && hintLine != null) {
+              const line = Math.min(hintLine, ed.getModel()?.getLineCount?.() ?? hintLine);
+              ed.revealLineInCenter(line);
+              ed.setPosition({ lineNumber: line, column: 1 });
+            }
           }
           addMsg({ role: "fix", content: data.explanation });
         } else if (action === "tests") {

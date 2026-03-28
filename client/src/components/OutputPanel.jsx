@@ -175,19 +175,29 @@ export default function OutputPanel({
       {stdinOpen && tab !== "terminal" && (
         <div className="space-y-2 overflow-auto max-h-48 px-3 py-2">
           <div>
-            <Label>stdin</Label>
+            <Label>stdin (mod batch, nu terminal interactiv)</Label>
             <textarea
               value={stdin}
               onChange={(e) => onStdinChange(e.target.value)}
-              placeholder="Each line = one line of stdin..."
-              rows={2}
-              className="w-full text-xs p-1.5 rounded border resize-none outline-none font-mono"
+              placeholder={"5          ← prima lină: n\n10\n20\n...   ← apoi câte o valoare pe linie pentru fiecare scanf"}
+              rows={4}
+              className="w-full text-xs p-1.5 rounded border resize-y outline-none font-mono min-h-[4.5rem]"
               style={{
                 background: "var(--bg-tertiary)",
                 borderColor: "var(--border)",
                 color: "var(--text-primary)",
               }}
             />
+            <p
+              className="mt-1.5 text-[10px] leading-relaxed"
+              style={{ color: "var(--text-secondary)" }}
+            >
+              La Run, <strong>tot</strong> textul de mai sus e trimis odată în program — nu se poate tasta „după fiecare
+              prompt” ca în consolă. Pune aici, în ordine, toate valorile (câte o linie per{" "}
+              <code className="rounded bg-[var(--bg-primary)] px-0.5">scanf</code>). Numerele din mesaje (ex. „numărul
+              0…9”) vin din <code className="rounded bg-[var(--bg-primary)] px-0.5">printf</code> / variabilele tale,
+              nu sunt introduse automat de sandbox.
+            </p>
           </div>
           <div>
             <Label>packages (npm/pip)</Label>
