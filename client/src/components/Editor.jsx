@@ -1,7 +1,8 @@
 import { useRef, useEffect, useCallback, forwardRef, useImperativeHandle } from 'react'
+import * as Y from 'yjs'
 import * as monaco from 'monaco-editor'
 import { MonacoBinding } from 'y-monaco'
-import { wsProvider, getYText, yAiBlocks } from '../lib/yjs'
+import { ydoc, wsProvider, getYText, yAiBlocks } from '../lib/yjs'
 import * as prettier from 'prettier/standalone'
 import prettierBabel from 'prettier/plugins/babel'
 import prettierEstree from 'prettier/plugins/estree'
@@ -36,12 +37,14 @@ self.MonacoEnvironment = {
 
 const AI_BLOCK_CLASS = 'ai-block-decoration'
 
-const Editor = forwardRef(function Editor({ language, activeFile }, ref) {
+const Editor = forwardRef(function Editor({ language, activeFile, settings = {} }, ref) {
+  const keymap = settings.keymap || 'default'
   const containerRef = useRef(null)
   const editorRef = useRef(null)
   const bindingRef = useRef(null)
   const decorationsRef = useRef(new Map())
   const widgetsRef = useRef(new Map())
+  const keymapRef = useRef(null)
 
   useImperativeHandle(ref, () => ({
     getPosition: () => editorRef.current?.getPosition(),
@@ -212,7 +215,138 @@ const Editor = forwardRef(function Editor({ language, activeFile }, ref) {
     if (model) monaco.editor.setModelLanguage(model, language)
   }, [language])
 
-  return <div ref={containerRef} className="w-full h-full" />
+  // Apply settings (theme + editor options) reactively
+  useEffect(() => {
+    const editor = editorRef.current
+    if (!editor) return
+    if (settings.theme) monaco.editor.setTheme(settings.theme)
+    editor.updateOptions({
+      fontSize: settings.fontSize ?? 14,
+      tabSize: settings.tabSize ?? 2,
+      wordWrap: settings.wordWrap ? 'on' : 'off',
+      minimap: { enabled: settings.minimap ?? false },
+      lineNumbers: settings.lineNumbers !== false ? 'on' : 'off',
+    })
+  }, [settings])
+
+  // Cursor name labels for remote users
+  useEffect(() => {
+    const editor = editorRef.current
+    if (!editor) return
+    const cursorWidgets = new Map()
+
+    const updateCursors = () => {
+      const states = wsProvider.awareness.getStates()
+      const localId = wsProvider.awareness.clientID
+      const model = editor.getModel()
+      if (!model) return
+
+      // Remove stale widgets
+      for (const [id, widget] of cursorWidgets) {
+        if (!states.has(id) || id === localId) {
+          editor.removeContentWidget(widget)
+          cursorWidgets.delete(id)
+        }
+      }
+
+      for (const [clientId, state] of states) {
+        if (clientId === localId || !state.user || !state.cursor) continue
+
+        let monacoPos
+        try {
+          const abs = Y.createAbsolutePositionFromRelativePosition(state.cursor.head, ydoc)
+          if (!abs) continue
+          monacoPos = model.getPositionAt(abs.index)
+        } catch { continue }
+
+        const existing = cursorWidgets.get(clientId)
+        if (existing) {
+          existing._pos = monacoPos
+          editor.layoutContentWidget(existing)
+        } else {
+          const dom = document.createElement('div')
+          dom.style.cssText = [
+            `background:${state.user.color}`,
+            'color:#1e1e2e',
+            'font-size:10px',
+            'font-weight:700',
+            'padding:1px 6px',
+            'border-radius:3px 3px 3px 0',
+            'pointer-events:none',
+            'white-space:nowrap',
+            'transform:translateY(-100%)',
+            'margin-top:-2px',
+          ].join(';')
+          dom.textContent = state.user.name
+
+          const widget = {
+            _pos: monacoPos,
+            getId: () => `cursor-label-${clientId}`,
+            getDomNode: () => dom,
+            getPosition: () => ({
+              position: widget._pos,
+              preference: [monaco.editor.ContentWidgetPositionPreference.ABOVE],
+            }),
+          }
+          editor.addContentWidget(widget)
+          cursorWidgets.set(clientId, widget)
+        }
+      }
+    }
+
+    wsProvider.awareness.on('change', updateCursors)
+    updateCursors()
+    return () => {
+      wsProvider.awareness.off('change', updateCursors)
+      cursorWidgets.forEach(w => editor.removeContentWidget(w))
+    }
+  }, [activeFile])
+
+  // Vim / Emacs keybinding mode
+  useEffect(() => {
+    const editor = editorRef.current
+    if (!editor) return
+
+    // Tear down previous keymap
+    if (keymapRef.current) {
+      keymapRef.current.dispose?.()
+      keymapRef.current = null
+    }
+
+    if (keymap === 'vim') {
+      import('monaco-vim').then(({ initVimMode }) => {
+        const statusNode = document.getElementById('vim-status-bar')
+        keymapRef.current = initVimMode(editor, statusNode)
+      })
+    } else if (keymap === 'emacs') {
+      import('monaco-emacs').then(({ EmacsExtension }) => {
+        const ext = new EmacsExtension(editor)
+        ext.start()
+        keymapRef.current = ext
+      })
+    }
+
+    return () => {
+      keymapRef.current?.dispose?.()
+      keymapRef.current = null
+    }
+  }, [keymap])
+
+  return (
+    <div className="w-full h-full flex flex-col">
+      <div ref={containerRef} className="flex-1" />
+      <div
+        id="vim-status-bar"
+        className="text-xs px-2 py-0.5 font-mono"
+        style={{
+          display: keymap === 'vim' ? 'block' : 'none',
+          background: 'var(--bg-tertiary)',
+          color: 'var(--text-secondary)',
+          borderTop: '1px solid var(--border)',
+        }}
+      />
+    </div>
+  )
 })
 
 function escapeHtml(str) {

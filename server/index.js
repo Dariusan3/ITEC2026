@@ -7,7 +7,7 @@ const cors = require("cors");
 const http = require("http");
 const Y = require("yjs");
 const { WebSocketServer, WebSocket } = require("ws");
-const { encoding, decoding, mutex } = require("lib0");
+const { encoding, decoding } = require("lib0");
 
 const PORT = process.env.PORT || 3001;
 const WS_PORT = process.env.WS_PORT || 1234;
@@ -69,6 +69,69 @@ app.post("/api/ai/suggest", async (req, res) => {
     });
   } catch (err) {
     console.error("[AI Error]", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Shared helper for plain-text AI responses
+async function askGroq(systemPrompt, userMessage, maxTokens = 1024) {
+  const res = await groq.chat.completions.create({
+    model: "llama-3.3-70b-versatile",
+    max_tokens: maxTokens,
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userMessage },
+    ],
+  });
+  return res.choices[0].message.content.trim();
+}
+
+// A1: Explain selected code
+app.post("/api/ai/explain", async (req, res) => {
+  const { selection, language } = req.body;
+  if (!selection) return res.status(400).json({ error: "selection is required" });
+  try {
+    const explanation = await askGroq(
+      "You are an expert coding tutor. Explain the provided code snippet clearly and concisely in plain English. Focus on what it does, not how to rewrite it. Use bullet points if helpful. No markdown code fences.",
+      `Language: ${language || "code"}\n\nCode to explain:\n${selection}`
+    );
+    res.json({ explanation });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// A2: Fix errors
+app.post("/api/ai/fix", async (req, res) => {
+  const { code, error: errorText, language } = req.body;
+  if (!code || !errorText) return res.status(400).json({ error: "code and error are required" });
+  try {
+    const raw = await askGroq(
+      "You are an expert programmer. The user's code produced an error. Respond with ONLY a JSON object: {\"fixed\": \"<complete corrected code>\", \"explanation\": \"<one-line description of what was wrong>\"}. No markdown fences.",
+      `Language: ${language || "code"}\n\nCode:\n${code}\n\nError:\n${errorText}`
+    );
+    let parsed;
+    try { parsed = JSON.parse(raw); }
+    catch { parsed = { fixed: raw, explanation: "Code fixed" }; }
+    res.json(parsed);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// A3: Generate tests
+app.post("/api/ai/tests", async (req, res) => {
+  const { code, language } = req.body;
+  if (!code) return res.status(400).json({ error: "code is required" });
+  const testFramework = language === "python" ? "pytest" : "jest";
+  try {
+    const raw = await askGroq(
+      `You are an expert in ${testFramework}. Generate a complete test file for the provided code using ${testFramework}. Return ONLY the test code, no explanation, no markdown fences.`,
+      `Language: ${language || "javascript"}\n\nCode to test:\n${code}`,
+      2048
+    );
+    res.json({ tests: raw });
+  } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
@@ -179,7 +242,7 @@ function scanCode(code, language) {
   return warnings;
 }
 
-async function runInDocker(code, config, onData, stdin = "", packages = []) {
+async function runInDocker(code, config, onData, stdin = "", packages = [], env = {}) {
   await ensureDockerImage(config.image);
 
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "itecify-"));
@@ -193,10 +256,13 @@ async function runInDocker(code, config, onData, stdin = "", packages = []) {
 
   let container;
   try {
+    const envList = Object.entries(env).map(([k, v]) => `${k}=${v}`);
+
     container = await docker.createContainer({
       Image: config.image,
       Platform: DOCKER_PLATFORM_SPEC,
       Cmd: cmd,
+      Env: envList.length ? envList : undefined,
       HostConfig: {
         Memory: 128 * 1024 * 1024,
         CpuPeriod: 100000,
@@ -308,7 +374,7 @@ async function runDirect(code, language, onData, stdin = "") {
 }
 
 app.post("/api/run", async (req, res) => {
-  const { code, language, stdin = "", packages = [] } = req.body;
+  const { code, language, stdin = "", packages = [], env = {} } = req.body;
   if (!code) return res.status(400).json({ error: "No code provided" });
 
   const config = LANG_CONFIG[language];
@@ -335,7 +401,7 @@ app.post("/api/run", async (req, res) => {
     send("info", `[${mode === "docker" ? "Docker sandbox" : "Direct execution"}]`);
 
     if (dockerAvailable) {
-      await runInDocker(code, config, send, stdin, packages);
+      await runInDocker(code, config, send, stdin, packages, env);
     } else {
       if (!FALLBACK_CMD[language]) {
         send("stderr", `${language} requires Docker — start Docker Desktop and restart the server`);

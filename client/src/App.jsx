@@ -8,6 +8,21 @@ import TimeTravel from './components/TimeTravel'
 import ConnectionBanner from './components/ConnectionBanner'
 import { yFiles, getYText } from './lib/yjs'
 
+const DEFAULT_SETTINGS = {
+  theme: 'vs-dark',
+  keymap: 'default',
+  fontSize: 14,
+  tabSize: 2,
+  wordWrap: false,
+  minimap: false,
+  lineNumbers: true,
+}
+
+function loadSettings() {
+  try { return { ...DEFAULT_SETTINGS, ...JSON.parse(localStorage.getItem('itecify:settings') || '{}') } }
+  catch { return DEFAULT_SETTINGS }
+}
+
 export default function App() {
   const [activeFile, setActiveFile] = useState('main.js')
   const [language, setLanguage] = useState('javascript')
@@ -15,7 +30,14 @@ export default function App() {
   const [output, setOutput] = useState(null)
   const [stdin, setStdin] = useState('')
   const [packages, setPackages] = useState('')
+  const [envVars, setEnvVars] = useState('')
+  const [settings, setSettings] = useState(loadSettings)
   const editorRef = useRef(null)
+
+  const handleSettingsChange = useCallback((next) => {
+    setSettings(next)
+    localStorage.setItem('itecify:settings', JSON.stringify(next))
+  }, [])
 
   // Keep language in sync with active file's metadata
   const handleFileSelect = useCallback((filename, lang) => {
@@ -57,6 +79,10 @@ export default function App() {
         body: JSON.stringify({
           code, language, stdin,
           packages: packages.split(/[\s,]+/).filter(Boolean),
+          env: Object.fromEntries(
+            envVars.split('\n').map(l => l.trim()).filter(l => l.includes('='))
+              .map(l => { const i = l.indexOf('='); return [l.slice(0, i), l.slice(i + 1)]; })
+          ),
         }),
       })
 
@@ -114,6 +140,8 @@ export default function App() {
         onLanguageChange={handleLanguageChange}
         onRun={handleRun}
         running={running}
+        settings={settings}
+        onSettingsChange={handleSettingsChange}
       />
 
       <div className="flex flex-1 overflow-hidden">
@@ -122,16 +150,17 @@ export default function App() {
         <div className="flex flex-col flex-1 overflow-hidden">
           <TimeTravel editorRef={editorRef} />
           <div className="flex-1 overflow-hidden">
-            <Editor ref={editorRef} language={language} activeFile={activeFile} />
+            <Editor ref={editorRef} language={language} activeFile={activeFile} settings={settings} />
           </div>
           <OutputPanel
             output={output}
             stdin={stdin} onStdinChange={setStdin}
             packages={packages} onPackagesChange={setPackages}
+            envVars={envVars} onEnvVarsChange={setEnvVars}
           />
         </div>
 
-        <Sidebar editorRef={editorRef} activeFile={activeFile} language={language} />
+        <Sidebar editorRef={editorRef} activeFile={activeFile} language={language} output={output} />
       </div>
     </div>
   )

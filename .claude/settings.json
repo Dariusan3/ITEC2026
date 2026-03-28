@@ -16,7 +16,8 @@
       "Bash(node -e \"const pty = require\\(''''node-pty''''\\); const p = pty.spawn\\(''''/bin/zsh'''', [], { name: ''''xterm-256color'''', cols: 80, rows: 24, cwd: process.env.HOME, env: process.env }\\); p.onData\\(d => { console.log\\(''''ok''''\\); p.kill\\(\\); process.exit\\(0\\); }\\); setTimeout\\(\\(\\) => process.exit\\(1\\), 3000\\);\")",
       "Bash(node -p \"process.arch\")",
       "Bash(chmod +x /Users/osadicidarius/Documents/projects/ITEC2026/server/node_modules/node-pty/prebuilds/darwin-arm64/spawn-helper)",
-      "Bash(node -e \"const pty = require\\(''node-pty''\\); const p = pty.spawn\\(''/bin/zsh'', [], { name: ''xterm-256color'', cols: 80, rows: 24, cwd: process.env.HOME, env: process.env }\\); p.onData\\(d => { console.log\\(''ok''\\); p.kill\\(\\); process.exit\\(0\\); }\\); setTimeout\\(\\(\\) => { console.log\\(''timeout''\\); process.exit\\(1\\); }, 3000\\);\")"
+      "Bash(node -e \"const pty = require\\(''node-pty''\\); const p = pty.spawn\\(''/bin/zsh'', [], { name: ''xterm-256color'', cols: 80, rows: 24, cwd: process.env.HOME, env: process.env }\\); p.onData\\(d => { console.log\\(''ok''\\); p.kill\\(\\); process.exit\\(0\\); }\\); setTimeout\\(\\(\\) => { console.log\\(''timeout''\\); process.exit\\(1\\); }, 3000\\);\")",
+      "Bash(npm info:*)"
     ]
   }
 }

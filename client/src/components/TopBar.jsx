@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { wsProvider, roomId, getYText } from "../lib/yjs";
 import { useAuth } from "../lib/auth";
+import SettingsPanel from "./SettingsPanel";
 
 const LANGUAGES = [
   "javascript",
@@ -12,7 +13,7 @@ const LANGUAGES = [
   "json",
 ];
 
-export default function TopBar({
+export default function TopBar({ settings, onSettingsChange,
   filename,
   language,
   onLanguageChange,
@@ -21,7 +22,8 @@ export default function TopBar({
 }) {
   const [users, setUsers] = useState([]);
   const [copied, setCopied] = useState(false);
-  const [gistState, setGistState] = useState("idle"); // idle | saving | done | error
+  const [gistState, setGistState] = useState("idle");
+  const [showSettings, setShowSettings] = useState(false);
   const { user, login, logout } = useAuth();
 
   useEffect(() => {
@@ -220,6 +222,23 @@ export default function TopBar({
             </button>
           </div>
         )}
+
+        {/* Settings gear */}
+        <div className="relative">
+          <button
+            onClick={() => setShowSettings(s => !s)}
+            className="text-sm px-2 py-1 rounded hover:opacity-70"
+            style={{ color: showSettings ? 'var(--accent)' : 'var(--text-secondary)' }}
+            title="Editor settings"
+          >⚙</button>
+          {showSettings && settings && (
+            <SettingsPanel
+              settings={settings}
+              onChange={onSettingsChange}
+              onClose={() => setShowSettings(false)}
+            />
+          )}
+        </div>
 
         <div className="flex min-w-0 items-center -space-x-2">
           {users.map((u) => (
