@@ -6,7 +6,8 @@
       "Bash(docker info:*)",
       "Bash(node -e \"require\\(''''./index.js''''\\)\")",
       "Bash(node -c index.js)",
-      "Bash(echo $SHELL)"
+      "Bash(echo $SHELL)",
+      "Bash(npm ls:*)"
     ]
   }
 }

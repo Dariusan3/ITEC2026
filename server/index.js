@@ -14,8 +14,16 @@ const WS_PORT = process.env.WS_PORT || 1234;
 
 // --- Express API server ---
 const app = express();
-app.use(cors());
+const session = require("express-session");
+
+app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
+app.use(session({
+  secret: process.env.SESSION_SECRET || "itecify-dev-secret",
+  resave: false,
+  saveUninitialized: false,
+  cookie: { httpOnly: true, maxAge: 7 * 24 * 60 * 60 * 1000 },
+}));
 
 app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", timestamp: Date.now() });
@@ -67,7 +75,7 @@ app.post("/api/ai/suggest", async (req, res) => {
 
 // --- Code execution engine (Docker + fallback) ---
 const Docker = require("dockerode");
-const { execFile } = require("child_process");
+const { spawn } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
@@ -75,11 +83,30 @@ const os = require("os");
 const docker = new Docker();
 
 const LANG_CONFIG = {
-  javascript: { ext: ".js", image: "node:20-slim", cmd: ["node", "/sandbox/code.js"] },
-  typescript: { ext: ".ts", image: "node:20-slim", cmd: ["node", "/sandbox/code.ts"] },
-  python:     { ext: ".py", image: "python:3.11-slim", cmd: ["python", "/sandbox/code.py"] },
-  rust:       { ext: ".rs", image: "rust:slim", cmd: ["sh", "-c", "rustc /sandbox/code.rs -o /sandbox/code && /sandbox/code"] },
+  javascript: { ext: ".js", image: "node:20-slim", cmd: ["node", "/sandbox/code.js"], pkgMgr: "npm" },
+  typescript: { ext: ".ts", image: "node:20-slim", cmd: ["node", "/sandbox/code.ts"], pkgMgr: "npm" },
+  python:     { ext: ".py", image: "python:3.11-slim", cmd: ["python", "/sandbox/code.py"], pkgMgr: "pip" },
+  rust:       { ext: ".rs", image: "rust:slim", cmd: ["sh", "-c", "rustc /sandbox/code.rs -o /sandbox/code && /sandbox/code"], pkgMgr: null },
 };
+
+function buildCmdWithPackages(config, packages) {
+  if (!packages || packages.length === 0) return { cmd: config.cmd, network: "none" };
+  const safe = packages.map(p => p.replace(/[^a-zA-Z0-9@._/\-]/g, "")).filter(Boolean).slice(0, 10);
+  if (safe.length === 0) return { cmd: config.cmd, network: "none" };
+
+  const pkgList = safe.join(" ");
+  let installCmd;
+  if (config.pkgMgr === "npm") {
+    const runCmd = config.cmd.join(" ");
+    installCmd = `npm install --prefix /tmp/pkgs ${pkgList} --quiet 2>&1 && NODE_PATH=/tmp/pkgs/node_modules ${runCmd}`;
+  } else if (config.pkgMgr === "pip") {
+    const runCmd = config.cmd.join(" ");
+    installCmd = `pip install --quiet ${pkgList} 2>&1 && ${runCmd}`;
+  } else {
+    return { cmd: config.cmd, network: "none", warning: "Package installs not supported for this language" };
+  }
+  return { cmd: ["sh", "-c", installCmd], network: "bridge" };
+}
 
 const FALLBACK_CMD = {
   javascript: "node",
@@ -115,44 +142,59 @@ function scanCode(code, language) {
   return warnings;
 }
 
-async function runInDocker(code, config) {
+async function runInDocker(code, config, onData, stdin = "", packages = []) {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "itecify-"));
   const tmpFile = path.join(tmpDir, `code${config.ext}`);
   fs.writeFileSync(tmpFile, code);
+
+  const { cmd, network, warning } = buildCmdWithPackages(config, packages);
+  if (warning) onData("info", warning);
+
+  const hasStdin = stdin && stdin.trim().length > 0;
 
   let container;
   try {
     container = await docker.createContainer({
       Image: config.image,
-      Cmd: config.cmd,
+      Cmd: cmd,
       HostConfig: {
-        Memory: 128 * 1024 * 1024,   // 128 MB
+        Memory: 128 * 1024 * 1024,
         CpuPeriod: 100000,
-        CpuQuota: 50000,              // 0.5 CPUs
-        NetworkMode: "none",          // no network access
+        CpuQuota: 50000,
+        NetworkMode: network,
         Binds: [`${tmpDir}:/sandbox:ro`],
         AutoRemove: true,
       },
+      AttachStdin: hasStdin,
+      OpenStdin: hasStdin,
+      StdinOnce: hasStdin,
       AttachStdout: true,
       AttachStderr: true,
       Tty: false,
     });
 
-    const stream = await container.attach({ stream: true, stdout: true, stderr: true });
+    const stream = await container.attach({
+      stream: true,
+      stdin: hasStdin,
+      stdout: true,
+      stderr: true,
+    });
 
-    let stdout = "";
-    let stderr = "";
     const stdoutStream = new (require("stream").PassThrough)();
     const stderrStream = new (require("stream").PassThrough)();
 
     container.modem.demuxStream(stream, stdoutStream, stderrStream);
 
-    stdoutStream.on("data", (chunk) => { stdout += chunk.toString(); });
-    stderrStream.on("data", (chunk) => { stderr += chunk.toString(); });
+    stdoutStream.on("data", (chunk) => onData("stdout", chunk.toString()));
+    stderrStream.on("data", (chunk) => onData("stderr", chunk.toString()));
 
     await container.start();
 
-    // Wait for completion with timeout
+    if (hasStdin) {
+      stream.write(stdin.endsWith("\n") ? stdin : stdin + "\n");
+      stream.end();
+    }
+
     const result = await Promise.race([
       container.wait(),
       new Promise((_, reject) =>
@@ -163,14 +205,11 @@ async function runInDocker(code, config) {
       ),
     ]);
 
-    return {
-      stdout,
-      stderr,
-      exitCode: result.StatusCode,
-    };
+    return { exitCode: result.StatusCode };
   } catch (err) {
     if (err.message.includes("timed out")) {
-      return { stdout: "", stderr: "", error: err.message };
+      onData("stderr", err.message);
+      return { exitCode: 1 };
     }
     throw err;
   } finally {
@@ -178,7 +217,7 @@ async function runInDocker(code, config) {
   }
 }
 
-async function runDirect(code, language) {
+async function runDirect(code, language, onData, stdin = "") {
   const cmd = FALLBACK_CMD[language];
   if (!cmd) throw new Error(`No fallback for ${language} — Docker required`);
 
@@ -189,14 +228,30 @@ async function runDirect(code, language) {
 
   try {
     return await new Promise((resolve) => {
-      execFile(cmd, [tmpFile], { timeout: 10000, maxBuffer: 1024 * 512 }, (err, stdout, stderr) => {
-        if (err && err.killed) {
-          resolve({ stdout, stderr, error: "Execution timed out (10s limit)" });
-        } else if (err) {
-          resolve({ stdout, stderr: stderr || err.message });
-        } else {
-          resolve({ stdout, stderr });
-        }
+      const child = spawn(cmd, [tmpFile]);
+      const timer = setTimeout(() => {
+        child.kill();
+        onData("stderr", "Execution timed out (10s limit)");
+        resolve({ exitCode: 1 });
+      }, 10000);
+
+      child.stdout.on("data", (chunk) => onData("stdout", chunk.toString()));
+      child.stderr.on("data", (chunk) => onData("stderr", chunk.toString()));
+
+      if (stdin && stdin.trim().length > 0) {
+        child.stdin.write(stdin.endsWith("\n") ? stdin : stdin + "\n");
+      }
+      child.stdin.end();
+
+      child.on("close", (code) => {
+        clearTimeout(timer);
+        resolve({ exitCode: code ?? 1 });
+      });
+
+      child.on("error", (err) => {
+        clearTimeout(timer);
+        onData("stderr", err.message);
+        resolve({ exitCode: 1 });
       });
     });
   } finally {
@@ -205,38 +260,141 @@ async function runDirect(code, language) {
 }
 
 app.post("/api/run", async (req, res) => {
-  const { code, language } = req.body;
+  const { code, language, stdin = "", packages = [] } = req.body;
   if (!code) return res.status(400).json({ error: "No code provided" });
 
   const config = LANG_CONFIG[language];
   if (!config) return res.status(400).json({ error: `Unsupported language: ${language}` });
 
+  // SSE headers
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.flushHeaders();
+
+  const send = (type, text) => {
+    if (!res.writableEnded) {
+      res.write(`data: ${JSON.stringify({ type, text })}\n\n`);
+    }
+  };
+
   const warnings = scanCode(code, language);
+  warnings.forEach((w) => send("stderr", w));
 
   try {
-    let result;
-    let mode;
+    const dockerAvailable = await isDockerAvailable();
+    const mode = dockerAvailable ? "docker" : "direct";
+    send("info", `[${mode === "docker" ? "Docker sandbox" : "Direct execution"}]`);
 
-    if (await isDockerAvailable()) {
-      mode = "docker";
-      result = await runInDocker(code, config);
+    if (dockerAvailable) {
+      await runInDocker(code, config, send, stdin, packages);
     } else {
       if (!FALLBACK_CMD[language]) {
-        return res.status(400).json({ error: `${language} requires Docker — start Docker Desktop and restart the server` });
+        send("stderr", `${language} requires Docker — start Docker Desktop and restart the server`);
+        send("done", "");
+        return res.end();
       }
-      mode = "direct";
-      result = await runDirect(code, language);
+      await runDirect(code, language, send, stdin);
     }
-
-    const warningText = warnings.length > 0 ? warnings.join("\n") + "\n" : "";
-    res.json({
-      stdout: result.stdout,
-      stderr: warningText + (result.stderr || ""),
-      error: result.error,
-      mode,
-    });
   } catch (err) {
     console.error("[Run Error]", err.message);
+    send("stderr", `Error: ${err.message}`);
+  }
+
+  send("done", "");
+  res.end();
+});
+
+// --- GitHub OAuth ---
+const GITHUB_CLIENT_ID = process.env.GITHUB_CLIENT_ID;
+const GITHUB_CLIENT_SECRET = process.env.GITHUB_CLIENT_SECRET;
+const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || "http://localhost:5173";
+// OAuth callback must be registered in your GitHub OAuth app settings
+
+app.get("/auth/github", (_req, res) => {
+  if (!GITHUB_CLIENT_ID) return res.status(503).send("GitHub OAuth not configured");
+  const params = new URLSearchParams({
+    client_id: GITHUB_CLIENT_ID,
+    scope: "read:user",
+    redirect_uri: `${CLIENT_ORIGIN}/auth/github/callback`,
+  });
+  res.redirect(`https://github.com/login/oauth/authorize?${params}`);
+});
+
+app.get("/auth/github/callback", async (req, res) => {
+  const { code } = req.query;
+  if (!code) return res.redirect(`${CLIENT_ORIGIN}?auth=error`);
+
+  try {
+    const tokenRes = await fetch("https://github.com/login/oauth/access_token", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Accept": "application/json" },
+      body: JSON.stringify({
+        client_id: GITHUB_CLIENT_ID,
+        client_secret: GITHUB_CLIENT_SECRET,
+        code,
+      }),
+    });
+    const tokenData = await tokenRes.json();
+    if (!tokenData.access_token) return res.redirect(`${CLIENT_ORIGIN}?auth=error`);
+
+    const userRes = await fetch("https://api.github.com/user", {
+      headers: { "Authorization": `Bearer ${tokenData.access_token}`, "User-Agent": "iTECify" },
+    });
+    const user = await userRes.json();
+
+    req.session.user = {
+      id: user.id,
+      name: user.name || user.login,
+      login: user.login,
+      avatar: user.avatar_url,
+      token: tokenData.access_token,
+    };
+
+    res.redirect(`${CLIENT_ORIGIN}?auth=ok`);
+  } catch (err) {
+    console.error("[OAuth Error]", err.message);
+    res.redirect(`${CLIENT_ORIGIN}?auth=error`);
+  }
+});
+
+app.get("/auth/me", (req, res) => {
+  if (!req.session.user) return res.json({ user: null });
+  const { id, name, login, avatar } = req.session.user;
+  res.json({ user: { id, name, login, avatar } });
+});
+
+app.post("/auth/logout", (req, res) => {
+  req.session.destroy(() => res.json({ ok: true }));
+});
+
+// --- GitHub Gist ---
+app.post("/api/gist", async (req, res) => {
+  const { filename, content, description } = req.body;
+  if (!filename || !content) return res.status(400).json({ error: "filename and content required" });
+
+  const token = req.session?.user?.token || process.env.GITHUB_TOKEN;
+  const headers = {
+    "Content-Type": "application/json",
+    "Accept": "application/vnd.github+json",
+    "User-Agent": "iTECify",
+    ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+  };
+
+  try {
+    const response = await fetch("https://api.github.com/gists", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        description: description || `iTECify — ${filename}`,
+        public: true,
+        files: { [filename]: { content } },
+      }),
+    });
+    const data = await response.json();
+    if (!response.ok) return res.status(response.status).json({ error: data.message || "GitHub API error" });
+    res.json({ url: data.html_url, id: data.id });
+  } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });

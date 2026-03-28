@@ -1,78 +1,137 @@
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import TopBar from './components/TopBar'
 import FileTree from './components/FileTree'
 import Editor from './components/Editor'
 import Sidebar from './components/Sidebar'
 import OutputPanel from './components/OutputPanel'
 import TimeTravel from './components/TimeTravel'
-import { ytext } from './lib/yjs'
+import ConnectionBanner from './components/ConnectionBanner'
+import { yFiles, getYText } from './lib/yjs'
 
 export default function App() {
+  const [activeFile, setActiveFile] = useState('main.js')
   const [language, setLanguage] = useState('javascript')
   const [running, setRunning] = useState(false)
   const [output, setOutput] = useState(null)
+  const [stdin, setStdin] = useState('')
+  const [packages, setPackages] = useState('')
   const editorRef = useRef(null)
 
+  // Keep language in sync with active file's metadata
+  const handleFileSelect = useCallback((filename, lang) => {
+    setActiveFile(filename)
+    setLanguage(lang || 'javascript')
+  }, [])
+
+  // When language dropdown changes, update the file's metadata in Yjs too
+  const handleLanguageChange = useCallback((lang) => {
+    setLanguage(lang)
+    if (activeFile && yFiles.has(activeFile)) {
+      yFiles.set(activeFile, { language: lang })
+    }
+  }, [activeFile])
+
+  // Seed initial file selection from Yjs on first load
+  useEffect(() => {
+    if (!yFiles.has(activeFile)) {
+      const first = [...yFiles.keys()][0]
+      if (first) {
+        const meta = yFiles.get(first)
+        setActiveFile(first)
+        setLanguage(meta?.language || 'javascript')
+      }
+    }
+  }, [])
+
   const handleRun = useCallback(async () => {
-    const code = ytext.toString()
+    const code = getYText(activeFile).toString()
     if (!code.trim()) return
 
     setRunning(true)
-    setOutput([{ type: 'info', text: `▶ Running ${language}...` }])
+    setOutput([{ type: 'info', text: `▶ Running ${activeFile}...` }])
 
     try {
       const res = await fetch('/api/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code, language }),
+        body: JSON.stringify({
+          code, language, stdin,
+          packages: packages.split(/[\s,]+/).filter(Boolean),
+        }),
       })
-      const data = await res.json()
 
-      const lines = []
-      if (data.mode) {
-        lines.push({ type: 'info', text: `[${data.mode === 'docker' ? 'Docker sandbox' : 'Direct execution'}]` })
+      if (!res.ok) {
+        const data = await res.json()
+        setOutput(prev => [...prev, { type: 'stderr', text: data.error || 'Run failed' }])
+        return
       }
-      if (data.stdout) {
-        lines.push(...data.stdout.split('\n').map(text => ({ type: 'stdout', text })))
+
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let buf = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buf += decoder.decode(value, { stream: true })
+        const parts = buf.split('\n\n')
+        buf = parts.pop() // keep incomplete chunk
+        for (const part of parts) {
+          const line = part.trim()
+          if (!line.startsWith('data:')) continue
+          const json = line.slice(5).trim()
+          try {
+            const { type, text } = JSON.parse(json)
+            if (type === 'done') {
+              setOutput(prev => {
+                if (prev.length <= 1) return [...prev, { type: 'info', text: '(no output)' }]
+                return prev
+              })
+            } else {
+              const lines = text.split('\n').filter(t => t !== '')
+              if (lines.length === 0) return
+              setOutput(prev => [
+                ...prev,
+                ...lines.map(t => ({ type, text: t })),
+              ])
+            }
+          } catch {}
+        }
       }
-      if (data.stderr) {
-        lines.push(...data.stderr.split('\n').map(text => ({ type: 'stderr', text })))
-      }
-      if (data.error) {
-        lines.push({ type: 'stderr', text: data.error })
-      }
-      if (lines.length <= 1) {
-        lines.push({ type: 'info', text: '(no output)' })
-      }
-      setOutput(lines)
     } catch (err) {
-      setOutput([{ type: 'stderr', text: `Error: ${err.message}` }])
+      setOutput(prev => [...prev, { type: 'stderr', text: `Error: ${err.message}` }])
     } finally {
       setRunning(false)
     }
-  }, [language])
+  }, [activeFile, language])
 
   return (
     <div className="flex flex-col h-full w-full">
+      <ConnectionBanner />
       <TopBar
+        filename={activeFile}
         language={language}
-        onLanguageChange={setLanguage}
+        onLanguageChange={handleLanguageChange}
         onRun={handleRun}
         running={running}
       />
 
       <div className="flex flex-1 overflow-hidden">
-        <FileTree />
+        <FileTree activeFile={activeFile} onFileSelect={handleFileSelect} />
 
         <div className="flex flex-col flex-1 overflow-hidden">
           <TimeTravel editorRef={editorRef} />
           <div className="flex-1 overflow-hidden">
-            <Editor ref={editorRef} language={language} />
+            <Editor ref={editorRef} language={language} activeFile={activeFile} />
           </div>
-          <OutputPanel output={output} />
+          <OutputPanel
+            output={output}
+            stdin={stdin} onStdinChange={setStdin}
+            packages={packages} onPackagesChange={setPackages}
+          />
         </div>
 
-        <Sidebar editorRef={editorRef} />
+        <Sidebar editorRef={editorRef} activeFile={activeFile} language={language} />
       </div>
     </div>
   )

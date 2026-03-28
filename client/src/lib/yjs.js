@@ -15,23 +15,45 @@ function getRandomName() {
   return `${adj}${noun}`
 }
 
+function getOrCreateRoomId() {
+  let roomId = window.location.hash.slice(1)
+  if (!roomId) {
+    roomId = Math.random().toString(36).slice(2, 10)
+    window.location.hash = roomId
+  }
+  return roomId
+}
+
+export const roomId = getOrCreateRoomId()
+
 const ydoc = new Y.Doc()
 
 const wsProvider = new WebsocketProvider(
   `ws://${window.location.hostname}:1234`,
-  'itecify-room',
+  `itecify-${roomId}`,
   ydoc
 )
 
 const color = COLORS[Math.floor(Math.random() * COLORS.length)]
 const name = getRandomName()
 
-wsProvider.awareness.setLocalStateField('user', {
-  name,
-  color,
-})
+wsProvider.awareness.setLocalStateField('user', { name, color })
 
-const ytext = ydoc.getText('monaco')
+// yFiles: Map of filename -> { language }
+const yFiles = ydoc.getMap('files')
 const yAiBlocks = ydoc.getMap('aiBlocks')
 
-export { ydoc, wsProvider, ytext, yAiBlocks, color, name }
+// Get or create a Yjs text for a given filename
+function getYText(filename) {
+  return ydoc.getText(`file:${filename}`)
+}
+
+// Seed default file if none exist
+if (yFiles.size === 0) {
+  yFiles.set('main.js', { language: 'javascript' })
+}
+
+// Legacy export
+const ytext = getYText('main.js')
+
+export { ydoc, wsProvider, ytext, yFiles, yAiBlocks, getYText, color, name }

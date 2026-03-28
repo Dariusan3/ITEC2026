@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from 'react'
 import Terminal from './Terminal'
 
-export default function OutputPanel({ output }) {
+export default function OutputPanel({ output, stdin, onStdinChange, packages, onPackagesChange }) {
   const [collapsed, setCollapsed] = useState(false)
   const [tab, setTab] = useState('output')
+  const [stdinOpen, setStdinOpen] = useState(false)
   const scrollRef = useRef(null)
 
   useEffect(() => {
@@ -40,14 +41,57 @@ export default function OutputPanel({ output }) {
           <TabButton active={tab === 'output'} onClick={() => setTab('output')}>Output</TabButton>
           <TabButton active={tab === 'terminal'} onClick={() => setTab('terminal')}>Terminal</TabButton>
         </div>
-        <button
-          className="text-xs px-2 py-1 hover:opacity-70"
-          style={{ color: 'var(--text-secondary)' }}
-          onClick={() => setCollapsed(true)}
-        >
-          ▼
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => setStdinOpen(o => !o)}
+            className="text-[10px] px-2 py-1 rounded font-semibold transition-colors"
+            style={{
+              color: stdinOpen ? 'var(--accent)' : 'var(--text-secondary)',
+              border: `1px solid ${stdinOpen ? 'var(--accent)' : 'var(--border)'}`,
+            }}
+            title="Toggle stdin / packages"
+          >stdin {packages?.trim() ? '· pkgs' : ''}</button>
+          <button
+            className="text-xs px-2 py-1 hover:opacity-70"
+            style={{ color: 'var(--text-secondary)' }}
+            onClick={() => setCollapsed(true)}
+          >▼</button>
+        </div>
       </div>
+
+      {/* Stdin + Packages panel */}
+      {stdinOpen && tab === 'output' && (
+        <div className="px-3 py-2 border-b space-y-2" style={{ borderColor: 'var(--border)' }}>
+          <div>
+            <p className="text-[9px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-secondary)' }}>
+              stdin — input for your program
+            </p>
+            <textarea
+              value={stdin}
+              onChange={e => onStdinChange(e.target.value)}
+              placeholder="Each line = one line of stdin..."
+              rows={2}
+              className="w-full text-xs p-2 rounded border resize-none outline-none font-mono"
+              style={{ background: 'var(--bg-tertiary)', borderColor: 'var(--border)', color: 'var(--text-primary)' }}
+            />
+          </div>
+          <div>
+            <p className="text-[9px] uppercase tracking-wider mb-1" style={{ color: 'var(--text-secondary)' }}>
+              packages — npm/pip (space or comma separated)
+            </p>
+            <input
+              value={packages}
+              onChange={e => onPackagesChange(e.target.value)}
+              placeholder="e.g. lodash axios  or  numpy pandas"
+              className="w-full text-xs p-2 rounded border outline-none font-mono"
+              style={{ background: 'var(--bg-tertiary)', borderColor: 'var(--border)', color: 'var(--text-primary)' }}
+            />
+            <p className="text-[9px] mt-1" style={{ color: 'var(--text-secondary)' }}>
+              Requires Docker. Network enabled only for install step.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Tab content */}
       {tab === 'output' ? (
