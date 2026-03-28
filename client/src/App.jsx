@@ -57,7 +57,9 @@ if (forkParam) {
       url.searchParams.delete("fork");
       window.history.replaceState({}, "", url);
     }
-  } catch {}
+  } catch {
+    // Ignore errors
+  }
 }
 
 const DEFAULT_SETTINGS = {
@@ -422,7 +424,9 @@ export default function App() {
                 ...lines.map((t) => ({ type, text: t })),
               ]);
             }
-          } catch {}
+          } catch {
+            // Ignore JSON parse errors
+          }
         }
       }
     } catch (err) {
