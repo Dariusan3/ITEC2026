@@ -60,7 +60,9 @@ if (forkParam) {
       url.searchParams.delete("fork");
       window.history.replaceState({}, "", url);
     }
-  } catch {}
+  } catch {
+    // Ignore errors
+  }
 }
 
 const DEFAULT_SETTINGS = {
@@ -295,9 +297,11 @@ export default function App() {
         if (forceAfterDemo) previewForceAfterViteDemoRef.current = false;
         // IMPORTANT: nu folosi /api/preview/proxy ca src al iframe-ului. HTML-ul Vite are <script src="/src/main.jsx">;
         // pe același origin cu editorul (localhost:5173) acel URL încarcă main.jsx-ul iTECify (LandingPage), nu Docker.
+        // Iframe pe host:port Docker (același hostname ca pagina) — Vite rezolvă căile absolute pe dev serverul din container.
         const port = Number(data.hostPort);
         if (Number.isFinite(port) && port > 0) {
-          setPreviewIframeSrc(`http://127.0.0.1:${port}/`);
+          const host = window.location.hostname || "localhost";
+          setPreviewIframeSrc(`http://${host}:${port}/`);
         } else if (data.proxyPath && typeof data.proxyPath === "string") {
           const base = data.proxyPath.replace(/\/$/, "");
           setPreviewIframeSrc(`${base}/`);
@@ -360,6 +364,11 @@ export default function App() {
     setActiveFile("src/App.jsx");
     setLanguage("javascript");
   }, []);
+
+  const diffLanguage =
+    yFiles.get(diffTargetFile)?.language ||
+    yFiles.get(activeFile)?.language ||
+    language;
 
   const handleRun = useCallback(async () => {
     const code = getYText(activeFile).toString();
@@ -441,7 +450,9 @@ export default function App() {
                 ...lines.map((t) => ({ type, text: t })),
               ]);
             }
-          } catch {}
+          } catch {
+            // Ignore JSON parse errors
+          }
         }
       }
     } catch (err) {
@@ -537,13 +548,24 @@ export default function App() {
           <TimeTravel editorRef={editorRef} activeFile={activeFile} />
           <div className="flex-1 overflow-hidden">
             {editorReady ? (
-              <Editor
-                ref={editorRef}
-                language={language}
-                activeFile={activeFile}
-                settings={settings}
-                readOnly={viewOnly}
-              />
+              diffTargetFile ? (
+                <DiffEditor
+                  key={`${diffTargetFile}\0${activeFile}`}
+                  originalLabel={diffTargetFile}
+                  modifiedLabel={activeFile}
+                  originalValue={getYText(diffTargetFile).toString()}
+                  modifiedValue={getYText(activeFile).toString()}
+                  language={diffLanguage}
+                />
+              ) : (
+                <Editor
+                  ref={editorRef}
+                  language={language}
+                  activeFile={activeFile}
+                  settings={settings}
+                  readOnly={viewOnly}
+                />
+              )
             ) : (
               <div className="editor-loading">
                 <div className="soft-card flex items-center gap-3 rounded-2xl px-4 py-3">
