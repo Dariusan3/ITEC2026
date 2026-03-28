@@ -5,7 +5,6 @@ import {
   forwardRef,
   useImperativeHandle,
 } from "react";
-import * as Y from "yjs";
 import * as monaco from "monaco-editor";
 import { MonacoBinding } from "y-monaco";
 import { ydoc, wsProvider, getYText, yAiBlocks } from "../lib/yjs";
@@ -296,83 +295,52 @@ const Editor = forwardRef(function Editor(
     editorRef.current?.updateOptions({ readOnly });
   }, [readOnly]);
 
-  // Cursor name labels for remote users
+  /** Culori Figma-like pentru selecții remote (y-monaco folosește clase yRemoteSelection-{id}). */
   useEffect(() => {
-    const editor = editorRef.current;
-    if (!editor) return;
-    const cursorWidgets = new Map();
+    const STYLE_ID = "itecify-remote-awareness-styles";
 
-    const updateCursors = () => {
-      const states = wsProvider.awareness.getStates();
+    function hexToRgba(hex, alpha) {
+      const h = String(hex).replace("#", "");
+      if (h.length !== 6) return `rgba(203, 166, 247, ${alpha})`;
+      const n = parseInt(h, 16);
+      const r = (n >> 16) & 255;
+      const g = (n >> 8) & 255;
+      const b = n & 255;
+      return `rgba(${r},${g},${b},${alpha})`;
+    }
+
+    const applyRemoteStyles = () => {
+      let el = document.getElementById(STYLE_ID);
+      if (!el) {
+        el = document.createElement("style");
+        el.id = STYLE_ID;
+        document.head.appendChild(el);
+      }
       const localId = wsProvider.awareness.clientID;
-      const model = editor.getModel();
-      if (!model) return;
-
-      // Remove stale widgets
-      for (const [id, widget] of cursorWidgets) {
-        if (!states.has(id) || id === localId) {
-          editor.removeContentWidget(widget);
-          cursorWidgets.delete(id);
-        }
-      }
-
-      for (const [clientId, state] of states) {
-        if (clientId === localId || !state.user || !state.cursor) continue;
-
-        let monacoPos;
-        try {
-          const abs = Y.createAbsolutePositionFromRelativePosition(
-            state.cursor.head,
-            ydoc,
-          );
-          if (!abs) continue;
-          monacoPos = model.getPositionAt(abs.index);
-        } catch {
-          continue;
-        }
-
-        const existing = cursorWidgets.get(clientId);
-        if (existing) {
-          existing._pos = monacoPos;
-          editor.layoutContentWidget(existing);
-        } else {
-          const dom = document.createElement("div");
-          dom.style.cssText = [
-            `background:${state.user.color}`,
-            "color:#1e1e2e",
-            "font-size:10px",
-            "font-weight:700",
-            "padding:1px 6px",
-            "border-radius:3px 3px 3px 0",
-            "pointer-events:none",
-            "white-space:nowrap",
-            "transform:translateY(-100%)",
-            "margin-top:-2px",
-          ].join(";");
-          dom.textContent = state.user.name;
-
-          const widget = {
-            _pos: monacoPos,
-            getId: () => `cursor-label-${clientId}`,
-            getDomNode: () => dom,
-            getPosition: () => ({
-              position: widget._pos,
-              preference: [monaco.editor.ContentWidgetPositionPreference.ABOVE],
-            }),
-          };
-          editor.addContentWidget(widget);
-          cursorWidgets.set(clientId, widget);
-        }
-      }
+      const states = wsProvider.awareness.getStates();
+      const rules = [];
+      states.forEach((state, clientId) => {
+        if (clientId === localId || !state.user?.name) return;
+        const { name, color } = state.user;
+        const c = color || "#cba6f7";
+        const id = String(clientId);
+        const label = JSON.stringify(name);
+        rules.push(
+          `.monaco-editor .yRemoteSelection-${id}{background-color:${hexToRgba(c, 0.14)}!important;border-radius:2px;}`,
+          `.monaco-editor .yRemoteSelectionHead-${id}{border-left:2px solid ${c}!important;opacity:1;border-radius:0 1px 1px 0;}`,
+          `.monaco-editor .yRemoteSelectionHead-${id}::after{content:${label};position:absolute;top:-20px;left:0;transform:translateX(-1px);font-size:10px;font-weight:500;letter-spacing:0.02em;line-height:1.2;padding:4px 9px;border-radius:6px;white-space:nowrap;pointer-events:none;z-index:30;color:#e8eaf0;background:#000000;border:1px solid ${c};box-shadow:0 2px 10px rgba(0,0,0,0.55);}`,
+        );
+      });
+      el.textContent = rules.join("");
     };
 
-    wsProvider.awareness.on("change", updateCursors);
-    updateCursors();
+    wsProvider.awareness.on("change", applyRemoteStyles);
+    applyRemoteStyles();
     return () => {
-      wsProvider.awareness.off("change", updateCursors);
-      cursorWidgets.forEach((w) => editor.removeContentWidget(w));
+      wsProvider.awareness.off("change", applyRemoteStyles);
+      document.getElementById(STYLE_ID)?.remove();
     };
-  }, [activeFile]);
+  }, []);
 
   // Vim / Emacs keybinding mode
   useEffect(() => {

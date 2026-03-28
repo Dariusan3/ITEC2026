@@ -63,9 +63,17 @@ function TreeNode({
   toggleFolder,
   creatingIn,
   setCreatingIn,
+  onMoveFile,
+  dropHighlight,
+  setDropHighlight,
 }) {
   const isFile = node.__file;
   const indent = depth * 12;
+  const isGitKeep = isFile && node.path?.endsWith(".gitkeep");
+
+  if (isFile && isGitKeep) {
+    return null;
+  }
 
   if (isFile) {
     const icon = LANG_ICONS[node.language] || LANG_ICONS.javascript;
@@ -74,6 +82,11 @@ function TreeNode({
       <div
         role="button"
         tabIndex={0}
+        draggable
+        onDragStart={(e) => {
+          e.dataTransfer.effectAllowed = "move";
+          e.dataTransfer.setData("application/itecify-file", node.path);
+        }}
         onClick={() => onFileSelect(node.path, node.language)}
         onContextMenu={(e) => onContextMenu(e, node.path)}
         onKeyDown={(e) => {
@@ -82,7 +95,7 @@ function TreeNode({
             onFileSelect(node.path, node.language);
           }
         }}
-        className="group flex cursor-pointer items-center gap-1.5 rounded px-2 py-1 text-xs"
+        className="group flex cursor-grab active:cursor-grabbing items-center gap-1.5 rounded px-2 py-1 text-xs"
         style={{
           paddingLeft: indent + 8,
           background: isActive ? "var(--bg-tertiary)" : "transparent",
@@ -102,6 +115,7 @@ function TreeNode({
   // Folder node
   const folderPath = node.__folderPath;
   const isOpen = openFolders.has(folderPath);
+  const isDropTarget = dropHighlight === folderPath;
 
   return (
     <div>
@@ -113,8 +127,42 @@ function TreeNode({
         onKeyDown={(e) => {
           if (e.key === "Enter") toggleFolder(folderPath);
         }}
+        onDragOver={(e) => {
+          if (
+            Array.from(e.dataTransfer.types || []).some(
+              (t) => t === "application/itecify-file" || t === "text/plain",
+            )
+          ) {
+            e.preventDefault();
+            e.stopPropagation();
+            e.dataTransfer.dropEffect = "move";
+            setDropHighlight(folderPath);
+          }
+        }}
+        onDragLeave={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget)) {
+            setDropHighlight((h) => (h === folderPath ? null : h));
+          }
+        }}
+        onDrop={(e) => {
+          const types = Array.from(e.dataTransfer.types || []);
+          if (!types.some((t) => t === "application/itecify-file" || t === "text/plain")) return;
+          e.preventDefault();
+          e.stopPropagation();
+          setDropHighlight(null);
+          const from =
+            e.dataTransfer.getData("application/itecify-file") ||
+            e.dataTransfer.getData("text/plain");
+          if (from) onMoveFile(from, folderPath);
+        }}
         className="flex cursor-pointer items-center gap-1.5 rounded px-2 py-1 text-xs hover:opacity-80"
-        style={{ paddingLeft: indent + 8, color: "var(--text-secondary)" }}
+        style={{
+          paddingLeft: indent + 8,
+          color: "var(--text-secondary)",
+          outline: isDropTarget ? "2px dashed var(--accent)" : "none",
+          outlineOffset: 1,
+          background: isDropTarget ? "rgba(203, 166, 247, 0.12)" : "transparent",
+        }}
       >
         <span style={{ fontSize: 9 }}>{isOpen ? "▼" : "▶"}</span>
         <span style={{ fontSize: 10 }}>📁</span>
@@ -135,6 +183,7 @@ function TreeNode({
       {isOpen && (
         <div>
           {Object.entries(node.children)
+            .filter(([, child]) => !(child.__file && child.path?.endsWith(".gitkeep")))
             .sort(([, a], [, b]) => {
               if (!a.__file && b.__file) return -1;
               if (a.__file && !b.__file) return 1;
@@ -153,6 +202,9 @@ function TreeNode({
                 toggleFolder={toggleFolder}
                 creatingIn={creatingIn}
                 setCreatingIn={setCreatingIn}
+                onMoveFile={onMoveFile}
+                dropHighlight={dropHighlight}
+                setDropHighlight={setDropHighlight}
               />
             ))}
           {creatingIn === folderPath && null /* handled by parent */}
@@ -174,6 +226,8 @@ export default function FileTree({ activeFile, onFileSelect }) {
   const [renameTo, setRenameTo] = useState("");
   const [contextMenu, setContextMenu] = useState(null);
   const [openFolders, setOpenFolders] = useState(new Set());
+  /** null | "" (root) | folder path — highlight drop target while dragging */
+  const [dropHighlight, setDropHighlight] = useState(null);
   const newInputRef = useRef(null);
   const renameInputRef = useRef(null);
 
@@ -274,6 +328,41 @@ export default function FileTree({ activeFile, onFileSelect }) {
     else createFile();
   };
 
+  /** Mută fișierul într-un folder (targetFolder gol = rădăcină). */
+  const moveFile = (fromPath, targetFolder) => {
+    if (!fromPath || fromPath.endsWith(".gitkeep")) return;
+    const norm = targetFolder ? String(targetFolder).replace(/\/+$/, "") : "";
+    const base = fromPath.split("/").pop();
+    const newPath = norm ? `${norm}/${base}` : base;
+    if (fromPath === newPath) return;
+    if (yFiles.has(newPath)) {
+      alert(`"${newPath}" există deja`);
+      return;
+    }
+    const meta = yFiles.get(fromPath);
+    if (!meta) return;
+    const text = getYText(fromPath).toString();
+    yFiles.delete(fromPath);
+    yFiles.set(newPath, { language: meta.language ?? guessLang(newPath) });
+    const yNew = getYText(newPath);
+    if (text.length > 0) yNew.insert(0, text);
+    const yOld = getYText(fromPath);
+    if (yOld.length > 0) yOld.delete(0, yOld.length);
+    if (activeFile === fromPath) onFileSelect(newPath, yFiles.get(newPath).language);
+    if (norm) {
+      setOpenFolders((prev) => {
+        const next = new Set(prev);
+        next.add(norm);
+        let prefix = "";
+        for (const part of norm.split("/")) {
+          prefix = prefix ? `${prefix}/${part}` : part;
+          next.add(prefix);
+        }
+        return next;
+      });
+    }
+  };
+
   const renameFile = () => {
     const trimmed = renameTo.trim();
     if (!trimmed || trimmed === renamingFile) {
@@ -355,7 +444,8 @@ export default function FileTree({ activeFile, onFileSelect }) {
     return tree;
   }
 
-  const tree = buildTreeWithPaths(files.filter((f) => !f.name.endsWith(".gitkeep")));
+  /* Include .gitkeep în arbore ca să apară foldere goale; rândul .gitkeep e ascuns în TreeNode */
+  const tree = buildTreeWithPaths(files);
 
   return (
     <div
@@ -409,8 +499,41 @@ export default function FileTree({ activeFile, onFileSelect }) {
         </div>
       </div>
 
-      <div className="flex-1 space-y-0.5 overflow-y-auto px-1">
+      <div
+        className="flex-1 space-y-0.5 overflow-y-auto px-1"
+        onDragOver={(e) => {
+          if (
+            Array.from(e.dataTransfer.types || []).some(
+              (t) => t === "application/itecify-file" || t === "text/plain",
+            )
+          ) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = "move";
+            setDropHighlight("");
+          }
+        }}
+        onDragLeave={(e) => {
+          if (e.currentTarget.contains(e.relatedTarget)) return;
+          setDropHighlight((h) => (h === "" ? null : h));
+        }}
+        onDrop={(e) => {
+          const types = Array.from(e.dataTransfer.types || []);
+          if (!types.some((t) => t === "application/itecify-file" || t === "text/plain")) return;
+          e.preventDefault();
+          const from =
+            e.dataTransfer.getData("application/itecify-file") ||
+            e.dataTransfer.getData("text/plain");
+          setDropHighlight(null);
+          if (from) moveFile(from, "");
+        }}
+        style={
+          dropHighlight === ""
+            ? { boxShadow: "inset 0 0 0 2px var(--accent)" }
+            : undefined
+        }
+      >
         {Object.entries(tree)
+          .filter(([, node]) => !(node.__file && node.path?.endsWith(".gitkeep")))
           .sort(([, a], [, b]) => {
             if (!a.__file && b.__file) return -1;
             if (a.__file && !b.__file) return 1;
@@ -451,6 +574,9 @@ export default function FileTree({ activeFile, onFileSelect }) {
                 toggleFolder={toggleFolder}
                 creatingIn={creatingIn}
                 setCreatingIn={(folder) => startCreateFile(folder)}
+                onMoveFile={moveFile}
+                dropHighlight={dropHighlight}
+                setDropHighlight={setDropHighlight}
               />
             );
           })}
@@ -521,6 +647,47 @@ export default function FileTree({ activeFile, onFileSelect }) {
                 }}
               >
                 Rename
+              </button>
+              <button
+                type="button"
+                className="w-full px-3 py-1.5 text-left hover:opacity-70"
+                style={{ color: "var(--text-secondary)" }}
+                onClick={() => {
+                  const f = contextMenu.filename;
+                  const suggested = f.includes("/") ? f : `folder/${f}`;
+                  const dest = window.prompt("Cale nouă (folder/fișier.ext):", suggested);
+                  setContextMenu(null);
+                  if (!dest || !dest.trim()) return;
+                  const trimmed = dest.trim().replace(/\\/g, "/");
+                  if (trimmed === f) return;
+                  if (yFiles.has(trimmed)) {
+                    alert(`"${trimmed}" există deja`);
+                    return;
+                  }
+                  const meta = yFiles.get(f);
+                  const text = getYText(f).toString();
+                  yFiles.delete(f);
+                  yFiles.set(trimmed, { language: meta?.language ?? guessLang(trimmed) });
+                  const yNew = getYText(trimmed);
+                  if (text.length > 0) yNew.insert(0, text);
+                  const yOld = getYText(f);
+                  if (yOld.length > 0) yOld.delete(0, yOld.length);
+                  if (activeFile === f) onFileSelect(trimmed, yFiles.get(trimmed).language);
+                  const parent = trimmed.includes("/") ? trimmed.slice(0, trimmed.lastIndexOf("/")) : "";
+                  if (parent) {
+                    setOpenFolders((prev) => {
+                      const next = new Set(prev);
+                      let prefix = "";
+                      for (const part of parent.split("/")) {
+                        prefix = prefix ? `${prefix}/${part}` : part;
+                        next.add(prefix);
+                      }
+                      return next;
+                    });
+                  }
+                }}
+              >
+                Move to path…
               </button>
               <button
                 type="button"
