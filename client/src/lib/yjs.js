@@ -17,8 +17,9 @@ function getRandomName() {
 
 const ydoc = new Y.Doc()
 
+const yjsPort = import.meta.env.VITE_WS_PORT || '1234'
 const wsProvider = new WebsocketProvider(
-  `ws://${window.location.hostname}:1234`,
+  `ws://${window.location.hostname}:${yjsPort}`,
   'itecify-room',
   ydoc
 )

@@ -38,8 +38,8 @@ export default function Terminal() {
     fitAddon.fit()
     termRef.current = term
 
-    // Connect to shared terminal WebSocket
-    const ws = new WebSocket(`ws://${window.location.hostname}:1235`)
+    const termPort = import.meta.env.VITE_TERM_WS_PORT || '1235'
+    const ws = new WebSocket(`ws://${window.location.hostname}:${termPort}`)
     wsRef.current = ws
 
     ws.onopen = () => {
