@@ -13,7 +13,12 @@ function getCursorLine(editorRef) {
 /** Extrage un număr de linie din ieșirea compilatorului / runtime (pentru Fix AI). */
 function extractErrorLineHint(text) {
   if (!text) return null;
-  const patterns = [/:(\d+):\d+:/, /:(\d+):(?:\d+:)?\s/, /line\s+(\d+)/i, /at line\s+(\d+)/i];
+  const patterns = [
+    /:(\d+):\d+:/,
+    /:(\d+):(?:\d+:)?\s/,
+    /line\s+(\d+)/i,
+    /at line\s+(\d+)/i,
+  ];
   for (const re of patterns) {
     const m = text.match(re);
     if (m) return parseInt(m[1], 10);
@@ -25,10 +30,12 @@ function extractErrorLineHint(text) {
 function buildFixErrorContext(output) {
   if (!output?.length) return "";
   const lines = [];
-  const errLike = /error|traceback|syntaxerror|referenceerror|exception|warning:|fatal|cannot find|unexpected/i;
+  const errLike =
+    /error|traceback|syntaxerror|referenceerror|exception|warning:|fatal|cannot find|unexpected/i;
   for (const row of output) {
     if (row.type === "stderr") {
-      if (!row.text.includes("Warning: dangerous pattern")) lines.push(row.text);
+      if (!row.text.includes("Warning: dangerous pattern"))
+        lines.push(row.text);
       continue;
     }
     if (row.type === "stdout" && errLike.test(row.text)) lines.push(row.text);
@@ -468,9 +475,8 @@ export default function Sidebar({ editorRef, activeFile, language, output }) {
               "Nu am găsit erori în ultimul run. Rulează din nou cu stderr sau mesaj de compilare în panoul Output.",
             );
           const code = activeFile ? getYText(activeFile).toString() : "";
-          const res = await fetch(`${SERVER_URL}/api/ai/fix`, {
           const hintLine = extractErrorLineHint(errorBlob);
-          const res = await fetch("/api/ai/fix", {
+          const res = await fetch(`${SERVER_URL}/api/ai/fix`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -488,7 +494,10 @@ export default function Sidebar({ editorRef, activeFile, language, output }) {
             yText.insert(0, data.fixed);
             const ed = editorRef?.current?.getEditor?.();
             if (ed && hintLine != null) {
-              const line = Math.min(hintLine, ed.getModel()?.getLineCount?.() ?? hintLine);
+              const line = Math.min(
+                hintLine,
+                ed.getModel()?.getLineCount?.() ?? hintLine,
+              );
               ed.revealLineInCenter(line);
               ed.setPosition({ lineNumber: line, column: 1 });
             }
