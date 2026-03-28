@@ -44,7 +44,7 @@ if (forkParam) {
 }
 
 const DEFAULT_SETTINGS = {
-  theme: 'vs-dark',
+  theme: 'itecify-midnight-mint',
   keymap: 'default',
   fontSize: 14,
   tabSize: 2,
@@ -210,10 +210,10 @@ export default function App() {
   // Password gate — show before the full app if room is locked
   if (passwordRequired && !passwordUnlocked) {
     return (
-      <div className="flex h-full w-full items-center justify-center" style={{ background: 'var(--bg-primary)' }}>
-        <div className="rounded-xl p-8 w-80 shadow-2xl" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)' }}>
-          <p className="text-lg font-bold mb-1" style={{ color: 'var(--accent)' }}>iTECify</p>
-          <p className="text-xs mb-4" style={{ color: 'var(--text-secondary)' }}>
+      <div className="app-shell flex h-full w-full items-center justify-center px-4">
+        <div className="soft-card w-full max-w-sm rounded-[1.4rem] p-8">
+          <p className="mb-1 text-lg font-black uppercase tracking-[0.12em]" style={{ color: 'var(--accent)' }}>ITECIFY</p>
+          <p className="mb-4 text-xs leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
             Room <span className="font-mono" style={{ color: 'var(--text-primary)' }}>#{roomId}</span> is password protected.
           </p>
           <input
@@ -223,8 +223,7 @@ export default function App() {
             onKeyDown={e => e.key === 'Enter' && handleUnlock()}
             placeholder="Enter room password"
             autoFocus
-            className="w-full rounded px-3 py-2 text-sm outline-none mb-3"
-            style={{ background: 'var(--bg-tertiary)', color: 'var(--text-primary)', border: '1px solid var(--border)' }}
+            className="panel-input mb-3 px-3 py-2.5 text-sm"
           />
           {passwordError && (
             <p className="text-xs mb-2" style={{ color: 'var(--red)' }}>{passwordError}</p>
@@ -232,8 +231,8 @@ export default function App() {
           <button
             type="button"
             onClick={handleUnlock}
-            className="w-full rounded px-3 py-2 text-sm font-semibold"
-            style={{ background: 'var(--accent)', color: 'var(--bg-primary)' }}
+            className="liquid-surface w-full rounded-2xl border px-3 py-2.5 text-sm font-semibold uppercase tracking-[0.12em]"
+            style={{ background: 'var(--accent)', color: 'var(--bg-primary)', borderColor: 'var(--accent)' }}
           >Unlock</button>
         </div>
       </div>
@@ -241,7 +240,7 @@ export default function App() {
   }
 
   return (
-    <div className="flex flex-col h-full w-full">
+    <div className="app-shell flex h-full w-full flex-col">
       <ConnectionBanner />
       <TopBar
         filename={activeFile}
@@ -262,7 +261,19 @@ export default function App() {
           <div className="flex-1 overflow-hidden">
             {idbReady
               ? <Editor ref={editorRef} language={language} activeFile={activeFile} settings={settings} readOnly={viewOnly} />
-              : <div className="flex h-full items-center justify-center text-xs" style={{ color: 'var(--text-secondary)' }}>Loading...</div>
+              : (
+                <div className="editor-loading">
+                  <div className="soft-card flex items-center gap-3 rounded-2xl px-4 py-3">
+                    <div
+                      className="h-2.5 w-2.5 animate-bounce rounded-full"
+                      style={{ background: 'var(--accent)' }}
+                    />
+                    <span className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
+                      Preparing workspace...
+                    </span>
+                  </div>
+                </div>
+              )
             }
           </div>
           <OutputPanel

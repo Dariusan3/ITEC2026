@@ -1,17 +1,23 @@
 import { useState, useEffect, useRef } from "react";
 import { yFiles, getYText } from "../lib/yjs";
+import {
+  ChevronDownIcon,
+  ChevronRightIcon,
+  FolderIcon,
+  PlusIcon,
+} from "./ui/Icons";
 
 const LANG_ICONS = {
-  javascript: { icon: "JS", color: "#f9e2af" },
-  typescript: { icon: "TS", color: "#89b4fa" },
-  python: { icon: "PY", color: "#a6e3a1" },
-  rust: { icon: "RS", color: "#fab387" },
-  go: { icon: "GO", color: "#89dceb" },
-  java: { icon: "JV", color: "#f38ba8" },
-  c: { icon: "C", color: "#fab387" },
-  html: { icon: "HT", color: "#f38ba8" },
-  css: { icon: "CS", color: "#89dceb" },
-  json: { icon: "{}", color: "#cba6f7" },
+  javascript: { icon: "JS", color: "#d7f58d" },
+  typescript: { icon: "TS", color: "#6fe3a3" },
+  python: { icon: "PY", color: "#8ff7a7" },
+  rust: { icon: "RS", color: "#9cecae" },
+  go: { icon: "GO", color: "#74f0c2" },
+  java: { icon: "JV", color: "#7edfb3" },
+  c: { icon: "C", color: "#5ccf7f" },
+  html: { icon: "HT", color: "#b8ffca" },
+  css: { icon: "CS", color: "#74f0c2" },
+  json: { icon: "{}", color: "#8ff7a7" },
 };
 
 const EXT_TO_LANG = {
@@ -26,6 +32,12 @@ const EXT_TO_LANG = {
   css: "css",
   json: "json",
 };
+
+const treeInputClass =
+  "soft-card w-full rounded-2xl border px-3 py-2 text-xs font-medium outline-none transition-all duration-150 placeholder:text-[color:var(--text-secondary)] focus:-translate-y-px focus:shadow-[0_12px_24px_rgba(0,0,0,0.18)]";
+
+const contextActionClass =
+  "mx-1 flex w-[calc(100%-0.5rem)] items-center justify-between rounded-xl px-3 py-2 text-left transition-all duration-150 hover:bg-[color:var(--bg-tertiary)] hover:brightness-110";
 
 function guessLang(filename) {
   const ext = filename.split(".").pop();
@@ -95,19 +107,35 @@ function TreeNode({
             onFileSelect(node.path, node.language);
           }
         }}
-        className="group flex cursor-grab active:cursor-grabbing items-center gap-1.5 rounded px-2 py-1 text-xs"
+        className="group flex cursor-grab active:cursor-grabbing items-center gap-2.5 rounded-2xl px-3 py-2 text-xs transition-all duration-150 hover:bg-[color:var(--bg-tertiary)]/78 hover:shadow-[0_10px_18px_rgba(0,0,0,0.12)]"
         style={{
           paddingLeft: indent + 8,
-          background: isActive ? "var(--bg-tertiary)" : "transparent",
+          background: isActive ? "color-mix(in srgb, var(--accent) 12%, var(--bg-tertiary))" : "transparent",
           color: "var(--text-primary)",
+          boxShadow: isActive
+            ? "inset 0 0 0 1px color-mix(in srgb, var(--accent) 24%, var(--border)), 0 12px 24px rgba(0,0,0,0.16)"
+            : "none",
         }}
       >
         <span
-          style={{ color: icon.color, fontWeight: 700, fontSize: 9, minWidth: 14 }}
+          className="inline-flex min-w-[1.9rem] items-center justify-center rounded-xl px-2 py-1 text-[9px] font-bold tracking-[0.12em]"
+          style={{
+            color: icon.color,
+            background: "linear-gradient(180deg, color-mix(in srgb, var(--bg-primary) 80%, transparent), color-mix(in srgb, var(--bg-tertiary) 92%, transparent))",
+            boxShadow: "inset 0 0 0 1px color-mix(in srgb, var(--border) 86%, transparent), 0 8px 16px rgba(0,0,0,0.12)",
+          }}
         >
           {icon.icon}
         </span>
-        <span className="flex-1 truncate">{name}</span>
+        <div className="min-w-0 flex-1">
+          <span className="block truncate font-semibold tracking-[0.01em]">{name}</span>
+          <span
+            className="block truncate text-[9px] uppercase tracking-[0.16em]"
+            style={{ color: "var(--text-secondary)" }}
+          >
+            {node.language}
+          </span>
+        </div>
       </div>
     );
   }
@@ -155,18 +183,38 @@ function TreeNode({
             e.dataTransfer.getData("text/plain");
           if (from) onMoveFile(from, folderPath);
         }}
-        className="flex cursor-pointer items-center gap-1.5 rounded px-2 py-1 text-xs hover:opacity-80"
+        className="group flex cursor-pointer items-center gap-2.5 rounded-2xl px-3 py-2 text-xs transition-all duration-150 hover:bg-[color:var(--bg-tertiary)]/72 hover:shadow-[0_10px_18px_rgba(0,0,0,0.12)]"
         style={{
           paddingLeft: indent + 8,
           color: "var(--text-secondary)",
           outline: isDropTarget ? "2px dashed var(--accent)" : "none",
           outlineOffset: 1,
-          background: isDropTarget ? "rgba(203, 166, 247, 0.12)" : "transparent",
+          background: isDropTarget ? "color-mix(in srgb, var(--accent) 12%, transparent)" : "transparent",
         }}
       >
-        <span style={{ fontSize: 9 }}>{isOpen ? "▼" : "▶"}</span>
-        <span style={{ fontSize: 10 }}>📁</span>
-        <span className="flex-1 truncate font-medium">{name}</span>
+        {isOpen ? (
+          <ChevronDownIcon className="h-3 w-3 shrink-0" />
+        ) : (
+          <ChevronRightIcon className="h-3 w-3 shrink-0" />
+        )}
+        <span
+          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-xl"
+          style={{
+            background: "linear-gradient(180deg, color-mix(in srgb, var(--accent) 10%, var(--bg-primary)), color-mix(in srgb, var(--bg-tertiary) 88%, transparent))",
+            boxShadow: "inset 0 0 0 1px color-mix(in srgb, var(--accent) 18%, var(--border)), 0 8px 16px rgba(0,0,0,0.12)",
+          }}
+        >
+          <FolderIcon className="h-3.5 w-3.5 shrink-0" stroke="var(--accent)" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <span className="block truncate font-semibold tracking-[0.01em]">{name}</span>
+          <span
+            className="block truncate text-[9px] uppercase tracking-[0.16em]"
+            style={{ color: "var(--text-secondary)" }}
+          >
+            Folder
+          </span>
+        </div>
         <button
           type="button"
           title="New file in folder"
@@ -174,10 +222,14 @@ function TreeNode({
             e.stopPropagation();
             setCreatingIn(folderPath);
           }}
-          className="opacity-0 group-hover:opacity-100 text-xs px-1 hover:opacity-70"
-          style={{ color: "var(--accent)" }}
+          className="liquid-surface opacity-0 group-hover:opacity-100 rounded-xl border p-1.5 transition-all duration-150 hover:-translate-y-px hover:opacity-100"
+          style={{
+            color: "var(--accent)",
+            borderColor: "color-mix(in srgb, var(--accent) 18%, var(--border))",
+            background: "color-mix(in srgb, var(--accent) 10%, var(--bg-primary))",
+          }}
         >
-          +
+          <PlusIcon className="h-3.5 w-3.5" />
         </button>
       </div>
       {isOpen && (
@@ -215,7 +267,7 @@ function TreeNode({
 }
 
 const explorerBtnClass =
-  "inline-flex h-full items-center justify-center rounded-none border px-2 py-1 font-mono text-[10px] font-bold leading-none transition-all duration-100 hover:brightness-110 active:scale-[0.93] sm:px-2.5 sm:py-1 sm:text-[11px]";
+  "liquid-surface inline-flex h-full items-center justify-center rounded-2xl border px-2.5 py-1.5 font-mono text-[10px] font-bold leading-none shadow-[0_10px_20px_rgba(0,0,0,0.14)] transition-all duration-150 hover:-translate-y-px hover:brightness-110 active:scale-[0.93] sm:px-3 sm:py-1.5 sm:text-[11px]";
 
 export default function FileTree({ activeFile, onFileSelect }) {
   const [files, setFiles] = useState([]);
@@ -449,22 +501,29 @@ export default function FileTree({ activeFile, onFileSelect }) {
 
   return (
     <div
-      className="flex h-full w-48 flex-col select-none border-r"
+      className="panel-shell flex h-full w-52 flex-col select-none border-r"
       style={{
-        background: "var(--bg-secondary)",
         borderColor: "var(--border)",
       }}
     >
       <div
-        className="flex min-h-[3rem] shrink-0 items-center justify-between gap-2 border-b px-3 py-2.5 sm:gap-2.5"
+        className="flex min-h-[3.5rem] shrink-0 items-center justify-between gap-2 border-b px-3.5 py-2.5 sm:gap-2.5"
         style={{ borderColor: "var(--border)" }}
       >
-        <span
-          className="text-[11px] font-bold uppercase tracking-wider sm:text-xs"
-          style={{ color: "var(--accent)" }}
-        >
-          Explorer
-        </span>
+        <div className="min-w-0 flex-1">
+          <span
+            className="block text-[11px] font-bold uppercase tracking-[0.24em] sm:text-xs"
+            style={{ color: "var(--accent)" }}
+          >
+            Explorer
+          </span>
+          <span
+            className="mt-1 block text-[9px] uppercase tracking-[0.16em]"
+            style={{ color: "var(--text-secondary)" }}
+          >
+            {files.filter((f) => !f.name.endsWith(".gitkeep")).length} files
+          </span>
+        </div>
         <div className="flex items-center gap-1">
           <button
             type="button"
@@ -479,7 +538,7 @@ export default function FileTree({ activeFile, onFileSelect }) {
             }}
             title="New file"
           >
-            +
+            <PlusIcon className="h-3.5 w-3.5" />
           </button>
           <button
             type="button"
@@ -494,13 +553,13 @@ export default function FileTree({ activeFile, onFileSelect }) {
             }}
             title="New folder"
           >
-            ⊕
+            <FolderIcon className="h-3.5 w-3.5" />
           </button>
         </div>
       </div>
 
       <div
-        className="flex-1 space-y-0.5 overflow-y-auto px-1"
+        className="flex-1 space-y-1 overflow-y-auto px-2.5 py-2.5"
         onDragOver={(e) => {
           if (
             Array.from(e.dataTransfer.types || []).some(
@@ -552,7 +611,7 @@ export default function FileTree({ activeFile, onFileSelect }) {
                     if (e.key === "Enter") renameFile();
                     if (e.key === "Escape") setRenamingFile(null);
                   }}
-                  className="w-full rounded px-2 py-1 text-xs outline-none"
+                  className={treeInputClass}
                   style={{
                     background: "var(--bg-tertiary)",
                     color: "var(--text-primary)",
@@ -603,7 +662,7 @@ export default function FileTree({ activeFile, onFileSelect }) {
                     ? `${creatingIn}/filename.js`
                     : "filename.js"
               }
-              className="w-full rounded px-2 py-1 text-xs outline-none"
+              className={treeInputClass}
               style={{
                 background: "var(--bg-tertiary)",
                 color: "var(--text-primary)",
@@ -612,7 +671,7 @@ export default function FileTree({ activeFile, onFileSelect }) {
             />
             {creatingIn && (
               <p
-                className="text-[9px] px-1 mt-0.5"
+                className="mt-1 px-1 text-[9px] uppercase tracking-[0.16em]"
                 style={{ color: "var(--text-secondary)" }}
               >
                 in {creatingIn}/
@@ -624,13 +683,10 @@ export default function FileTree({ activeFile, onFileSelect }) {
 
       {contextMenu && (
         <div
-          className="fixed z-50 rounded py-1 text-xs shadow-lg"
+          className="floating-panel fixed z-50 min-w-[11rem] py-1.5 text-xs"
           style={{
             top: contextMenu.y,
             left: contextMenu.x,
-            background: "var(--bg-tertiary)",
-            border: "1px solid var(--border)",
-            minWidth: 150,
           }}
           onClick={(e) => e.stopPropagation()}
         >
@@ -638,19 +694,20 @@ export default function FileTree({ activeFile, onFileSelect }) {
             <>
               <button
                 type="button"
-                className="w-full px-3 py-1.5 text-left hover:opacity-70"
+                className={contextActionClass}
                 style={{ color: "var(--text-primary)" }}
                 onClick={() => {
                   setRenamingFile(contextMenu.filename);
                   setRenameTo(contextMenu.filename);
                   setContextMenu(null);
                 }}
-              >
-                Rename
-              </button>
+                >
+                  <span>Rename</span>
+                  <span style={{ color: "var(--text-secondary)" }}>Enter</span>
+                </button>
               <button
                 type="button"
-                className="w-full px-3 py-1.5 text-left hover:opacity-70"
+                className={contextActionClass}
                 style={{ color: "var(--text-secondary)" }}
                 onClick={() => {
                   const f = contextMenu.filename;
@@ -691,41 +748,44 @@ export default function FileTree({ activeFile, onFileSelect }) {
               </button>
               <button
                 type="button"
-                className="w-full px-3 py-1.5 text-left hover:opacity-70"
+                className={contextActionClass}
                 style={{ color: "var(--red)" }}
                 onClick={() => {
                   deleteFile(contextMenu.filename);
                   setContextMenu(null);
                 }}
-              >
-                Delete
-              </button>
+                >
+                  <span>Delete</span>
+                  <span style={{ color: "color-mix(in srgb, var(--red) 80%, white)" }}>Del</span>
+                </button>
             </>
           )}
           {contextMenu.folderPath && (
             <>
               <button
                 type="button"
-                className="w-full px-3 py-1.5 text-left hover:opacity-70"
+                className={contextActionClass}
                 style={{ color: "var(--accent)" }}
                 onClick={() => {
                   startCreateFile(contextMenu.folderPath);
                   setContextMenu(null);
                 }}
-              >
-                New file here
-              </button>
+                >
+                  <span>New file here</span>
+                  <span style={{ color: "var(--text-secondary)" }}>+</span>
+                </button>
               <button
                 type="button"
-                className="w-full px-3 py-1.5 text-left hover:opacity-70"
+                className={contextActionClass}
                 style={{ color: "var(--red)" }}
                 onClick={() => {
                   deleteFolder(contextMenu.folderPath);
                   setContextMenu(null);
                 }}
-              >
-                Delete folder
-              </button>
+                >
+                  <span>Delete folder</span>
+                  <span style={{ color: "color-mix(in srgb, var(--red) 80%, white)" }}>Del</span>
+                </button>
             </>
           )}
         </div>
