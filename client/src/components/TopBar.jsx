@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
-import { wsProvider } from "../lib/yjs";
+import { wsProvider, roomId, getYText } from "../lib/yjs";
+import { useAuth } from "../lib/auth";
 
 const LANGUAGES = [
   "javascript",
@@ -11,8 +12,27 @@ const LANGUAGES = [
   "json",
 ];
 
-export default function TopBar({ language, onLanguageChange, onRun, running }) {
+export default function TopBar({
+  filename,
+  language,
+  onLanguageChange,
+  onRun,
+  running,
+}) {
   const [users, setUsers] = useState([]);
+  const [copied, setCopied] = useState(false);
+  const [gistState, setGistState] = useState("idle"); // idle | saving | done | error
+  const { user, login, logout } = useAuth();
+
+  useEffect(() => {
+    if (user) {
+      wsProvider.awareness.setLocalStateField("user", {
+        name: user.name || user.login,
+        color: wsProvider.awareness.getLocalState()?.user?.color || "#cba6f7",
+        avatar: user.avatar,
+      });
+    }
+  }, [user]);
 
   useEffect(() => {
     const awareness = wsProvider.awareness;
@@ -32,6 +52,35 @@ export default function TopBar({ language, onLanguageChange, onRun, running }) {
     return () => awareness.off("change", update);
   }, []);
 
+  const handleGist = async () => {
+    if (gistState === "saving") return;
+    setGistState("saving");
+    try {
+      const content = getYText(filename).toString();
+      const res = await fetch("/api/gist", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filename, content }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setGistState("done");
+      window.open(data.url, "_blank", "noopener");
+      setTimeout(() => setGistState("idle"), 3000);
+    } catch {
+      setGistState("error");
+      setTimeout(() => setGistState("idle"), 3000);
+    }
+  };
+
+  const handleShare = () => {
+    const url = `${window.location.origin}${window.location.pathname}#${roomId}`;
+    navigator.clipboard.writeText(url).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
   return (
     <div
       className="flex h-12 w-full items-center justify-between gap-3 border-b px-4 sm:gap-4 sm:px-5"
@@ -47,75 +96,148 @@ export default function TopBar({ language, onLanguageChange, onRun, running }) {
         >
           iTECify
         </span>
-        <div className="flex min-w-0 items-center -space-x-2">
-          {users.map((user) => (
-            <div
-              key={user.clientId}
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 text-xs font-bold sm:h-9 sm:w-9 sm:text-sm"
-              style={{
-                background: user.color,
-                borderColor: "var(--bg-secondary)",
-                color: "var(--bg-primary)",
-              }}
-              title={user.name}
-            >
-              {user.name[0]}
-            </div>
-          ))}
-        </div>
+        <span
+          className="rounded px-1.5 py-0.5 font-mono text-[10px]"
+          style={{
+            background: "var(--bg-tertiary)",
+            color: "var(--text-secondary)",
+          }}
+        >
+          #{roomId}
+        </span>
+        <span className="text-xs" style={{ color: "var(--text-secondary)" }}>
+          {filename}
+        </span>
       </div>
 
-      <nav
-        className="flex min-w-0 max-w-full flex-wrap items-center justify-end gap-x-2 overflow-x-auto text-xs sm:text-sm"
-        style={{ color: "var(--text-secondary)" }}
-        aria-label="Rulează și limbă"
-      >
+      <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
+        <select
+          value={language}
+          onChange={(e) => onLanguageChange(e.target.value)}
+          className="cursor-pointer rounded border px-2 py-1 text-xs outline-none"
+          style={{
+            background: "var(--bg-tertiary)",
+            borderColor: "var(--border)",
+            color: "var(--text-primary)",
+          }}
+        >
+          {LANGUAGES.map((lang) => (
+            <option key={lang} value={lang}>
+              {lang}
+            </option>
+          ))}
+        </select>
+
+        <button
+          type="button"
+          onClick={handleShare}
+          className="rounded px-3 py-1 text-xs font-semibold transition-all"
+          style={{
+            background: copied ? "var(--green)" : "var(--bg-tertiary)",
+            color: copied ? "var(--bg-primary)" : "var(--accent)",
+            border: "1px solid var(--accent)",
+          }}
+        >
+          {copied ? "✓ Copied!" : "⎘ Share"}
+        </button>
+
+        <button
+          type="button"
+          onClick={handleGist}
+          disabled={gistState === "saving"}
+          className="rounded px-3 py-1 text-xs font-semibold transition-all"
+          style={{
+            background:
+              gistState === "done"
+                ? "var(--green)"
+                : gistState === "error"
+                  ? "var(--red)"
+                  : "var(--bg-tertiary)",
+            color:
+              gistState === "done" || gistState === "error"
+                ? "var(--bg-primary)"
+                : "var(--text-secondary)",
+            border: "1px solid var(--border)",
+            opacity: gistState === "saving" ? 0.6 : 1,
+          }}
+        >
+          {gistState === "saving"
+            ? "..."
+            : gistState === "done"
+              ? "✓ Gist"
+              : gistState === "error"
+                ? "✗ Failed"
+                : "↗ Gist"}
+        </button>
+
         <button
           type="button"
           onClick={onRun}
           disabled={running}
-          className="shrink-0 rounded-lg px-4 py-2 text-sm font-bold tracking-wide transition-opacity sm:px-5 sm:text-base"
+          className="rounded px-3 py-1 text-xs font-semibold transition-opacity"
           style={{
             background: "var(--green)",
             color: "var(--bg-primary)",
             opacity: running ? 0.5 : 1,
-            padding: "0.5rem 1rem",
-            fontSize: "0.875rem",
           }}
         >
-          {running ? "Running…" : "RUN"}
+          {running ? "⏳ Running..." : "▶ Run"}
         </button>
 
-        <span className="shrink-0 select-none opacity-50" aria-hidden>
-          |
-        </span>
-
-        {LANGUAGES.map((lang, i) => (
-          <span key={lang} className="flex shrink-0 items-center gap-2">
-            {i > 0 && (
-              <span className="select-none opacity-50" aria-hidden>
-                |
-              </span>
+        {user === null && (
+          <button
+            type="button"
+            onClick={login}
+            className="rounded px-3 py-1 text-xs font-semibold"
+            style={{
+              background: "var(--bg-tertiary)",
+              color: "var(--text-secondary)",
+              border: "1px solid var(--border)",
+            }}
+          >
+            ⇢ Login with GitHub
+          </button>
+        )}
+        {user && (
+          <div className="flex items-center gap-1.5">
+            {user.avatar && (
+              <img
+                src={user.avatar}
+                alt={user.name}
+                className="h-6 w-6 rounded-full"
+              />
             )}
+            <span className="text-xs" style={{ color: "var(--text-secondary)" }}>
+              {user.name || user.login}
+            </span>
             <button
               type="button"
-              onClick={() => onLanguageChange(lang)}
-              className="rounded px-1 py-0.5 font-medium transition-colors hover:opacity-90"
-              style={{
-                color:
-                  language === lang ? "var(--accent)" : "var(--text-primary)",
-                textDecoration: language === lang ? "underline" : "none",
-                textUnderlineOffset: "4px",
-              }}
+              onClick={logout}
+              className="rounded px-1.5 py-0.5 text-[10px]"
+              style={{ color: "var(--text-secondary)", border: "1px solid var(--border)" }}
             >
-              {lang}
+              out
             </button>
-          </span>
-        ))}
-        <span className="shrink-0 select-none opacity-50" aria-hidden>
-          |
-        </span>
-      </nav>
+          </div>
+        )}
+
+        <div className="flex min-w-0 items-center -space-x-2">
+          {users.map((u) => (
+            <div
+              key={u.clientId}
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 text-xs font-bold sm:h-9 sm:w-9 sm:text-sm"
+              style={{
+                background: u.color,
+                borderColor: "var(--bg-secondary)",
+                color: "var(--bg-primary)",
+              }}
+              title={u.name}
+            >
+              {u.name[0]}
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }

@@ -1,7 +1,22 @@
 import { useRef, useEffect, useCallback, forwardRef, useImperativeHandle } from 'react'
 import * as monaco from 'monaco-editor'
 import { MonacoBinding } from 'y-monaco'
-import { wsProvider, ytext, yAiBlocks } from '../lib/yjs'
+import { wsProvider, getYText, yAiBlocks } from '../lib/yjs'
+import * as prettier from 'prettier/standalone'
+import prettierBabel from 'prettier/plugins/babel'
+import prettierEstree from 'prettier/plugins/estree'
+import prettierTypescript from 'prettier/plugins/typescript'
+import prettierPostcss from 'prettier/plugins/postcss'
+import prettierHtml from 'prettier/plugins/html'
+
+const PRETTIER_PARSERS = {
+  javascript: { parser: 'babel', plugins: [prettierBabel, prettierEstree] },
+  typescript: { parser: 'typescript', plugins: [prettierTypescript, prettierEstree] },
+  css:  { parser: 'css', plugins: [prettierPostcss] },
+  scss: { parser: 'scss', plugins: [prettierPostcss] },
+  html: { parser: 'html', plugins: [prettierHtml] },
+  json: { parser: 'json', plugins: [prettierBabel, prettierEstree] },
+}
 
 import editorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker'
 import jsonWorker from 'monaco-editor/esm/vs/language/json/json.worker?worker'
@@ -21,7 +36,7 @@ self.MonacoEnvironment = {
 
 const AI_BLOCK_CLASS = 'ai-block-decoration'
 
-const Editor = forwardRef(function Editor({ language }, ref) {
+const Editor = forwardRef(function Editor({ language, activeFile }, ref) {
   const containerRef = useRef(null)
   const editorRef = useRef(null)
   const bindingRef = useRef(null)
@@ -31,31 +46,20 @@ const Editor = forwardRef(function Editor({ language }, ref) {
   useImperativeHandle(ref, () => ({
     getPosition: () => editorRef.current?.getPosition(),
     getEditor: () => editorRef.current,
+    getText: () => activeFile ? getYText(activeFile).toString() : '',
   }))
 
   const acceptBlock = useCallback((blockId) => {
     const block = yAiBlocks.get(blockId)
     if (!block || !editorRef.current) return
-
     const editor = editorRef.current
     const model = editor.getModel()
-    const line = block.line
-    const lineCount = model.getLineCount()
-    const targetLine = Math.min(line, lineCount)
+    const targetLine = Math.min(block.line, model.getLineCount())
     const lineContent = model.getLineContent(targetLine)
-
-    // Insert suggestion after the target line
-    const insertPosition = {
-      startLineNumber: targetLine,
-      startColumn: lineContent.length + 1,
-      endLineNumber: targetLine,
-      endColumn: lineContent.length + 1,
-    }
     editor.executeEdits('ai-accept', [{
-      range: insertPosition,
+      range: { startLineNumber: targetLine, startColumn: lineContent.length + 1, endLineNumber: targetLine, endColumn: lineContent.length + 1 },
       text: '\n' + block.suggestion,
     }])
-
     yAiBlocks.delete(blockId)
   }, [])
 
@@ -66,37 +70,21 @@ const Editor = forwardRef(function Editor({ language }, ref) {
   const renderAiBlocks = useCallback(() => {
     const editor = editorRef.current
     if (!editor) return
-
-    // Clear old widgets
-    widgetsRef.current.forEach((widget) => {
-      editor.removeContentWidget(widget)
-    })
+    widgetsRef.current.forEach(w => editor.removeContentWidget(w))
     widgetsRef.current.clear()
-
-    // Clear old decorations
-    decorationsRef.current.forEach((collection) => collection.clear())
+    decorationsRef.current.forEach(c => c.clear())
     decorationsRef.current.clear()
 
-    // Render current blocks
     yAiBlocks.forEach((block, blockId) => {
       if (block.status !== 'pending') return
+      const targetLine = Math.min(block.line, editor.getModel().getLineCount())
 
-      const model = editor.getModel()
-      const lineCount = model.getLineCount()
-      const targetLine = Math.min(block.line, lineCount)
-
-      // Add line decoration (purple gutter highlight)
       const newDecorations = editor.createDecorationsCollection([{
         range: new monaco.Range(targetLine, 1, targetLine, 1),
-        options: {
-          isWholeLine: true,
-          className: AI_BLOCK_CLASS,
-          glyphMarginClassName: 'ai-block-glyph',
-        },
+        options: { isWholeLine: true, className: AI_BLOCK_CLASS, glyphMarginClassName: 'ai-block-glyph' },
       }])
       decorationsRef.current.set(blockId, newDecorations)
 
-      // Add content widget with suggestion + buttons
       const domNode = document.createElement('div')
       domNode.className = 'ai-block-widget'
       domNode.innerHTML = `
@@ -108,9 +96,7 @@ const Editor = forwardRef(function Editor({ language }, ref) {
         <div class="ai-block-actions">
           <button class="ai-block-accept" data-block-id="${blockId}">Accept</button>
           <button class="ai-block-reject" data-block-id="${blockId}">Reject</button>
-        </div>
-      `
-
+        </div>`
       domNode.querySelector('.ai-block-accept').addEventListener('click', () => acceptBlock(blockId))
       domNode.querySelector('.ai-block-reject').addEventListener('click', () => rejectBlock(blockId))
 
@@ -122,15 +108,14 @@ const Editor = forwardRef(function Editor({ language }, ref) {
           preference: [monaco.editor.ContentWidgetPositionPreference.BELOW],
         }),
       }
-
       editor.addContentWidget(widget)
       widgetsRef.current.set(blockId, widget)
     })
   }, [acceptBlock, rejectBlock])
 
+  // Create editor once
   useEffect(() => {
     if (!containerRef.current) return
-
     const editor = monaco.editor.create(containerRef.current, {
       language,
       theme: 'vs-dark',
@@ -150,45 +135,90 @@ const Editor = forwardRef(function Editor({ language }, ref) {
     })
     editorRef.current = editor
 
-    const binding = new MonacoBinding(
-      ytext,
-      editor.getModel(),
-      new Set([editor]),
-      wsProvider.awareness
-    )
-    bindingRef.current = binding
+    // Register Prettier format action (Shift+Alt+F)
+    editor.addAction({
+      id: 'prettier-format',
+      label: 'Format Document (Prettier)',
+      keybindings: [monaco.KeyMod.Shift | monaco.KeyMod.Alt | monaco.KeyCode.KeyF],
+      run: async (ed) => {
+        const model = ed.getModel()
+        if (!model) return
+        const lang = model.getLanguageId()
+        const config = PRETTIER_PARSERS[lang]
+        if (!config) return
+        try {
+          const formatted = await prettier.format(model.getValue(), {
+            parser: config.parser,
+            plugins: config.plugins,
+            semi: true,
+            singleQuote: true,
+            tabWidth: 2,
+            printWidth: 100,
+          })
+          const fullRange = model.getFullModelRange()
+          ed.executeEdits('prettier', [{ range: fullRange, text: formatted }])
+        } catch {}
+      },
+    })
 
-    // Listen for AI block changes from Yjs
     const observer = () => renderAiBlocks()
     yAiBlocks.observe(observer)
     renderAiBlocks()
-
     return () => {
       yAiBlocks.unobserve(observer)
-      widgetsRef.current.forEach((widget) => editor.removeContentWidget(widget))
-      binding.destroy()
+      widgetsRef.current.forEach(w => editor.removeContentWidget(w))
       editor.dispose()
     }
   }, [renderAiBlocks])
 
+  // Re-bind Yjs text when active file changes
   useEffect(() => {
-    if (editorRef.current) {
-      const model = editorRef.current.getModel()
-      if (model) {
-        monaco.editor.setModelLanguage(model, language)
-      }
+    const editor = editorRef.current
+    if (!editor || !activeFile) return
+
+    // Destroy old binding
+    if (bindingRef.current) {
+      bindingRef.current.destroy()
+      bindingRef.current = null
     }
+
+    // Create a new Monaco model for this file
+    const yFile = getYText(activeFile)
+    const existingModel = monaco.editor.getModels().find(
+      m => m.uri.toString() === `file:///${activeFile}`
+    )
+    const model = existingModel || monaco.editor.createModel(
+      yFile.toString(),
+      language,
+      monaco.Uri.parse(`file:///${activeFile}`)
+    )
+    editor.setModel(model)
+    monaco.editor.setModelLanguage(model, language)
+
+    const binding = new MonacoBinding(yFile, model, new Set([editor]), wsProvider.awareness)
+    bindingRef.current = binding
+
+    return () => {
+      binding.destroy()
+      bindingRef.current = null
+    }
+  }, [activeFile])
+
+  // Update language when it changes without switching files
+  useEffect(() => {
+    const editor = editorRef.current
+    if (!editor) return
+    const model = editor.getModel()
+    if (model) monaco.editor.setModelLanguage(model, language)
   }, [language])
 
   return <div ref={containerRef} className="w-full h-full" />
 })
 
 function escapeHtml(str) {
-  return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
+  return String(str)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 }
 
 export default Editor
