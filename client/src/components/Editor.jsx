@@ -4,7 +4,6 @@ import {
   useCallback,
   forwardRef,
   useImperativeHandle,
-  useState,
 } from "react";
 import * as Y from "yjs";
 import * as monaco from "monaco-editor";
@@ -47,6 +46,24 @@ self.MonacoEnvironment = {
   },
 };
 
+const AI_BLOCK_CLASS = "ai-block-decoration";
+
+/** Normalize AI suggestion: JSON wrapper, markdown fences */
+function normalizeAiSuggestion(raw) {
+  let code = raw ?? "";
+  if (typeof code === "string" && code.trimStart().startsWith("{")) {
+    try {
+      const parsed = JSON.parse(code);
+      if (parsed.suggestion) code = parsed.suggestion;
+    } catch {
+      /* ignore */
+    }
+  }
+  return code
+    .replace(/^```[\w]*\n?/, "")
+    .replace(/\n?```$/, "");
+}
+
 const Editor = forwardRef(function Editor(
   { language, activeFile, settings = {}, readOnly = false },
   ref,
@@ -55,8 +72,9 @@ const Editor = forwardRef(function Editor(
   const containerRef = useRef(null);
   const editorRef = useRef(null);
   const bindingRef = useRef(null);
+  const decorationsRef = useRef(new Map());
+  const widgetsRef = useRef(new Map());
   const keymapRef = useRef(null);
-  const [aiBlocks, setAiBlocks] = useState([]);
 
   useImperativeHandle(ref, () => ({
     getPosition: () => editorRef.current?.getPosition(),
@@ -71,18 +89,7 @@ const Editor = forwardRef(function Editor(
     const model = editor.getModel();
     const targetLine = Math.min(block.line, model.getLineCount());
     const lineContent = model.getLineContent(targetLine);
-
-    // Guard: if suggestion is accidentally a JSON string, extract the code
-    let code = block.suggestion ?? "";
-    if (typeof code === "string" && code.trimStart().startsWith("{")) {
-      try {
-        const parsed = JSON.parse(code);
-        if (parsed.suggestion) code = parsed.suggestion;
-      } catch {}
-    }
-    // Strip surrounding markdown fences if present
-    code = code.replace(/^```[\w]*\n?/, "").replace(/\n?```$/, "");
-
+    const code = normalizeAiSuggestion(block.suggestion);
     editor.executeEdits("ai-accept", [
       {
         range: {
@@ -101,13 +108,62 @@ const Editor = forwardRef(function Editor(
     yAiBlocks.delete(blockId);
   }, []);
 
-  const syncAiBlocks = useCallback(() => {
-    const blocks = [];
+  const renderAiBlocks = useCallback(() => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    widgetsRef.current.forEach((w) => editor.removeContentWidget(w));
+    widgetsRef.current.clear();
+    decorationsRef.current.forEach((c) => c.clear());
+    decorationsRef.current.clear();
+
     yAiBlocks.forEach((block, blockId) => {
-      if (block.status === "pending") blocks.push({ ...block, blockId });
+      if (block.status !== "pending") return;
+      const targetLine = Math.min(block.line, editor.getModel().getLineCount());
+      const displaySuggestion = normalizeAiSuggestion(block.suggestion);
+
+      const newDecorations = editor.createDecorationsCollection([
+        {
+          range: new monaco.Range(targetLine, 1, targetLine, 1),
+          options: {
+            isWholeLine: true,
+            className: AI_BLOCK_CLASS,
+            glyphMarginClassName: "ai-block-glyph",
+          },
+        },
+      ]);
+      decorationsRef.current.set(blockId, newDecorations);
+
+      const domNode = document.createElement("div");
+      domNode.className = "ai-block-widget";
+      domNode.innerHTML = `
+        <div class="ai-block-header">
+          <span class="ai-block-label">Claude suggests:</span>
+          <span class="ai-block-explanation">${escapeHtml(block.explanation)}</span>
+        </div>
+        <pre class="ai-block-code">${escapeHtml(displaySuggestion)}</pre>
+        <div class="ai-block-actions">
+          <button class="ai-block-accept" data-block-id="${blockId}">Accept</button>
+          <button class="ai-block-reject" data-block-id="${blockId}">Reject</button>
+        </div>`;
+      domNode
+        .querySelector(".ai-block-accept")
+        .addEventListener("click", () => acceptBlock(blockId));
+      domNode
+        .querySelector(".ai-block-reject")
+        .addEventListener("click", () => rejectBlock(blockId));
+
+      const widget = {
+        getId: () => `ai-widget-${blockId}`,
+        getDomNode: () => domNode,
+        getPosition: () => ({
+          position: { lineNumber: targetLine + 1, column: 1 },
+          preference: [monaco.editor.ContentWidgetPositionPreference.BELOW],
+        }),
+      };
+      editor.addContentWidget(widget);
+      widgetsRef.current.set(blockId, widget);
     });
-    setAiBlocks(blocks);
-  }, []);
+  }, [acceptBlock, rejectBlock]);
 
   // Create editor once
   useEffect(() => {
@@ -157,20 +213,21 @@ const Editor = forwardRef(function Editor(
           const fullRange = model.getFullModelRange();
           ed.executeEdits("prettier", [{ range: fullRange, text: formatted }]);
         } catch {
-          // Silently ignore formatting errors
+          /* silently ignore formatting errors */
         }
       },
     });
 
-    const observer = () => syncAiBlocks();
+    const observer = () => renderAiBlocks();
     yAiBlocks.observe(observer);
-    syncAiBlocks();
+    renderAiBlocks();
     return () => {
       yAiBlocks.unobserve(observer);
+      widgetsRef.current.forEach((w) => editor.removeContentWidget(w));
       editor.dispose();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [syncAiBlocks]); // language + readOnly intentionally omitted — editor is created once
+  }, [renderAiBlocks]); // language + readOnly intentionally omitted — editor is created once
 
   // Re-bind Yjs text when active file changes
   useEffect(() => {
@@ -233,6 +290,11 @@ const Editor = forwardRef(function Editor(
       lineNumbers: settings.lineNumbers !== false ? "on" : "off",
     });
   }, [settings]);
+
+  // Sync read-only (e.g. view-only room) without recreating the editor
+  useEffect(() => {
+    editorRef.current?.updateOptions({ readOnly });
+  }, [readOnly]);
 
   // Cursor name labels for remote users
   useEffect(() => {
@@ -355,146 +417,16 @@ const Editor = forwardRef(function Editor(
           borderTop: "1px solid var(--border)",
         }}
       />
-      {aiBlocks.map((block, i) => (
-        <DraggableAiPanel
-          key={block.blockId}
-          block={block}
-          initialPos={{ x: 40 + i * 20, y: 40 + i * 20 }}
-          onAccept={() => acceptBlock(block.blockId)}
-          onReject={() => rejectBlock(block.blockId)}
-        />
-      ))}
     </div>
   );
 });
 
-function DraggableAiPanel({ block, initialPos, onAccept, onReject }) {
-  const [pos, setPos] = useState(initialPos);
-  const dragRef = useRef(null);
-
-  const onMouseDown = (e) => {
-    if (e.target.tagName === "BUTTON" || e.target.tagName === "PRE") return;
-    e.preventDefault();
-    const startX = e.clientX - pos.x;
-    const startY = e.clientY - pos.y;
-
-    const onMove = (me) =>
-      setPos({ x: me.clientX - startX, y: me.clientY - startY });
-    const onUp = () => {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-    };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-  };
-
-  return (
-    <div
-      ref={dragRef}
-      onMouseDown={onMouseDown}
-      style={{
-        position: "absolute",
-        left: pos.x,
-        top: pos.y,
-        zIndex: 50,
-        width: 340,
-        background: "#1e1e2e",
-        border: "1.5px dashed #cba6f7",
-        borderRadius: 8,
-        padding: "10px 12px",
-        boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
-        cursor: "grab",
-        userSelect: "none",
-        fontFamily: "-apple-system, sans-serif",
-      }}
-    >
-      {/* Header */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-          marginBottom: 8,
-        }}
-      >
-        <span style={{ fontSize: 11, fontWeight: 700, color: "#cba6f7" }}>
-          ✦ Claude suggests
-        </span>
-        <span
-          style={{
-            fontSize: 11,
-            color: "#a6adc8",
-            flex: 1,
-            minWidth: 0,
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          }}
-        >
-          {block.explanation}
-        </span>
-        <span style={{ fontSize: 10, color: "#585b70", cursor: "grab" }}>
-          ⠿
-        </span>
-      </div>
-      {/* Code */}
-      <pre
-        style={{
-          background: "#181825",
-          border: "1px solid #45475a",
-          borderRadius: 6,
-          padding: "8px 10px",
-          fontSize: 11,
-          fontFamily: "'JetBrains Mono', monospace",
-          color: "#cdd6f4",
-          overflowX: "auto",
-          maxHeight: 220,
-          overflowY: "auto",
-          whiteSpace: "pre",
-          marginBottom: 8,
-          cursor: "text",
-          userSelect: "text",
-        }}
-      >
-        {block.suggestion}
-      </pre>
-      {/* Actions */}
-      <div style={{ display: "flex", gap: 8 }}>
-        <button
-          onClick={onAccept}
-          style={{
-            flex: 1,
-            fontSize: 11,
-            fontWeight: 600,
-            padding: "4px 0",
-            borderRadius: 5,
-            border: "none",
-            background: "#a6e3a1",
-            color: "#1e1e2e",
-            cursor: "pointer",
-          }}
-        >
-          ✓ Accept
-        </button>
-        <button
-          onClick={onReject}
-          style={{
-            flex: 1,
-            fontSize: 11,
-            fontWeight: 600,
-            padding: "4px 0",
-            borderRadius: 5,
-            border: "none",
-            background: "#f38ba8",
-            color: "#1e1e2e",
-            cursor: "pointer",
-          }}
-        >
-          ✕ Reject
-        </button>
-      </div>
-    </div>
-  );
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 export default Editor;

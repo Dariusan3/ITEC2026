@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import JSZip from "jszip";
 import { wsProvider, roomId, getYText, yFiles } from "../lib/yjs";
 import { useAuth } from "../lib/auth";
@@ -17,7 +17,111 @@ const LANGUAGES = [
   "json",
 ];
 
-export default function TopBar({ settings, onSettingsChange,
+/* ── shared button styles ─────────────────────────────────────── */
+
+function Divider() {
+  return (
+    <span
+      className="hidden h-6 w-px shrink-0 sm:block"
+      style={{ background: "var(--border)" }}
+      aria-hidden
+    />
+  );
+}
+
+function Btn({ onClick, disabled, className = "", style = {}, title, children }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      title={title}
+      className={`inline-flex h-9 shrink-0 select-none items-center justify-center gap-1
+        rounded-none border px-3 text-[11px] font-semibold uppercase tracking-wide
+        transition-all duration-100 ease-out
+        hover:brightness-110
+        active:scale-[0.93] active:opacity-80
+        disabled:pointer-events-none disabled:opacity-45
+        sm:h-10 sm:px-4 sm:text-xs
+        ${className}`}
+      style={{
+        borderColor: "var(--border)",
+        background: "var(--bg-tertiary)",
+        color: "var(--text-primary)",
+        ...style,
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function LanguageDropdown({ language, onLanguageChange }) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e) => {
+      if (!wrapRef.current?.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+
+  return (
+    <div className="relative shrink-0" ref={wrapRef}>
+      <Btn
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        aria-haspopup="listbox"
+        className="min-w-[7rem] sm:min-w-[8.5rem]"
+      >
+        <span className="truncate">{language}</span>
+        <span
+          className={`ml-auto opacity-60 transition-transform duration-150 ${open ? "rotate-180" : ""}`}
+          aria-hidden
+        >
+          ▾
+        </span>
+      </Btn>
+      {open && (
+        <ul
+          className="absolute top-[calc(100%+4px)] left-0 z-50 max-h-60 min-w-full overflow-auto rounded-none border py-1"
+          style={{
+            background: "var(--bg-secondary)",
+            borderColor: "var(--border)",
+            boxShadow: "0 12px 40px rgba(0,0,0,0.4)",
+          }}
+          role="listbox"
+        >
+          {LANGUAGES.map((lang) => (
+            <li key={lang} role="option" aria-selected={language === lang}>
+              <button
+                type="button"
+                className="w-full px-3 py-2 text-left text-[11px] font-medium transition-colors hover:opacity-90 sm:text-xs"
+                style={{
+                  background: language === lang ? "var(--bg-tertiary)" : "transparent",
+                  color: language === lang ? "var(--accent)" : "var(--text-primary)",
+                }}
+                onClick={() => {
+                  onLanguageChange(lang);
+                  setOpen(false);
+                }}
+              >
+                {lang}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+export default function TopBar({
+  settings,
+  onSettingsChange,
   filename,
   language,
   onLanguageChange,
@@ -86,15 +190,14 @@ export default function TopBar({ settings, onSettingsChange,
     }
   };
 
-  const handleShare = () => {
+  const handleShare = useCallback(() => {
     const url = `${window.location.origin}${window.location.pathname}#${roomId}`;
     navigator.clipboard.writeText(url).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     });
-  };
+  }, []);
 
-  // C2: Read-only share link
   const handleShareReadOnly = () => {
     const url = `${window.location.origin}${window.location.pathname}?view=1#${roomId}`;
     navigator.clipboard.writeText(url).then(() => {
@@ -103,19 +206,19 @@ export default function TopBar({ settings, onSettingsChange,
     });
   };
 
-  // P2: Fork session — open new room with same files
   const handleFork = () => {
     const newRoom = Math.random().toString(36).slice(2, 10);
     const forkedFiles = {};
     yFiles.forEach((meta, fname) => {
       forkedFiles[fname] = { meta, content: getYText(fname).toString() };
     });
-    // Store fork payload in sessionStorage for the new tab to pick up
     sessionStorage.setItem(`itecify-fork-${newRoom}`, JSON.stringify(forkedFiles));
-    window.open(`${window.location.origin}${window.location.pathname}?fork=${newRoom}#${newRoom}`, "_blank");
+    window.open(
+      `${window.location.origin}${window.location.pathname}?fork=${newRoom}#${newRoom}`,
+      "_blank",
+    );
   };
 
-  // Room password — set or clear
   const handleSetPassword = async () => {
     const pw = passwordInput.trim();
     try {
@@ -129,13 +232,15 @@ export default function TopBar({ settings, onSettingsChange,
       if (!res.ok || !data.ok) throw new Error(data.error || "Failed");
       setPasswordMsg(pw ? "Password set!" : "Password removed.");
       setPasswordInput("");
-      setTimeout(() => { setPasswordMsg(""); setShowPasswordPanel(false); }, 2000);
+      setTimeout(() => {
+        setPasswordMsg("");
+        setShowPasswordPanel(false);
+      }, 2000);
     } catch (err) {
       setPasswordMsg(err.message);
     }
   };
 
-  // P1: ZIP export
   const handleZip = async () => {
     const zip = new JSZip();
     yFiles.forEach((_, fname) => {
@@ -151,316 +256,398 @@ export default function TopBar({ settings, onSettingsChange,
 
   return (
     <div
-      className="flex h-12 w-full items-center justify-between gap-3 border-b px-4 sm:gap-4 sm:px-5"
-      style={{
-        background: "var(--bg-secondary)",
-        borderColor: "var(--border)",
-      }}
+      className="flex h-12 w-full min-w-0 items-center justify-between gap-2 border-b px-3 sm:gap-3 sm:px-4"
+      style={{ background: "var(--bg-secondary)", borderColor: "var(--border)" }}
     >
-      <div className="flex min-w-0 items-center gap-3">
+      <div className="flex min-w-0 flex-1 items-center gap-1.5 sm:gap-2">
         <span
-          className="shrink-0 text-base font-bold tracking-tight sm:text-lg"
+          className="shrink-0 select-none text-base font-bold tracking-tight sm:text-lg"
           style={{ color: "var(--accent)" }}
         >
           iTECify
         </span>
+
         <span
-          className="rounded px-1.5 py-0.5 font-mono text-[10px]"
+          className="hidden shrink-0 rounded-none border px-2 py-0.5 font-mono text-[10px] sm:inline"
           style={{
             background: "var(--bg-tertiary)",
+            borderColor: "var(--border)",
             color: "var(--text-secondary)",
           }}
         >
           #{roomId}
         </span>
-        <span className="text-xs" style={{ color: "var(--text-secondary)" }}>
+
+        <span
+          className="hidden h-4 w-px shrink-0 sm:block"
+          style={{ background: "var(--border)" }}
+          aria-hidden
+        />
+
+        <span
+          className="min-w-0 truncate rounded-none border px-2 py-0.5 text-[11px] font-medium sm:text-xs"
+          style={{
+            background: "var(--bg-tertiary)",
+            borderColor: "var(--border)",
+            color: "var(--text-secondary)",
+          }}
+          title={filename}
+        >
           {filename}
         </span>
       </div>
 
-      <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
-        <select
-          value={language}
-          onChange={(e) => onLanguageChange(e.target.value)}
-          className="cursor-pointer rounded border px-2 py-1 text-xs outline-none"
-          style={{
-            background: "var(--bg-tertiary)",
-            borderColor: "var(--border)",
-            color: "var(--text-primary)",
-          }}
-        >
-          {LANGUAGES.map((lang) => (
-            <option key={lang} value={lang}>
-              {lang}
-            </option>
-          ))}
-        </select>
+      <div className="flex min-w-0 shrink-0 flex-wrap items-center justify-end gap-1.5 sm:gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2">
+          <LanguageDropdown language={language} onLanguageChange={onLanguageChange} />
 
-        <button
-          type="button"
-          onClick={handleShare}
-          className="rounded px-3 py-1 text-xs font-semibold transition-all"
-          style={{
-            background: copied ? "var(--green)" : "var(--bg-tertiary)",
-            color: copied ? "var(--bg-primary)" : "var(--accent)",
-            border: "1px solid var(--accent)",
-          }}
-        >
-          {copied ? "✓ Copied!" : "⎘ Share"}
-        </button>
-
-        <button
-          type="button"
-          onClick={handleShareReadOnly}
-          title="Copy read-only link"
-          className="rounded px-3 py-1 text-xs font-semibold transition-all"
-          style={{
-            background: "var(--bg-tertiary)",
-            color: "var(--text-secondary)",
-            border: "1px solid var(--border)",
-          }}
-        >
-          👁 View link
-        </button>
-
-        <button
-          type="button"
-          onClick={handleFork}
-          title="Fork this session into a new room"
-          className="rounded px-3 py-1 text-xs font-semibold transition-all"
-          style={{
-            background: "var(--bg-tertiary)",
-            color: "var(--text-secondary)",
-            border: "1px solid var(--border)",
-          }}
-        >
-          ⑂ Fork
-        </button>
-
-        <button
-          type="button"
-          onClick={handleZip}
-          title="Download all files as ZIP"
-          className="rounded px-3 py-1 text-xs font-semibold transition-all"
-          style={{
-            background: "var(--bg-tertiary)",
-            color: "var(--text-secondary)",
-            border: "1px solid var(--border)",
-          }}
-        >
-          ↓ ZIP
-        </button>
-
-        <button
-          type="button"
-          onClick={handleGist}
-          disabled={gistState === "saving"}
-          className="rounded px-3 py-1 text-xs font-semibold transition-all"
-          style={{
-            background:
-              gistState === "done"
-                ? "var(--green)"
-                : gistState === "error"
-                  ? "var(--red)"
-                  : "var(--bg-tertiary)",
-            color:
-              gistState === "done" || gistState === "error"
-                ? "var(--bg-primary)"
-                : "var(--text-secondary)",
-            border: "1px solid var(--border)",
-            opacity: gistState === "saving" ? 0.6 : 1,
-          }}
-        >
-          {gistState === "saving"
-            ? "..."
-            : gistState === "done"
-              ? "✓ Gist"
-              : gistState === "error"
-                ? "✗ Failed"
-                : "↗ Gist"}
-        </button>
-
-        {viewOnly && (
-          <span className="rounded px-2 py-0.5 text-[10px] font-semibold"
-            style={{ background: "var(--bg-tertiary)", color: "var(--text-secondary)", border: "1px solid var(--border)" }}>
-            👁 View only
-          </span>
-        )}
-        {!viewOnly && onRun && (
-          <button
-            type="button"
-            onClick={onRun}
-            disabled={running}
-            className="rounded px-3 py-1 text-xs font-semibold transition-opacity"
-            style={{
-              background: "var(--green)",
-              color: "var(--bg-primary)",
-              opacity: running ? 0.5 : 1,
-            }}
-          >
-            {running ? "⏳ Running..." : "▶ Run"}
-          </button>
-        )}
-
-        {/* Room password button (only when logged in) */}
-        {user && (
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => setShowPasswordPanel(p => !p)}
-              title="Set room password"
-              className="rounded px-2 py-1 text-xs hover:opacity-70"
-              style={{ color: "var(--text-secondary)", border: "1px solid var(--border)" }}
-            >🔒</button>
-            {showPasswordPanel && (
-              <div
-                className="absolute right-0 top-9 z-50 rounded-lg p-3 shadow-xl"
-                style={{ background: "var(--bg-tertiary)", border: "1px solid var(--border)", width: 220 }}
-              >
-                <p className="text-[10px] font-semibold mb-2" style={{ color: "var(--text-secondary)" }}>
-                  Room password
-                </p>
-                <input
-                  type="password"
-                  value={passwordInput}
-                  onChange={e => setPasswordInput(e.target.value)}
-                  onKeyDown={e => e.key === "Enter" && handleSetPassword()}
-                  placeholder="New password (blank = remove)"
-                  className="w-full rounded px-2 py-1 text-xs outline-none mb-2"
-                  style={{ background: "var(--bg-primary)", color: "var(--text-primary)", border: "1px solid var(--border)" }}
-                />
-                <button
-                  type="button"
-                  onClick={handleSetPassword}
-                  className="w-full rounded px-2 py-1 text-xs font-semibold"
-                  style={{ background: "var(--accent)", color: "var(--bg-primary)" }}
-                >Save</button>
-                {passwordMsg && (
-                  <p className="text-[10px] mt-1.5 text-center" style={{ color: passwordMsg.includes("!") || passwordMsg.includes("removed") ? "var(--green)" : "var(--red)" }}>
-                    {passwordMsg}
-                  </p>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Login/user section */}
-        {user === null && (
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => setShowLogin(l => !l)}
-              className="rounded px-3 py-1 text-xs font-semibold"
-              style={{ background: "var(--bg-tertiary)", color: "var(--text-secondary)", border: "1px solid var(--border)" }}
-            >⇢ Login</button>
-            {showLogin && (
-              <div
-                className="absolute right-0 top-9 z-50 rounded-lg p-3 shadow-xl flex flex-col gap-2"
-                style={{ background: "var(--bg-tertiary)", border: "1px solid var(--border)", width: 180 }}
-              >
-                <button
-                  type="button"
-                  onClick={loginGitHub}
-                  className="rounded px-3 py-1.5 text-xs font-semibold text-left"
-                  style={{ background: "var(--bg-primary)", color: "var(--text-primary)", border: "1px solid var(--border)" }}
-                >⌥ GitHub</button>
-                <button
-                  type="button"
-                  onClick={loginGoogle}
-                  className="rounded px-3 py-1.5 text-xs font-semibold text-left"
-                  style={{ background: "var(--bg-primary)", color: "var(--text-primary)", border: "1px solid var(--border)" }}
-                >G Google</button>
-              </div>
-            )}
-          </div>
-        )}
-        {user && (
-          <div className="relative flex items-center gap-1.5">
-            {user.avatar && (
-              <img
-                src={user.avatar}
-                alt={user.name}
-                className="h-6 w-6 rounded-full cursor-pointer hover:opacity-80"
-                title="My rooms"
-                onClick={() => {
-                  setShowMyRooms(v => !v);
-                  if (!showMyRooms) {
-                    fetch("/api/rooms/mine", { credentials: "include" })
-                      .then(r => r.json())
-                      .then(d => setMyRooms(d.rooms || []))
-                      .catch(() => {});
-                  }
-                }}
-              />
-            )}
-            <span className="text-xs" style={{ color: "var(--text-secondary)" }}>
-              {user.name || user.login}
+          {viewOnly && (
+            <span
+              className="inline-flex h-9 shrink-0 items-center rounded-none border px-2 text-[10px] font-semibold uppercase tracking-wide sm:h-10 sm:px-3 sm:text-[11px]"
+              style={{
+                background: "var(--bg-tertiary)",
+                color: "var(--text-secondary)",
+                borderColor: "var(--border)",
+              }}
+            >
+              View only
             </span>
-            <button
-              type="button"
-              onClick={logout}
-              className="rounded px-1.5 py-0.5 text-[10px]"
-              style={{ color: "var(--text-secondary)", border: "1px solid var(--border)" }}
-            >out</button>
-
-            {/* My Rooms dropdown */}
-            {showMyRooms && (
-              <div
-                className="absolute right-0 top-9 z-50 rounded-lg shadow-xl overflow-hidden"
-                style={{ background: "var(--bg-tertiary)", border: "1px solid var(--border)", width: 240, maxHeight: 320 }}
-              >
-                <div className="px-3 py-2 flex items-center justify-between" style={{ borderBottom: "1px solid var(--border)" }}>
-                  <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-secondary)" }}>
-                    My Rooms
-                  </span>
-                  <button onClick={() => setShowMyRooms(false)} className="text-xs opacity-50 hover:opacity-100" style={{ color: "var(--text-secondary)" }}>✕</button>
-                </div>
-                <div className="overflow-y-auto" style={{ maxHeight: 260 }}>
-                  {myRooms.length === 0 ? (
-                    <p className="text-xs px-3 py-4 text-center" style={{ color: "var(--text-secondary)" }}>No rooms yet</p>
-                  ) : myRooms.map(r => (
-                    <a
-                      key={r.room_id}
-                      href={`${window.location.origin}${window.location.pathname}#${r.room_id}`}
-                      onClick={() => setShowMyRooms(false)}
-                      className="flex items-center justify-between px-3 py-2 hover:opacity-80 text-xs"
-                      style={{ color: "var(--text-primary)", borderBottom: "1px solid var(--border)22", display: "flex" }}
-                    >
-                      <span className="font-mono" style={{ color: "var(--accent)" }}>#{r.room_id}</span>
-                      <span style={{ color: "var(--text-secondary)", fontSize: 10 }}>
-                        {new Date(r.last_seen).toLocaleDateString()}
-                      </span>
-                    </a>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Settings gear */}
-        <div className="relative">
-          <button
-            onClick={() => setShowSettings(s => !s)}
-            className="text-sm px-2 py-1 rounded hover:opacity-70"
-            style={{ color: showSettings ? 'var(--accent)' : 'var(--text-secondary)' }}
-            title="Editor settings"
-          >⚙</button>
-          {showSettings && settings && (
-            <SettingsPanel
-              settings={settings}
-              onChange={onSettingsChange}
-              onClose={() => setShowSettings(false)}
-            />
+          )}
+          {!viewOnly && onRun && (
+            <Btn
+              onClick={onRun}
+              disabled={running}
+              style={{
+                background: "var(--green)",
+                color: "var(--bg-primary)",
+                borderColor: "var(--green)",
+                boxShadow: "0 1px 0 rgba(0,0,0,0.2)",
+                opacity: running ? 0.55 : 1,
+                minWidth: "5rem",
+              }}
+            >
+              {running ? "Running…" : "Run"}
+            </Btn>
           )}
         </div>
+
+        <Divider />
+
+        <div className="flex max-w-[100vw] flex-wrap items-center gap-1.5 sm:gap-2">
+          <Btn
+            onClick={handleShare}
+            style={{
+              background: copied ? "var(--green)" : "var(--bg-tertiary)",
+              borderColor: copied ? "var(--green)" : "var(--border)",
+              color: copied ? "var(--bg-primary)" : "var(--text-primary)",
+            }}
+          >
+            {copied ? "Copied" : "Share"}
+          </Btn>
+
+          <Btn onClick={handleShareReadOnly} title="Copy read-only link">
+            View link
+          </Btn>
+
+          <Btn onClick={handleFork} title="Fork this session into a new room">
+            Fork
+          </Btn>
+
+          <Btn onClick={handleZip} title="Download all files as ZIP">
+            ZIP
+          </Btn>
+
+          <Btn
+            onClick={handleGist}
+            disabled={gistState === "saving"}
+            style={{
+              background:
+                gistState === "done"
+                  ? "var(--green)"
+                  : gistState === "error"
+                    ? "var(--red)"
+                    : "var(--bg-tertiary)",
+              borderColor:
+                gistState === "done"
+                  ? "var(--green)"
+                  : gistState === "error"
+                    ? "var(--red)"
+                    : "var(--border)",
+              color:
+                gistState === "done" || gistState === "error"
+                  ? "var(--bg-primary)"
+                  : "var(--text-secondary)",
+            }}
+          >
+            {gistState === "saving"
+              ? "…"
+              : gistState === "done"
+                ? "Gist ✓"
+                : gistState === "error"
+                  ? "Err"
+                  : "Gist"}
+          </Btn>
+        </div>
+
+        <Divider />
+
+        <div className="flex items-center gap-1.5 sm:gap-2">
+          {user && (
+            <div className="relative">
+              <Btn
+                onClick={() => setShowPasswordPanel((p) => !p)}
+                title="Set room password"
+                className="!px-2 !text-base sm:!text-lg"
+                style={{
+                  color: "var(--text-secondary)",
+                  borderColor: "var(--border)",
+                  background: "var(--bg-tertiary)",
+                }}
+              >
+                🔒
+              </Btn>
+              {showPasswordPanel && (
+                <div
+                  className="absolute right-0 top-10 z-50 rounded-none border p-3 shadow-xl sm:top-11"
+                  style={{
+                    background: "var(--bg-tertiary)",
+                    borderColor: "var(--border)",
+                    width: 220,
+                  }}
+                >
+                  <p
+                    className="mb-2 text-[10px] font-semibold"
+                    style={{ color: "var(--text-secondary)" }}
+                  >
+                    Room password
+                  </p>
+                  <input
+                    type="password"
+                    value={passwordInput}
+                    onChange={(e) => setPasswordInput(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handleSetPassword()}
+                    placeholder="New password (blank = remove)"
+                    className="mb-2 w-full rounded-none border px-2 py-1 text-xs outline-none"
+                    style={{
+                      background: "var(--bg-primary)",
+                      color: "var(--text-primary)",
+                      borderColor: "var(--border)",
+                    }}
+                  />
+                  <Btn
+                    onClick={handleSetPassword}
+                    className="w-full"
+                    style={{
+                      background: "var(--accent)",
+                      color: "var(--bg-primary)",
+                      borderColor: "var(--accent)",
+                    }}
+                  >
+                    Save
+                  </Btn>
+                  {passwordMsg && (
+                    <p
+                      className="mt-1.5 text-center text-[10px]"
+                      style={{
+                        color:
+                          passwordMsg.includes("!") || passwordMsg.includes("removed")
+                            ? "var(--green)"
+                            : "var(--red)",
+                      }}
+                    >
+                      {passwordMsg}
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {user === null && (
+            <div className="relative flex items-center gap-1">
+              <Btn
+                onClick={() => setShowLogin((l) => !l)}
+                style={{
+                  background: "var(--bg-tertiary)",
+                  color: "var(--text-secondary)",
+                  borderColor: "var(--border)",
+                }}
+              >
+                Login
+              </Btn>
+              {showLogin && (
+                <div
+                  className="absolute right-0 top-10 z-50 flex min-w-[11rem] flex-col gap-1.5 rounded-none border p-2 shadow-xl sm:top-11"
+                  style={{
+                    background: "var(--bg-secondary)",
+                    borderColor: "var(--border)",
+                  }}
+                >
+                  <Btn
+                    onClick={() => {
+                      loginGitHub();
+                      setShowLogin(false);
+                    }}
+                    className="w-full justify-start !normal-case"
+                    style={{
+                      background: "var(--bg-tertiary)",
+                      color: "var(--text-primary)",
+                    }}
+                  >
+                    GitHub
+                  </Btn>
+                  <Btn
+                    onClick={() => {
+                      loginGoogle();
+                      setShowLogin(false);
+                    }}
+                    className="w-full justify-start !normal-case"
+                    style={{
+                      background: "var(--bg-tertiary)",
+                      color: "var(--text-primary)",
+                    }}
+                  >
+                    Google
+                  </Btn>
+                </div>
+              )}
+            </div>
+          )}
+
+          {user && (
+            <div className="relative flex max-w-[11rem] items-center gap-1.5 sm:max-w-[13rem]">
+              {user.avatar && (
+                <img
+                  src={user.avatar}
+                  alt=""
+                  className="h-7 w-7 shrink-0 cursor-pointer rounded-full border object-cover"
+                  style={{ borderColor: "var(--border)" }}
+                  title="My rooms"
+                  onClick={() => {
+                    setShowMyRooms((v) => !v);
+                    if (!showMyRooms) {
+                      fetch("/api/rooms/mine", { credentials: "include" })
+                        .then((r) => r.json())
+                        .then((d) => setMyRooms(d.rooms || []))
+                        .catch(() => {});
+                    }
+                  }}
+                />
+              )}
+              <span
+                className="min-w-0 truncate text-[11px] sm:text-xs"
+                style={{ color: "var(--text-secondary)" }}
+                title={user.name || user.login}
+              >
+                {user.name || user.login}
+              </span>
+              <Btn
+                onClick={logout}
+                title="Sign out"
+                className="!h-7 !px-2 !text-[10px] sm:!h-8"
+                style={{
+                  background: "transparent",
+                  color: "var(--text-secondary)",
+                  borderColor: "var(--border)",
+                }}
+              >
+                out
+              </Btn>
+
+              {showMyRooms && (
+                <div
+                  className="absolute right-0 top-10 z-50 max-h-80 overflow-hidden rounded-none border shadow-xl sm:top-11"
+                  style={{
+                    background: "var(--bg-tertiary)",
+                    borderColor: "var(--border)",
+                    width: 240,
+                  }}
+                >
+                  <div
+                    className="flex items-center justify-between border-b px-3 py-2"
+                    style={{ borderColor: "var(--border)" }}
+                  >
+                    <span
+                      className="text-[10px] font-semibold uppercase tracking-wider"
+                      style={{ color: "var(--text-secondary)" }}
+                    >
+                      My Rooms
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setShowMyRooms(false)}
+                      className="text-xs opacity-50 hover:opacity-100"
+                      style={{ color: "var(--text-secondary)" }}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  <div className="max-h-64 overflow-y-auto">
+                    {myRooms.length === 0 ? (
+                      <p
+                        className="px-3 py-4 text-center text-xs"
+                        style={{ color: "var(--text-secondary)" }}
+                      >
+                        No rooms yet
+                      </p>
+                    ) : (
+                      myRooms.map((r) => (
+                        <a
+                          key={r.room_id}
+                          href={`${window.location.origin}${window.location.pathname}#${r.room_id}`}
+                          onClick={() => setShowMyRooms(false)}
+                          className="flex items-center justify-between border-b px-3 py-2 text-xs hover:opacity-80"
+                          style={{
+                            color: "var(--text-primary)",
+                            borderColor: "var(--border)",
+                          }}
+                        >
+                          <span className="font-mono" style={{ color: "var(--accent)" }}>
+                            #{r.room_id}
+                          </span>
+                          <span style={{ color: "var(--text-secondary)", fontSize: 10 }}>
+                            {new Date(r.last_seen).toLocaleDateString()}
+                          </span>
+                        </a>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="relative">
+            <Btn
+              onClick={() => setShowSettings((s) => !s)}
+              title="Editor settings"
+              className="!w-9 sm:!w-10"
+              style={{
+                borderColor: "var(--border)",
+                background: "var(--bg-tertiary)",
+                color: showSettings ? "var(--accent)" : "var(--text-secondary)",
+              }}
+              aria-expanded={showSettings}
+            >
+              ⚙
+            </Btn>
+            {showSettings && settings && (
+              <SettingsPanel
+                settings={settings}
+                onChange={onSettingsChange}
+                onClose={() => setShowSettings(false)}
+              />
+            )}
+          </div>
+        </div>
+
+        <Divider />
 
         <div className="flex min-w-0 items-center -space-x-2">
           {users.map((u) => (
             <div
               key={u.clientId}
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 text-xs font-bold sm:h-9 sm:w-9 sm:text-sm"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 text-xs font-bold transition-transform hover:scale-110 sm:h-9 sm:w-9 sm:text-sm"
               style={{
                 background: u.color,
                 borderColor: "var(--bg-secondary)",
@@ -468,7 +655,7 @@ export default function TopBar({ settings, onSettingsChange,
               }}
               title={u.name}
             >
-              {u.name[0]}
+              {u.name?.[0]}
             </div>
           ))}
         </div>

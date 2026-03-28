@@ -1,60 +1,75 @@
-import { useState, useEffect, useRef } from 'react'
-import { yFiles, getYText } from '../lib/yjs'
+import { useState, useEffect, useRef } from "react";
+import { yFiles, getYText } from "../lib/yjs";
 
 const LANG_ICONS = {
-  javascript: { icon: 'JS', color: '#f9e2af' },
-  typescript: { icon: 'TS', color: '#89b4fa' },
-  python:     { icon: 'PY', color: '#a6e3a1' },
-  rust:       { icon: 'RS', color: '#fab387' },
-  go:         { icon: 'GO', color: '#89dceb' },
-  java:       { icon: 'JV', color: '#f38ba8' },
-  c:          { icon: 'C',  color: '#fab387' },
-  html:       { icon: 'HT', color: '#f38ba8' },
-  css:        { icon: 'CS', color: '#89dceb' },
-  json:       { icon: '{}', color: '#cba6f7' },
-}
+  javascript: { icon: "JS", color: "#f9e2af" },
+  typescript: { icon: "TS", color: "#89b4fa" },
+  python: { icon: "PY", color: "#a6e3a1" },
+  rust: { icon: "RS", color: "#fab387" },
+  go: { icon: "GO", color: "#89dceb" },
+  java: { icon: "JV", color: "#f38ba8" },
+  c: { icon: "C", color: "#fab387" },
+  html: { icon: "HT", color: "#f38ba8" },
+  css: { icon: "CS", color: "#89dceb" },
+  json: { icon: "{}", color: "#cba6f7" },
+};
 
 const EXT_TO_LANG = {
-  js: 'javascript', ts: 'typescript', py: 'python',
-  rs: 'rust', go: 'go', java: 'java', c: 'c',
-  html: 'html', css: 'css', json: 'json',
-}
+  js: "javascript",
+  ts: "typescript",
+  py: "python",
+  rs: "rust",
+  go: "go",
+  java: "java",
+  c: "c",
+  html: "html",
+  css: "css",
+  json: "json",
+};
 
 function guessLang(filename) {
-  const ext = filename.split('.').pop()
-  return EXT_TO_LANG[ext] || 'javascript'
+  const ext = filename.split(".").pop();
+  return EXT_TO_LANG[ext] || "javascript";
 }
 
 /** Build a nested tree from flat paths like ["src/index.js", "main.js"] */
 function buildTree(files) {
-  const root = {}
+  const root = {};
   for (const { name, language } of files) {
-    const parts = name.split('/')
-    let node = root
+    const parts = name.split("/");
+    let node = root;
     for (let i = 0; i < parts.length; i++) {
-      const part = parts[i]
-      const isFile = i === parts.length - 1
+      const part = parts[i];
+      const isFile = i === parts.length - 1;
       if (!node[part]) {
         node[part] = isFile
           ? { __file: true, path: name, language }
-          : { __file: false, children: {} }
+          : { __file: false, children: {} };
       }
-      if (!isFile) node = node[part].children
+      if (!isFile) node = node[part].children;
     }
   }
-  return root
+  return root;
 }
 
 function TreeNode({
-  name, node, depth, activeFile, onFileSelect,
-  onContextMenu, openFolders, toggleFolder, creatingIn, setCreatingIn,
+  name,
+  node,
+  depth,
+  activeFile,
+  onFileSelect,
+  onContextMenu,
+  openFolders,
+  toggleFolder,
+  creatingIn,
+  setCreatingIn,
 }) {
-  const isFile = node.__file
-  const indent = depth * 12
+  const isFile = node.__file;
+  const indent = depth * 12;
 
   if (isFile) {
-    const icon = LANG_ICONS[node.language] || LANG_ICONS.javascript
-    const isActive = activeFile === node.path
+    const icon = LANG_ICONS[node.language] || LANG_ICONS.javascript;
+    const isActive = activeFile === node.path;
     return (
       <div
         role="button"
@@ -62,24 +77,31 @@ function TreeNode({
         onClick={() => onFileSelect(node.path, node.language)}
         onContextMenu={(e) => onContextMenu(e, node.path)}
         onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onFileSelect(node.path, node.language) }
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onFileSelect(node.path, node.language);
+          }
         }}
         className="group flex cursor-pointer items-center gap-1.5 rounded px-2 py-1 text-xs"
         style={{
           paddingLeft: indent + 8,
-          background: isActive ? 'var(--bg-tertiary)' : 'transparent',
-          color: 'var(--text-primary)',
+          background: isActive ? "var(--bg-tertiary)" : "transparent",
+          color: "var(--text-primary)",
         }}
       >
-        <span style={{ color: icon.color, fontWeight: 700, fontSize: 9, minWidth: 14 }}>{icon.icon}</span>
+        <span
+          style={{ color: icon.color, fontWeight: 700, fontSize: 9, minWidth: 14 }}
+        >
+          {icon.icon}
+        </span>
         <span className="flex-1 truncate">{name}</span>
       </div>
-    )
+    );
   }
 
   // Folder node
-  const folderPath = node.__folderPath
-  const isOpen = openFolders.has(folderPath)
+  const folderPath = node.__folderPath;
+  const isOpen = openFolders.has(folderPath);
 
   return (
     <div>
@@ -88,28 +110,35 @@ function TreeNode({
         tabIndex={0}
         onClick={() => toggleFolder(folderPath)}
         onContextMenu={(e) => onContextMenu(e, null, folderPath)}
-        onKeyDown={(e) => { if (e.key === 'Enter') toggleFolder(folderPath) }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") toggleFolder(folderPath);
+        }}
         className="flex cursor-pointer items-center gap-1.5 rounded px-2 py-1 text-xs hover:opacity-80"
-        style={{ paddingLeft: indent + 8, color: 'var(--text-secondary)' }}
+        style={{ paddingLeft: indent + 8, color: "var(--text-secondary)" }}
       >
-        <span style={{ fontSize: 9 }}>{isOpen ? '▼' : '▶'}</span>
+        <span style={{ fontSize: 9 }}>{isOpen ? "▼" : "▶"}</span>
         <span style={{ fontSize: 10 }}>📁</span>
         <span className="flex-1 truncate font-medium">{name}</span>
         <button
           type="button"
           title="New file in folder"
-          onClick={(e) => { e.stopPropagation(); setCreatingIn(folderPath) }}
+          onClick={(e) => {
+            e.stopPropagation();
+            setCreatingIn(folderPath);
+          }}
           className="opacity-0 group-hover:opacity-100 text-xs px-1 hover:opacity-70"
-          style={{ color: 'var(--accent)' }}
-        >+</button>
+          style={{ color: "var(--accent)" }}
+        >
+          +
+        </button>
       </div>
       {isOpen && (
         <div>
           {Object.entries(node.children)
             .sort(([, a], [, b]) => {
-              if (!a.__file && b.__file) return -1
-              if (a.__file && !b.__file) return 1
-              return 0
+              if (!a.__file && b.__file) return -1;
+              if (a.__file && !b.__file) return 1;
+              return 0;
             })
             .map(([childName, childNode]) => (
               <TreeNode
@@ -130,210 +159,262 @@ function TreeNode({
         </div>
       )}
     </div>
-  )
+  );
 }
 
+const explorerBtnClass =
+  "inline-flex h-full items-center justify-center rounded-none border px-2 py-1 font-mono text-[10px] font-bold leading-none transition-all duration-100 hover:brightness-110 active:scale-[0.93] sm:px-2.5 sm:py-1 sm:text-[11px]";
+
 export default function FileTree({ activeFile, onFileSelect }) {
-  const [files, setFiles] = useState([])
-  const [creating, setCreating] = useState(false)
-  const [newName, setNewName] = useState('')
-  const [creatingIn, setCreatingIn] = useState(null) // folder path or null = root
-  const [renamingFile, setRenamingFile] = useState(null)
-  const [renameTo, setRenameTo] = useState('')
-  const [contextMenu, setContextMenu] = useState(null)
-  const [openFolders, setOpenFolders] = useState(new Set())
-  const newInputRef = useRef(null)
-  const renameInputRef = useRef(null)
+  const [files, setFiles] = useState([]);
+  const [creating, setCreating] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [creatingIn, setCreatingIn] = useState(null);
+  const [renamingFile, setRenamingFile] = useState(null);
+  const [renameTo, setRenameTo] = useState("");
+  const [contextMenu, setContextMenu] = useState(null);
+  const [openFolders, setOpenFolders] = useState(new Set());
+  const newInputRef = useRef(null);
+  const renameInputRef = useRef(null);
 
   useEffect(() => {
     const update = () => {
-      const list = []
-      yFiles.forEach((meta, name) => list.push({ name, ...meta }))
-      list.sort((a, b) => a.name.localeCompare(b.name))
-      setFiles(list)
-    }
-    yFiles.observe(update)
-    update()
-    return () => yFiles.unobserve(update)
-  }, [])
+      const list = [];
+      yFiles.forEach((meta, name) => list.push({ name, ...meta }));
+      list.sort((a, b) => a.name.localeCompare(b.name));
+      setFiles(list);
+    };
+    yFiles.observe(update);
+    update();
+    return () => yFiles.unobserve(update);
+  }, []);
 
   useEffect(() => {
-    if (creating || creatingIn !== null) newInputRef.current?.focus()
-  }, [creating, creatingIn])
+    if (creating || creatingIn !== null) newInputRef.current?.focus();
+  }, [creating, creatingIn]);
 
   useEffect(() => {
-    if (renamingFile) renameInputRef.current?.focus()
-  }, [renamingFile])
+    if (renamingFile) renameInputRef.current?.focus();
+  }, [renamingFile]);
 
   const toggleFolder = (folderPath) => {
-    setOpenFolders(prev => {
-      const next = new Set(prev)
-      if (next.has(folderPath)) next.delete(folderPath)
-      else next.add(folderPath)
-      return next
-    })
-  }
+    setOpenFolders((prev) => {
+      const next = new Set(prev);
+      if (next.has(folderPath)) next.delete(folderPath);
+      else next.add(folderPath);
+      return next;
+    });
+  };
 
   const createFile = () => {
-    let trimmed = newName.trim()
-    if (!trimmed) { setCreating(false); setCreatingIn(null); setNewName(''); return }
-    // Prepend folder prefix if creating inside a folder
-    if (creatingIn) trimmed = `${creatingIn}/${trimmed}`
-    if (yFiles.has(trimmed)) { alert(`"${trimmed}" already exists`); return }
-    const lang = guessLang(trimmed)
-    yFiles.set(trimmed, { language: lang })
-    getYText(trimmed)
-    // Auto-open the parent folder
-    const parts = trimmed.split('/')
-    if (parts.length > 1) {
-      const folder = parts.slice(0, -1).join('/')
-      setOpenFolders(prev => new Set([...prev, folder]))
+    let trimmed = newName.trim();
+    if (!trimmed) {
+      setCreating(false);
+      setCreatingIn(null);
+      setNewName("");
+      return;
     }
-    onFileSelect(trimmed, lang)
-    setCreating(false)
-    setCreatingIn(null)
-    setNewName('')
-  }
+    if (creatingIn) trimmed = `${creatingIn}/${trimmed}`;
+    if (yFiles.has(trimmed)) {
+      alert(`"${trimmed}" already exists`);
+      return;
+    }
+    const lang = guessLang(trimmed);
+    yFiles.set(trimmed, { language: lang });
+    getYText(trimmed);
+    const parts = trimmed.split("/");
+    if (parts.length > 1) {
+      const folder = parts.slice(0, -1).join("/");
+      setOpenFolders((prev) => new Set([...prev, folder]));
+    }
+    onFileSelect(trimmed, lang);
+    setCreating(false);
+    setCreatingIn(null);
+    setNewName("");
+  };
 
   const createFolder = () => {
-    let trimmed = newName.trim()
-    if (!trimmed) { setCreating(false); setCreatingIn(null); setNewName(''); return }
-    // A folder is represented by a placeholder .gitkeep file
-    const folderPath = creatingIn ? `${creatingIn}/${trimmed}` : trimmed
-    const placeholder = `${folderPath}/.gitkeep`
-    if (!yFiles.has(placeholder)) {
-      yFiles.set(placeholder, { language: 'json' })
-      getYText(placeholder)
+    let trimmed = newName.trim();
+    if (!trimmed) {
+      setCreating(false);
+      setCreatingIn(null);
+      setNewName("");
+      return;
     }
-    setOpenFolders(prev => new Set([...prev, folderPath]))
-    setCreating(false)
-    setCreatingIn(null)
-    setNewName('')
-  }
+    const folderPath = creatingIn ? `${creatingIn}/${trimmed}` : trimmed;
+    const placeholder = `${folderPath}/.gitkeep`;
+    if (!yFiles.has(placeholder)) {
+      yFiles.set(placeholder, { language: "json" });
+      getYText(placeholder);
+    }
+    setOpenFolders((prev) => new Set([...prev, folderPath]));
+    setCreating(false);
+    setCreatingIn(null);
+    setNewName("");
+  };
 
-  const [creatingFolder, setCreatingFolder] = useState(false)
+  const [creatingFolder, setCreatingFolder] = useState(false);
 
   const startCreateFile = (folderPath = null) => {
-    setCreatingFolder(false)
-    setCreatingIn(folderPath)
-    setCreating(true)
-    setNewName('')
-  }
+    setCreatingFolder(false);
+    setCreatingIn(folderPath);
+    setCreating(true);
+    setNewName("");
+  };
 
   const startCreateFolder = () => {
-    setCreatingFolder(true)
-    setCreatingIn(null)
-    setCreating(true)
-    setNewName('')
-  }
+    setCreatingFolder(true);
+    setCreatingIn(null);
+    setCreating(true);
+    setNewName("");
+  };
 
   const handleCreate = () => {
-    if (creatingFolder) createFolder()
-    else createFile()
-  }
+    if (creatingFolder) createFolder();
+    else createFile();
+  };
 
   const renameFile = () => {
-    const trimmed = renameTo.trim()
-    if (!trimmed || trimmed === renamingFile) { setRenamingFile(null); return }
-    if (yFiles.has(trimmed)) { alert(`"${trimmed}" already exists`); return }
-    const oldText = getYText(renamingFile).toString()
-    const lang = guessLang(trimmed)
-    yFiles.delete(renamingFile)
-    yFiles.set(trimmed, { language: lang })
-    if (oldText) getYText(trimmed).insert(0, oldText)
-    if (activeFile === renamingFile) onFileSelect(trimmed, lang)
-    setRenamingFile(null)
-    setRenameTo('')
-  }
+    const trimmed = renameTo.trim();
+    if (!trimmed || trimmed === renamingFile) {
+      setRenamingFile(null);
+      return;
+    }
+    if (yFiles.has(trimmed)) {
+      alert(`"${trimmed}" already exists`);
+      return;
+    }
+    const oldText = getYText(renamingFile).toString();
+    const lang = guessLang(trimmed);
+    yFiles.delete(renamingFile);
+    yFiles.set(trimmed, { language: lang });
+    if (oldText) getYText(trimmed).insert(0, oldText);
+    if (activeFile === renamingFile) onFileSelect(trimmed, lang);
+    setRenamingFile(null);
+    setRenameTo("");
+  };
 
   const deleteFile = (filename) => {
-    const nonKeep = [...yFiles.keys()].filter(k => !k.endsWith('.gitkeep'))
-    if (nonKeep.length <= 1 && !filename.endsWith('.gitkeep')) {
-      alert('Cannot delete the last file')
-      return
+    const nonKeep = [...yFiles.keys()].filter((k) => !k.endsWith(".gitkeep"));
+    if (nonKeep.length <= 1 && !filename.endsWith(".gitkeep")) {
+      alert("Cannot delete the last file");
+      return;
     }
-    if (!confirm(`Delete "${filename}"?`)) return
-    yFiles.delete(filename)
+    if (!confirm(`Delete "${filename}"?`)) return;
+    yFiles.delete(filename);
     if (activeFile === filename) {
-      const remaining = []
-      yFiles.forEach((_, n) => { if (!n.endsWith('.gitkeep')) remaining.push(n) })
-      if (remaining.length > 0) onFileSelect(remaining[0], yFiles.get(remaining[0]).language)
+      const remaining = [];
+      yFiles.forEach((_, n) => {
+        if (!n.endsWith(".gitkeep")) remaining.push(n);
+      });
+      if (remaining.length > 0)
+        onFileSelect(remaining[0], yFiles.get(remaining[0]).language);
     }
-  }
+  };
 
   const deleteFolder = (folderPath) => {
-    const children = [...yFiles.keys()].filter(k => k.startsWith(folderPath + '/'))
-    if (!confirm(`Delete folder "${folderPath}" and all ${children.length} file(s)?`)) return
-    children.forEach(k => yFiles.delete(k))
+    const children = [...yFiles.keys()].filter((k) =>
+      k.startsWith(folderPath + "/"),
+    );
+    if (
+      !confirm(
+        `Delete folder "${folderPath}" and all ${children.length} file(s)?`,
+      )
+    )
+      return;
+    children.forEach((k) => yFiles.delete(k));
     if (children.includes(activeFile)) {
-      const remaining = [...yFiles.keys()].filter(k => !k.endsWith('.gitkeep'))
-      if (remaining.length > 0) onFileSelect(remaining[0], yFiles.get(remaining[0]).language)
+      const remaining = [...yFiles.keys()].filter((k) => !k.endsWith(".gitkeep"));
+      if (remaining.length > 0)
+        onFileSelect(remaining[0], yFiles.get(remaining[0]).language);
     }
-  }
+  };
 
   const openContextMenu = (e, filename, folderPath = null) => {
-    e.preventDefault()
-    setContextMenu({ x: e.clientX, y: e.clientY, filename, folderPath })
-  }
+    e.preventDefault();
+    setContextMenu({ x: e.clientX, y: e.clientY, filename, folderPath });
+  };
 
   useEffect(() => {
-    const handler = () => setContextMenu(null)
-    window.addEventListener('click', handler)
-    return () => window.removeEventListener('click', handler)
-  }, [])
+    const handler = () => setContextMenu(null);
+    window.addEventListener("click", handler);
+    return () => window.removeEventListener("click", handler);
+  }, []);
 
-  // Build tree, inject __folderPath into folder nodes
   function buildTreeWithPaths(files) {
-    const tree = buildTree(files)
+    const tree = buildTree(files);
     function annotate(node, path) {
       for (const [k, v] of Object.entries(node)) {
         if (!v.__file) {
-          v.__folderPath = path ? `${path}/${k}` : k
-          annotate(v.children, v.__folderPath)
+          v.__folderPath = path ? `${path}/${k}` : k;
+          annotate(v.children, v.__folderPath);
         }
       }
     }
-    annotate(tree, '')
-    return tree
+    annotate(tree, "");
+    return tree;
   }
 
-  const tree = buildTreeWithPaths(files.filter(f => !f.name.endsWith('.gitkeep')))
-  const visibleFiles = files.filter(f => !f.name.endsWith('.gitkeep'))
+  const tree = buildTreeWithPaths(files.filter((f) => !f.name.endsWith(".gitkeep")));
 
   return (
     <div
       className="flex h-full w-48 flex-col select-none border-r"
-      style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border)' }}
+      style={{
+        background: "var(--bg-secondary)",
+        borderColor: "var(--border)",
+      }}
     >
-      <div className="flex items-center justify-between px-3 py-2">
-        <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-secondary)' }}>
+      <div
+        className="flex min-h-[3rem] shrink-0 items-center justify-between gap-2 border-b px-3 py-2.5 sm:gap-2.5"
+        style={{ borderColor: "var(--border)" }}
+      >
+        <span
+          className="text-[11px] font-bold uppercase tracking-wider sm:text-xs"
+          style={{ color: "var(--accent)" }}
+        >
           Explorer
         </span>
-        <div className="flex gap-1">
+        <div className="flex items-center gap-1">
           <button
             type="button"
             onClick={() => startCreateFile()}
-            className="text-sm font-bold leading-none hover:opacity-70"
-            style={{ color: 'var(--accent)' }}
+            className={explorerBtnClass}
+            style={{
+              background: "var(--bg-tertiary)",
+              borderColor: "var(--border)",
+              color: "var(--accent)",
+              minWidth: "2rem",
+              minHeight: "1.75rem",
+            }}
             title="New file"
-          >+</button>
+          >
+            +
+          </button>
           <button
             type="button"
             onClick={startCreateFolder}
-            className="text-sm font-bold leading-none hover:opacity-70"
-            style={{ color: 'var(--text-secondary)' }}
+            className={explorerBtnClass}
+            style={{
+              background: "var(--bg-tertiary)",
+              borderColor: "var(--border)",
+              color: "var(--text-secondary)",
+              minWidth: "2rem",
+              minHeight: "1.75rem",
+            }}
             title="New folder"
-          >⊕</button>
+          >
+            ⊕
+          </button>
         </div>
       </div>
 
       <div className="flex-1 space-y-0.5 overflow-y-auto px-1">
-        {/* Render tree */}
         {Object.entries(tree)
           .sort(([, a], [, b]) => {
-            if (!a.__file && b.__file) return -1
-            if (a.__file && !b.__file) return 1
-            return 0
+            if (!a.__file && b.__file) return -1;
+            if (a.__file && !b.__file) return 1;
+            return 0;
           })
           .map(([name, node]) => {
             if (node.__file && renamingFile === node.path) {
@@ -345,13 +426,17 @@ export default function FileTree({ activeFile, onFileSelect }) {
                   onChange={(e) => setRenameTo(e.target.value)}
                   onBlur={renameFile}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter') renameFile()
-                    if (e.key === 'Escape') setRenamingFile(null)
+                    if (e.key === "Enter") renameFile();
+                    if (e.key === "Escape") setRenamingFile(null);
                   }}
                   className="w-full rounded px-2 py-1 text-xs outline-none"
-                  style={{ background: 'var(--bg-tertiary)', color: 'var(--text-primary)', border: '1px solid var(--accent)' }}
+                  style={{
+                    background: "var(--bg-tertiary)",
+                    color: "var(--text-primary)",
+                    border: "1px solid var(--accent)",
+                  }}
                 />
-              )
+              );
             }
             return (
               <TreeNode
@@ -367,7 +452,7 @@ export default function FileTree({ activeFile, onFileSelect }) {
                 creatingIn={creatingIn}
                 setCreatingIn={(folder) => startCreateFile(folder)}
               />
-            )
+            );
           })}
 
         {creating && (
@@ -378,15 +463,32 @@ export default function FileTree({ activeFile, onFileSelect }) {
               onChange={(e) => setNewName(e.target.value)}
               onBlur={handleCreate}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') handleCreate()
-                if (e.key === 'Escape') { setCreating(false); setCreatingIn(null); setNewName('') }
+                if (e.key === "Enter") handleCreate();
+                if (e.key === "Escape") {
+                  setCreating(false);
+                  setCreatingIn(null);
+                  setNewName("");
+                }
               }}
-              placeholder={creatingFolder ? 'folder-name' : creatingIn ? `${creatingIn}/filename.js` : 'filename.js'}
+              placeholder={
+                creatingFolder
+                  ? "folder-name"
+                  : creatingIn
+                    ? `${creatingIn}/filename.js`
+                    : "filename.js"
+              }
               className="w-full rounded px-2 py-1 text-xs outline-none"
-              style={{ background: 'var(--bg-tertiary)', color: 'var(--text-primary)', border: '1px solid var(--accent)' }}
+              style={{
+                background: "var(--bg-tertiary)",
+                color: "var(--text-primary)",
+                border: "1px solid var(--accent)",
+              }}
             />
             {creatingIn && (
-              <p className="text-[9px] px-1 mt-0.5" style={{ color: 'var(--text-secondary)' }}>
+              <p
+                className="text-[9px] px-1 mt-0.5"
+                style={{ color: "var(--text-secondary)" }}
+              >
                 in {creatingIn}/
               </p>
             )}
@@ -400,8 +502,8 @@ export default function FileTree({ activeFile, onFileSelect }) {
           style={{
             top: contextMenu.y,
             left: contextMenu.x,
-            background: 'var(--bg-tertiary)',
-            border: '1px solid var(--border)',
+            background: "var(--bg-tertiary)",
+            border: "1px solid var(--border)",
             minWidth: 150,
           }}
           onClick={(e) => e.stopPropagation()}
@@ -411,19 +513,26 @@ export default function FileTree({ activeFile, onFileSelect }) {
               <button
                 type="button"
                 className="w-full px-3 py-1.5 text-left hover:opacity-70"
-                style={{ color: 'var(--text-primary)' }}
+                style={{ color: "var(--text-primary)" }}
                 onClick={() => {
-                  setRenamingFile(contextMenu.filename)
-                  setRenameTo(contextMenu.filename)
-                  setContextMenu(null)
+                  setRenamingFile(contextMenu.filename);
+                  setRenameTo(contextMenu.filename);
+                  setContextMenu(null);
                 }}
-              >Rename</button>
+              >
+                Rename
+              </button>
               <button
                 type="button"
                 className="w-full px-3 py-1.5 text-left hover:opacity-70"
-                style={{ color: 'var(--red)' }}
-                onClick={() => { deleteFile(contextMenu.filename); setContextMenu(null) }}
-              >Delete</button>
+                style={{ color: "var(--red)" }}
+                onClick={() => {
+                  deleteFile(contextMenu.filename);
+                  setContextMenu(null);
+                }}
+              >
+                Delete
+              </button>
             </>
           )}
           {contextMenu.folderPath && (
@@ -431,19 +540,29 @@ export default function FileTree({ activeFile, onFileSelect }) {
               <button
                 type="button"
                 className="w-full px-3 py-1.5 text-left hover:opacity-70"
-                style={{ color: 'var(--accent)' }}
-                onClick={() => { startCreateFile(contextMenu.folderPath); setContextMenu(null) }}
-              >New file here</button>
+                style={{ color: "var(--accent)" }}
+                onClick={() => {
+                  startCreateFile(contextMenu.folderPath);
+                  setContextMenu(null);
+                }}
+              >
+                New file here
+              </button>
               <button
                 type="button"
                 className="w-full px-3 py-1.5 text-left hover:opacity-70"
-                style={{ color: 'var(--red)' }}
-                onClick={() => { deleteFolder(contextMenu.folderPath); setContextMenu(null) }}
-              >Delete folder</button>
+                style={{ color: "var(--red)" }}
+                onClick={() => {
+                  deleteFolder(contextMenu.folderPath);
+                  setContextMenu(null);
+                }}
+              >
+                Delete folder
+              </button>
             </>
           )}
         </div>
       )}
     </div>
-  )
+  );
 }
