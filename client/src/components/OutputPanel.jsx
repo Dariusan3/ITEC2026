@@ -305,49 +305,53 @@ export default function OutputPanel({
                 description="Each execution is saved here so you can quickly revisit previous outputs and failures."
               />
             ) : (
-              history.map((entry, i) => (
-                <div
-                  key={i}
-                  className="cursor-pointer rounded-xl border px-3 py-2 transition-all duration-150 hover:-translate-y-px hover:opacity-90"
-                  style={{
-                    borderColor: "var(--border)",
-                    background: "var(--bg-tertiary)",
-                  }}
-                  onClick={() => {
-                    setHistoryOpen(i === historyOpen ? null : i);
-                    setTab("output");
-                  }}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <span
-                      className="text-[10px] font-mono truncate"
-                      style={{
-                        color: entry.hasError
-                          ? "var(--red)"
-                          : "var(--text-primary)",
-                      }}
-                    >
+              history.map((entry, i) => {
+                const expanded = historyOpen === i;
+
+                return (
+                  <div
+                    key={i}
+                    className="cursor-pointer rounded-xl border px-3 py-2 transition-all duration-150 hover:-translate-y-px hover:opacity-90"
+                    style={{
+                      borderColor: expanded ? "var(--accent)" : "var(--border)",
+                      background: "var(--bg-tertiary)",
+                    }}
+                    onClick={() => {
+                      setHistoryOpen(expanded ? null : i);
+                      setTab("output");
+                    }}
+                  >
+                    <div className="flex items-center justify-between gap-2">
                       <span
-                        className="text-[10px] font-mono truncate"
+                        className="min-w-0 flex-1 truncate text-[10px] font-mono"
                         style={{
-                          color: entry.hasError ? "var(--red)" : "var(--text-primary)",
+                          color: entry.hasError
+                            ? "var(--red)"
+                            : "var(--text-primary)",
                         }}
                       >
                         {entry.hasError ? "✗ " : "✓ "}
                         {entry.preview}
                       </span>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <span className="text-[9px]" style={{ color: "var(--text-secondary)" }}>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <span
+                          className="text-[9px]"
+                          style={{ color: "var(--text-secondary)" }}
+                        >
                           {new Date(entry.ts).toLocaleTimeString()}
                         </span>
-                        <span className="text-[9px]" style={{ color: "var(--text-secondary)" }}>
+                        <span
+                          className="text-[9px]"
+                          style={{ color: "var(--text-secondary)" }}
+                        >
                           {expanded ? "▲" : "▼"}
                         </span>
                       </div>
                     </div>
+
                     {expanded && (
                       <div
-                        className="max-h-36 overflow-auto px-2 pb-2 font-mono text-[10px] whitespace-pre-wrap border-t"
+                        className="mt-2 max-h-36 overflow-auto border-t px-2 pb-2 pt-2 font-mono text-[10px] whitespace-pre-wrap"
                         style={{ borderColor: "var(--border)" }}
                       >
                         {entry.lines.map((line, j) => (
