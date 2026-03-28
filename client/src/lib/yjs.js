@@ -1,11 +1,12 @@
 import * as Y from 'yjs'
 import { WebsocketProvider } from 'y-websocket'
 import { IndexeddbPersistence } from 'y-indexeddb'
+import { YJS_WS_URL } from './config'
 
 const COLORS = [
-  '#cba6f7', '#f38ba8', '#a6e3a1', '#89b4fa',
-  '#f9e2af', '#fab387', '#94e2d5', '#f5c2e7',
-  '#74c7ec', '#b4befe',
+  '#8ff7a7', '#6fe3a3', '#74f0c2', '#d7f58d',
+  '#5ccf7f', '#9cecae', '#4fd0a5', '#7edfb3',
+  '#b8ffca', '#3fbf74',
 ]
 
 function getRandomName() {
@@ -17,10 +18,12 @@ function getRandomName() {
 }
 
 function getOrCreateRoomId() {
-  let id = window.location.hash.slice(1)
+  const id = window.location.hash.slice(1)
   if (!id) {
-    id = Math.random().toString(36).slice(2, 10)
-    window.location.hash = id
+    // Fallback: generate a room id if somehow the editor loads without a hash
+    const newId = Math.random().toString(36).slice(2, 10)
+    window.location.hash = newId
+    return newId
   }
   return id
 }
@@ -35,9 +38,8 @@ export const ydoc = new Y.Doc()
 export const idbPersistence = new IndexeddbPersistence(`itecify-${roomId}`, ydoc)
 
 // ── WebSocket sync (server) ──────────────────────────────────────────────────
-const yjsPort = import.meta.env.VITE_WS_PORT || '1234'
 export const wsProvider = new WebsocketProvider(
-  `ws://${window.location.hostname}:${yjsPort}`,
+  YJS_WS_URL,
   `itecify-${roomId}`,
   ydoc
 )

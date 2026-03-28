@@ -1,7 +1,9 @@
 import { useEffect, useRef } from "react";
+import { CloseIcon } from "./ui/Icons";
 
 const THEMES = [
-  { id: "vs-dark", label: "Dark" },
+  { id: "itecify-midnight-mint", label: "Mint Dark" },
+  { id: "vs-dark", label: "Classic Dark" },
   { id: "vs", label: "Light" },
   { id: "hc-black", label: "Hi-C" },
 ];
@@ -28,12 +30,9 @@ export default function SettingsPanel({ settings, onChange, onClose }) {
   return (
     <div
       ref={ref}
-      className="absolute right-0 top-[calc(100%+6px)] z-50 flex w-72 flex-col gap-3 border p-4"
+      className="floating-panel absolute right-0 top-[calc(100%+10px)] z-50 flex w-72 flex-col gap-3 p-4"
       style={{
-        background: "var(--bg-secondary)",
-        borderColor: "var(--border)",
         color: "var(--text-primary)",
-        boxShadow: "0 12px 40px rgba(0,0,0,0.4)",
         padding: "16px",
       }}
     >
@@ -46,15 +45,15 @@ export default function SettingsPanel({ settings, onChange, onClose }) {
         </span>
         <button
           onClick={onClose}
-          className="rounded-none border px-2 py-0.5 text-[10px] transition-all hover:brightness-110 active:scale-[0.93]"
+          className="liquid-surface rounded-xl border px-2 py-1 text-[10px] transition-all duration-150 hover:-translate-y-px hover:brightness-110 active:scale-[0.93]"
           style={{
             borderColor: "var(--border)",
             background: "var(--bg-tertiary)",
             color: "var(--text-secondary)",
-            boxShadow: "0 4px 20px rgba(0,0,0,0.35)",
+            boxShadow: "0 10px 20px rgba(0,0,0,0.16)",
           }}
         >
-          ✕
+          <CloseIcon className="h-3.5 w-3.5" />
         </button>
       </div>
 
@@ -140,22 +139,20 @@ function Row({ label, children }) {
 function InlineSelect({ options, value, onChange }) {
   return (
     <div
-      className="flex items-center gap-px rounded-none border"
+      className="soft-card flex items-center gap-1 p-1"
       style={{ borderColor: "var(--border)", background: "var(--bg-primary)" }}
     >
-      {options.map((opt, i) => {
+      {options.map((opt) => {
         const selected = value === opt.id;
         return (
           <button
             key={opt.id}
             type="button"
             onClick={() => onChange(opt.id)}
-            className="flex-1 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide transition-all duration-100 active:scale-[0.93] sm:text-[11px]"
+            className="liquid-surface flex-1 rounded-xl px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wide transition-all duration-150 active:scale-[0.93] sm:text-[11px]"
             style={{
               background: selected ? "var(--accent)" : "transparent",
               color: selected ? "var(--bg-primary)" : "var(--text-secondary)",
-              borderRight:
-                i < options.length - 1 ? "1px solid var(--border)" : "none",
             }}
           >
             {opt.label}

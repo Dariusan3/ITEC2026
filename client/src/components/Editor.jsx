@@ -47,6 +47,79 @@ self.MonacoEnvironment = {
 };
 
 const AI_BLOCK_CLASS = "ai-block-decoration";
+const DEFAULT_EDITOR_THEME = "itecify-midnight-mint";
+
+let themesRegistered = false;
+
+function registerEditorThemes() {
+  if (themesRegistered) return;
+
+  monaco.editor.defineTheme(DEFAULT_EDITOR_THEME, {
+    base: "vs-dark",
+    inherit: true,
+    rules: [
+      { token: "", foreground: "E6F3E8", background: "050806" },
+      { token: "comment", foreground: "6D8A73", fontStyle: "italic" },
+      { token: "keyword", foreground: "8FF7A7" },
+      { token: "keyword.control", foreground: "7CF0C9" },
+      { token: "string", foreground: "D7F58D" },
+      { token: "number", foreground: "B8FFCA" },
+      { token: "regexp", foreground: "9CECAE" },
+      { token: "type", foreground: "74F0C2" },
+      { token: "delimiter", foreground: "8AA495" },
+      { token: "identifier", foreground: "E6F3E8" },
+      { token: "function", foreground: "6FE3A3" },
+      { token: "tag", foreground: "8FF7A7" },
+      { token: "attribute.name", foreground: "D7F58D" },
+      { token: "attribute.value", foreground: "B8FFCA" },
+    ],
+    colors: {
+      "editor.background": "#050806",
+      "editor.foreground": "#E6F3E8",
+      "editorLineNumber.foreground": "#49604F",
+      "editorLineNumber.activeForeground": "#8FF7A7",
+      "editorCursor.foreground": "#8FF7A7",
+      "editorCursor.background": "#050806",
+      "editor.selectionBackground": "#17311F",
+      "editor.inactiveSelectionBackground": "#112319",
+      "editor.selectionHighlightBackground": "#14302080",
+      "editor.wordHighlightBackground": "#17311F55",
+      "editor.wordHighlightStrongBackground": "#21402A66",
+      "editor.findMatchBackground": "#8FF7A744",
+      "editor.findMatchBorder": "#8FF7A7",
+      "editor.findMatchHighlightBackground": "#8FF7A722",
+      "editor.lineHighlightBackground": "#0D140F",
+      "editor.lineHighlightBorder": "#00000000",
+      "editorHoverWidget.background": "#0D140F",
+      "editorHoverWidget.border": "#233227",
+      "editorWidget.background": "#0D140F",
+      "editorWidget.border": "#233227",
+      "editorSuggestWidget.background": "#0D140F",
+      "editorSuggestWidget.border": "#233227",
+      "editorSuggestWidget.foreground": "#DCEBDE",
+      "editorSuggestWidget.selectedBackground": "#17311F",
+      "editorSuggestWidget.highlightForeground": "#8FF7A7",
+      "editorBracketMatch.background": "#17311F55",
+      "editorBracketMatch.border": "#8FF7A755",
+      "editorIndentGuide.background1": "#18241C",
+      "editorIndentGuide.activeBackground1": "#2C4432",
+      "editorWhitespace.foreground": "#1D2A20",
+      "editorGutter.background": "#050806",
+      "editorOverviewRuler.border": "#00000000",
+      "minimap.background": "#050806",
+      "minimap.selectionHighlight": "#17311F",
+      "scrollbarSlider.background": "#23322799",
+      "scrollbarSlider.hoverBackground": "#2C4432BB",
+      "scrollbarSlider.activeBackground": "#3E5E46CC",
+      "peekView.border": "#233227",
+      "peekViewEditor.background": "#050806",
+      "peekViewResult.background": "#0A0F0B",
+      "peekViewTitle.background": "#0F1711",
+    },
+  });
+
+  themesRegistered = true;
+}
 
 /** Normalize AI suggestion: JSON wrapper, markdown fences, JSON invalid de la model */
 function normalizeAiSuggestion(raw) {
@@ -76,6 +149,18 @@ const Editor = forwardRef(function Editor(
   const decorationsRef = useRef(new Map());
   const widgetsRef = useRef(new Map());
   const keymapRef = useRef(null);
+
+  const publishCursor = useCallback(() => {
+    const editor = editorRef.current;
+    if (!editor || !activeFile) return;
+    const pos = editor.getPosition();
+    if (!pos) return;
+    wsProvider.awareness.setLocalStateField("cursor", {
+      file: activeFile,
+      line: pos.lineNumber,
+      column: pos.column,
+    });
+  }, [activeFile]);
 
   useImperativeHandle(ref, () => ({
     getPosition: () => editorRef.current?.getPosition(),
@@ -169,9 +254,10 @@ const Editor = forwardRef(function Editor(
   // Create editor once
   useEffect(() => {
     if (!containerRef.current) return;
+    registerEditorThemes();
     const editor = monaco.editor.create(containerRef.current, {
       language,
-      theme: "vs-dark",
+      theme: DEFAULT_EDITOR_THEME,
       automaticLayout: true,
       fontSize: 14,
       fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
@@ -263,12 +349,13 @@ const Editor = forwardRef(function Editor(
       wsProvider.awareness,
     );
     bindingRef.current = binding;
+    publishCursor();
 
     return () => {
       binding.destroy();
       bindingRef.current = null;
     };
-  }, [activeFile]);
+  }, [activeFile, language, publishCursor]);
 
   // Update language when it changes without switching files
   useEffect(() => {
@@ -282,7 +369,7 @@ const Editor = forwardRef(function Editor(
   useEffect(() => {
     const editor = editorRef.current;
     if (!editor) return;
-    if (settings.theme) monaco.editor.setTheme(settings.theme);
+    monaco.editor.setTheme(settings.theme || DEFAULT_EDITOR_THEME);
     editor.updateOptions({
       fontSize: settings.fontSize ?? 14,
       tabSize: settings.tabSize ?? 2,
@@ -296,6 +383,22 @@ const Editor = forwardRef(function Editor(
   useEffect(() => {
     editorRef.current?.updateOptions({ readOnly });
   }, [readOnly]);
+
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor) return;
+
+    const subscriptions = [
+      editor.onDidChangeCursorPosition(() => publishCursor()),
+      editor.onDidFocusEditorText(() => publishCursor()),
+    ];
+
+    publishCursor();
+
+    return () => {
+      subscriptions.forEach((sub) => sub.dispose());
+    };
+  }, [publishCursor]);
 
   /** Culori Figma-like pentru selecții remote (y-monaco folosește clase yRemoteSelection-{id}). */
   useEffect(() => {
@@ -324,13 +427,13 @@ const Editor = forwardRef(function Editor(
       states.forEach((state, clientId) => {
         if (clientId === localId || !state.user?.name) return;
         const { name, color } = state.user;
-        const c = color || "#cba6f7";
+        const c = color || "#8ff7a7";
         const id = String(clientId);
         const label = JSON.stringify(name);
         rules.push(
           `.monaco-editor .yRemoteSelection-${id}{background-color:${hexToRgba(c, 0.14)}!important;border-radius:2px;}`,
           `.monaco-editor .yRemoteSelectionHead-${id}{border-left:2px solid ${c}!important;opacity:1;border-radius:0 1px 1px 0;}`,
-          `.monaco-editor .yRemoteSelectionHead-${id}::after{content:${label};position:absolute;top:-20px;left:0;transform:translateX(-1px);font-size:10px;font-weight:500;letter-spacing:0.02em;line-height:1.2;padding:4px 9px;border-radius:6px;white-space:nowrap;pointer-events:none;z-index:30;color:#e8eaf0;background:#000000;border:1px solid ${c};box-shadow:0 2px 10px rgba(0,0,0,0.55);}`,
+          `.monaco-editor .yRemoteSelectionHead-${id}::after{content:${label};position:absolute;top:-20px;left:0;transform:translateX(-1px);font-size:10px;font-weight:500;letter-spacing:0.02em;line-height:1.2;padding:4px 9px;border-radius:999px;white-space:nowrap;pointer-events:none;z-index:30;color:#e6f3e8;background:#050806;border:1px solid ${c};box-shadow:0 10px 22px rgba(0,0,0,0.32);}`,
         );
       });
       el.textContent = rules.join("");

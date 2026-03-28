@@ -10,7 +10,7 @@ const { WebSocketServer, WebSocket } = require("ws");
 const { encoding, decoding } = require("lib0");
 
 const PORT = process.env.PORT || 3001;
-const WS_PORT = process.env.WS_PORT || 1234;
+const IS_PROD = process.env.NODE_ENV === 'production';
 
 // --- Database (Supabase) ---
 const db = require("./db");
@@ -37,14 +37,20 @@ if (process.env.DATABASE_URL) {
   );
 }
 
-app.use(cors({ origin: true, credentials: true }));
+const allowedOrigin = process.env.CLIENT_ORIGIN || "http://localhost:5173";
+app.use(cors({ origin: IS_PROD ? allowedOrigin : true, credentials: true }));
 app.use(express.json({ limit: "8mb" }));
 const sessionMiddleware = session({
   store: sessionStore,
   secret: process.env.SESSION_SECRET || "itecify-dev-secret",
   resave: false,
   saveUninitialized: false,
-  cookie: { httpOnly: true, maxAge: 7 * 24 * 60 * 60 * 1000 },
+  cookie: {
+    httpOnly: true,
+    maxAge: 7 * 24 * 60 * 60 * 1000,
+    secure: IS_PROD,
+    sameSite: IS_PROD ? 'none' : 'lax',
+  },
 });
 app.use(sessionMiddleware);
 
@@ -208,6 +214,15 @@ function stripOuterCodeFences(s) {
   return t;
 }
 
+function parseLooseJson(text) {
+  const stripped = stripOuterCodeFences(text);
+  try {
+    return JSON.parse(stripped);
+  } catch {
+    return null;
+  }
+}
+
 // A2: Fix errors
 app.post("/api/ai/fix", async (req, res) => {
   const { code, error: errorText, language, hintLine } = req.body;
@@ -295,6 +310,47 @@ app.post("/api/ai/tests", async (req, res) => {
       2048,
     );
     res.json({ tests: raw });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// A5: AI code review
+app.post("/api/ai/review", async (req, res) => {
+  const { code, language } = req.body;
+  if (!code) return res.status(400).json({ error: "code is required" });
+
+  try {
+    const raw = await askGroq(
+      `You are a senior code reviewer. Review the file and return ONLY valid JSON with one key: "issues".
+"issues" must be an array of objects. Each object must contain:
+- "line": integer line number
+- "severity": one of "info", "warning", "error"
+- "message": one short review comment
+
+Focus on correctness, bugs, risky behavior, or missing edge-case handling. Return an empty array when there are no meaningful findings. Do not include markdown or code fences.`,
+      `Language: ${language || "javascript"}\n\nReview this file:\n${codeWithLineNumbers(code)}`,
+      2048,
+    );
+
+    const parsed = parseLooseJson(raw);
+    const issues = Array.isArray(parsed?.issues)
+      ? parsed.issues
+          .map((issue) => ({
+            line:
+              Number.isFinite(Number(issue?.line)) && Number(issue.line) > 0
+                ? Number(issue.line)
+                : 1,
+            severity: ["info", "warning", "error"].includes(issue?.severity)
+              ? issue.severity
+              : "info",
+            message: String(issue?.message || "").trim(),
+          }))
+          .filter((issue) => issue.message)
+          .slice(0, 12)
+      : [];
+
+    res.json({ issues });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -1226,18 +1282,7 @@ function getOrCreatePty() {
   }
 }
 
-const TERM_WS_PORT = Number(process.env.TERM_WS_PORT) || 1235;
-const termWss = new WebSocketServer({ port: TERM_WS_PORT });
-termWss.on("error", (err) => {
-  if (err.code === "EADDRINUSE") {
-    console.error(
-      `[iTECify] Port ${TERM_WS_PORT} already in use (terminal WS). Stop the other \`npm run dev\` or change TERM_WS_PORT / VITE_TERM_WS_PORT in .env.`,
-    );
-  } else {
-    console.error("[iTECify] Terminal WebSocket error:", err.message);
-  }
-  process.exit(1);
-});
+const termWss = new WebSocketServer({ noServer: true });
 
 termWss.on("connection", (ws) => {
   termClients.add(ws);
@@ -1275,16 +1320,14 @@ termWss.on("connection", (ws) => {
   });
 });
 
-console.log(
-  `[iTECify] Shared terminal WebSocket on ws://localhost:${TERM_WS_PORT}`,
-);
-
 const apiServer = http.createServer(app);
 apiServer.on("upgrade", (req, socket, head) => {
   if (preview.handlePreviewUpgrade(req, socket, head)) return;
 });
 apiServer.listen(PORT, () => {
-  console.log(`[iTECify] API server running on http://localhost:${PORT}`);
+  console.log(`[iTECify] Server running on http://localhost:${PORT}`);
+  console.log(`[iTECify] Yjs WS  → ws://localhost:${PORT}/yjs`);
+  console.log(`[iTECify] Term WS → ws://localhost:${PORT}/term`);
 });
 
 // --- Yjs WebSocket collaboration server ---
@@ -1358,8 +1401,10 @@ function getYDoc(docName, userId = null) {
     chatPersistedCount = all.length;
   });
 
-  // Load room from DB (non-blocking — updates broadcast via doc "update" listener above)
-  db.loadRoom(roomId, doc, userId)
+  // Load room from DB. Store the promise so SYNC_STEP1 can await it before
+  // sending SYNC_STEP2 — this guarantees the client always gets the full
+  // persisted content in the initial sync, without needing a page refresh.
+  doc.loadRoomPromise = db.loadRoom(roomId, doc, userId)
     .then((result) => {
       if (result?.fileCount) {
         console.log(
@@ -1475,7 +1520,7 @@ function setupConnection(ws, req) {
     doc.lastUserId = userId;
   }
 
-  ws.on("message", (rawMsg) => {
+  ws.on("message", async (rawMsg) => {
     const message = new Uint8Array(rawMsg);
     const decoder = decoding.createDecoder(message);
     const msgType = decoding.readVarUint(decoder);
@@ -1484,6 +1529,10 @@ function setupConnection(ws, req) {
       const syncType = decoding.readVarUint(decoder);
 
       if (syncType === SYNC_STEP1) {
+        // Wait for DB load to finish so SYNC_STEP2 contains the full persisted
+        // state — client gets everything in the initial handshake, no refresh needed.
+        await (doc.loadRoomPromise || Promise.resolve());
+
         // Client sends state vector, server responds with diff
         const sv = decoding.readVarUint8Array(decoder);
         const encoder = encoding.createEncoder();
@@ -1559,22 +1608,25 @@ function setupConnection(ws, req) {
   }
 }
 
-const wss = new WebSocketServer({ port: WS_PORT });
-wss.on("error", (err) => {
-  if (err.code === "EADDRINUSE") {
-    console.error(
-      `[iTECify] Port ${WS_PORT} already in use (Yjs WS). Stop the other \`npm run dev\` or change WS_PORT / VITE_WS_PORT in .env.`,
-    );
+const wss = new WebSocketServer({ noServer: true });
+
+// Unified WebSocket upgrade handler — routes /yjs/* and /term on the single HTTP port.
+// This allows Railway (and any single-port host) to serve both WS connections.
+apiServer.on("upgrade", (req, socket, head) => {
+  const pathname = req.url.split("?")[0];
+  const fakeRes = { getHeader: () => {}, setHeader: () => {}, end: () => {} };
+
+  if (pathname.startsWith("/yjs")) {
+    // Strip /yjs prefix so setupConnection sees the room name (e.g. /itecify-abc123)
+    req.url = req.url.slice("/yjs".length) || "/";
+    sessionMiddleware(req, fakeRes, () => {
+      wss.handleUpgrade(req, socket, head, (ws) => setupConnection(ws, req));
+    });
+  } else if (pathname.startsWith("/term")) {
+    termWss.handleUpgrade(req, socket, head, (ws) => {
+      termWss.emit("connection", ws, req);
+    });
   } else {
-    console.error("[iTECify] Yjs WebSocket error:", err.message);
+    socket.destroy();
   }
-  process.exit(1);
 });
-// Apply session middleware to WS upgrade so req.session is available in setupConnection
-wss.on("connection", (ws, req) => {
-  const res = { getHeader: () => {}, setHeader: () => {}, end: () => {} };
-  sessionMiddleware(req, res, () => setupConnection(ws, req));
-});
-console.log(
-  `[iTECify] Yjs WebSocket server running on ws://localhost:${WS_PORT}`,
-);

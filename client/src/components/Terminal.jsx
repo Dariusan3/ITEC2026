@@ -1,4 +1,5 @@
 import { useRef, useEffect } from "react";
+import { TERM_WS_URL } from "../lib/config";
 import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
@@ -13,18 +14,18 @@ export default function Terminal() {
 
     const term = new XTerm({
       theme: {
-        background: "#181825",
-        foreground: "#cdd6f4",
-        cursor: "#cba6f7",
-        selectionBackground: "#45475a",
-        black: "#45475a",
-        red: "#f38ba8",
-        green: "#a6e3a1",
-        yellow: "#f9e2af",
-        blue: "#89b4fa",
-        magenta: "#cba6f7",
-        cyan: "#94e2d5",
-        white: "#cdd6f4",
+        background: "#0a0f0b",
+        foreground: "#e6f3e8",
+        cursor: "#8ff7a7",
+        selectionBackground: "#233227",
+        black: "#233227",
+        red: "#ff8f8f",
+        green: "#8ff7a7",
+        yellow: "#d7f58d",
+        blue: "#6fe3a3",
+        magenta: "#7edfb3",
+        cyan: "#74f0c2",
+        white: "#e6f3e8",
       },
       fontSize: 13,
       fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
@@ -38,8 +39,7 @@ export default function Terminal() {
     fitAddon.fit();
     termRef.current = term;
 
-    const termPort = import.meta.env.VITE_TERM_WS_PORT || "1235";
-    const ws = new WebSocket(`ws://${window.location.hostname}:${termPort}`);
+    const ws = new WebSocket(TERM_WS_URL);
     wsRef.current = ws;
 
     ws.onopen = () => {

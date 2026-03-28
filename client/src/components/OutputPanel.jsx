@@ -1,7 +1,36 @@
 import { useState, useEffect, useRef } from "react";
 import Terminal from "./Terminal";
+import { ArchiveIcon, ChevronRightIcon } from "./ui/Icons";
 
 const MAX_HISTORY = 20;
+
+function EmptyPanel({ title, description, icon = null }) {
+  return (
+    <div
+      className="soft-card mx-3.5 my-3 flex flex-col items-center gap-2 px-4 py-6 text-center"
+      style={{ background: "var(--bg-tertiary)" }}
+    >
+      <div
+        className="flex h-10 w-10 items-center justify-center rounded-2xl"
+        style={{
+          background: "color-mix(in srgb, var(--accent) 14%, var(--bg-secondary))",
+          color: "var(--accent)",
+        }}
+      >
+        {icon || <ArchiveIcon className="h-4 w-4" />}
+      </div>
+      <p className="text-[12px] font-semibold" style={{ color: "var(--text-primary)" }}>
+        {title}
+      </p>
+      <p
+        className="max-w-[20rem] text-[10px] leading-relaxed"
+        style={{ color: "var(--text-secondary)" }}
+      >
+        {description}
+      </p>
+    </div>
+  );
+}
 
 export default function OutputPanel({
   output,
@@ -74,9 +103,9 @@ export default function OutputPanel({
   if (collapsed) {
     return (
       <div
-        className="flex h-8 min-h-8 shrink-0 cursor-pointer items-center px-3"
+        className="panel-shell flex h-9 min-h-9 shrink-0 cursor-pointer items-center gap-2 border-t px-3.5"
         style={{
-          background: "var(--bg-secondary)",
+          borderColor: "var(--border)",
         }}
         onClick={() => setCollapsed(false)}
         role="button"
@@ -85,8 +114,9 @@ export default function OutputPanel({
           if (e.key === "Enter" || e.key === " ") setCollapsed(false);
         }}
       >
+        <ChevronRightIcon className="h-3.5 w-3.5" stroke="var(--text-secondary)" />
         <span
-          className="text-[10px] font-semibold uppercase tracking-wider"
+          className="text-[10px] font-semibold uppercase tracking-[0.16em]"
           style={{ color: "var(--text-secondary)" }}
         >
           ▶ Output / Terminal / Preview
@@ -96,15 +126,10 @@ export default function OutputPanel({
   }
 
   return (
-    <div
-      className="flex h-[13.5rem] min-h-[11rem] max-h-[40vh] shrink-0 flex-col"
-      style={{
-        background: "var(--bg-secondary)",
-      }}
-    >
+    <div className="panel-shell flex h-[14.5rem] min-h-[11rem] max-h-[42vh] shrink-0 flex-col">
       {/* Tab bar */}
       <div
-        className="flex w-full shrink-0 flex-wrap items-center justify-between gap-2 px-2 py-1.5 sm:px-3"
+        className="flex w-full shrink-0 flex-wrap items-center justify-between gap-2 px-3 py-2 sm:px-3.5"
         style={{
           background: "var(--bg-secondary)",
           borderBottom: "1px solid var(--border)",
@@ -112,7 +137,7 @@ export default function OutputPanel({
         }}
       >
         <div
-          className="flex min-w-0 items-center gap-2 rounded-none p-1 sm:gap-3"
+          className="soft-card flex min-w-0 items-center gap-1 p-1 sm:gap-1.5"
           role="tablist"
           aria-label="Output, Terminal, Preview sau istoric"
         >
@@ -162,8 +187,10 @@ export default function OutputPanel({
             <button
               type="button"
               onClick={downloadOutput}
-              className="rounded-none px-2 py-1 text-[10px] font-semibold uppercase tracking-wide hover:opacity-80"
+              className="liquid-surface rounded-xl border px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide shadow-[0_10px_20px_rgba(0,0,0,0.12)] transition-all duration-150 hover:-translate-y-px hover:opacity-90"
               style={{
+                background: "var(--bg-tertiary)",
+                borderColor: "var(--border)",
                 color: "var(--text-secondary)",
                 marginRight: "10px",
               }}
@@ -174,8 +201,9 @@ export default function OutputPanel({
           )}
           <button
             type="button"
-            className="rounded-none px-2 py-1 text-[10px] font-semibold uppercase tracking-wide transition-colors hover:opacity-90"
+            className="liquid-surface rounded-xl border px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide shadow-[0_10px_20px_rgba(0,0,0,0.12)] transition-all duration-150 hover:-translate-y-px hover:opacity-90"
             style={{
+              borderColor: stdinOpen ? "var(--accent)" : "var(--border)",
               color: stdinOpen ? "var(--accent)" : "var(--text-secondary)",
               background: stdinOpen ? "var(--bg-tertiary)" : "transparent",
             }}
@@ -186,9 +214,10 @@ export default function OutputPanel({
           </button>
           <button
             type="button"
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-none text-xs font-semibold transition-opacity hover:opacity-90"
+            className="liquid-surface flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border text-xs font-semibold shadow-[0_10px_20px_rgba(0,0,0,0.12)] transition-all duration-150 hover:-translate-y-px hover:opacity-90"
             style={{
               background: "var(--bg-tertiary)",
+              borderColor: "var(--border)",
               color: "var(--text-primary)",
             }}
             onClick={() => setCollapsed(true)}
@@ -202,15 +231,15 @@ export default function OutputPanel({
 
       {/* Stdin + Packages + Env vars panel */}
       {stdinOpen && tab !== "terminal" && tab !== "preview" && (
-        <div className="space-y-2 overflow-auto max-h-48 px-3 py-2">
+        <div className="space-y-2 overflow-auto max-h-48 px-3.5 py-3">
           <div>
             <Label>stdin (mod batch, nu terminal interactiv)</Label>
             <textarea
               value={stdin}
               onChange={(e) => onStdinChange(e.target.value)}
-              placeholder={"5          ← prima lină: n\n10\n20\n...   ← apoi câte o valoare pe linie pentru fiecare scanf"}
-              rows={4}
-              className="w-full text-xs p-1.5 rounded border resize-y outline-none font-mono min-h-[4.5rem]"
+              placeholder="Each line = one line of stdin..."
+              rows={2}
+              className="w-full resize-none rounded-xl border p-2.5 text-xs font-mono outline-none shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]"
               style={{
                 background: "var(--bg-tertiary)",
                 borderColor: "var(--border)",
@@ -234,7 +263,7 @@ export default function OutputPanel({
               value={packages}
               onChange={(e) => onPackagesChange(e.target.value)}
               placeholder="e.g. lodash axios  or  numpy pandas"
-              className="w-full text-xs p-1.5 rounded border outline-none font-mono"
+              className="w-full rounded-xl border p-2.5 text-xs font-mono outline-none shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]"
               style={{
                 background: "var(--bg-tertiary)",
                 borderColor: "var(--border)",
@@ -249,7 +278,7 @@ export default function OutputPanel({
               onChange={(e) => onEnvVarsChange(e.target.value)}
               placeholder={"API_KEY=abc\nDEBUG=1"}
               rows={2}
-              className="w-full text-xs p-1.5 rounded border resize-none outline-none font-mono"
+              className="w-full resize-none rounded-xl border p-2.5 text-xs font-mono outline-none shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]"
               style={{
                 background: "var(--bg-tertiary)",
                 borderColor: "var(--border)",
@@ -264,7 +293,7 @@ export default function OutputPanel({
         {tab === "output" && (
           <div
             ref={scrollRef}
-            className="h-full overflow-auto p-2.5 font-mono text-[11px] whitespace-pre-wrap"
+            className="h-full overflow-auto px-3.5 py-3 font-mono text-[11px] whitespace-pre-wrap"
             style={{ color: "var(--text-primary)" }}
           >
             {output ? (
@@ -285,9 +314,10 @@ export default function OutputPanel({
                 </div>
               ))
             ) : (
-              <span style={{ color: "var(--accent-dim)" }}>
-                // Run your code to see output here
-              </span>
+              <EmptyPanel
+                title="No output yet"
+                description="Run the active file to see logs, results and errors streamed here in real time."
+              />
             )}
           </div>
         )}
@@ -340,47 +370,81 @@ export default function OutputPanel({
         {tab === "history" && (
           <div className="h-full overflow-auto p-2 space-y-1">
             {history.length === 0 ? (
-              <p
-                className="text-xs mt-4 text-center"
-                style={{ color: "var(--text-secondary)" }}
-              >
-                No runs yet.
-              </p>
+              <EmptyPanel
+                title="No run history yet"
+                description="Each execution is saved here so you can quickly revisit previous outputs and failures."
+              />
             ) : (
-              history.map((entry, i) => (
-                <div
-                  key={i}
-                  className="rounded border px-2 py-1.5 cursor-pointer hover:opacity-80"
-                  style={{
-                    borderColor: "var(--border)",
-                    background: "var(--bg-tertiary)",
-                  }}
-                  onClick={() => {
-                    setHistoryOpen(i === historyOpen ? null : i);
-                    setTab("output");
-                  }}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <span
-                      className="text-[10px] font-mono truncate"
-                      style={{
-                        color: entry.hasError
-                          ? "var(--red)"
-                          : "var(--text-primary)",
-                      }}
-                    >
-                      {entry.hasError ? "✗ " : "✓ "}
-                      {entry.preview}
-                    </span>
-                    <span
-                      className="text-[9px] shrink-0"
-                      style={{ color: "var(--text-secondary)" }}
-                    >
-                      {new Date(entry.ts).toLocaleTimeString()}
-                    </span>
+              history.map((entry, i) => {
+                const expanded = historyOpen === i;
+
+                return (
+                  <div
+                    key={i}
+                    className="cursor-pointer rounded-xl border px-3 py-2 transition-all duration-150 hover:-translate-y-px hover:opacity-90"
+                    style={{
+                      borderColor: expanded ? "var(--accent)" : "var(--border)",
+                      background: "var(--bg-tertiary)",
+                    }}
+                    onClick={() => {
+                      setHistoryOpen(expanded ? null : i);
+                      setTab("output");
+                    }}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span
+                        className="min-w-0 flex-1 truncate text-[10px] font-mono"
+                        style={{
+                          color: entry.hasError
+                            ? "var(--red)"
+                            : "var(--text-primary)",
+                        }}
+                      >
+                        {entry.hasError ? "✗ " : "✓ "}
+                        {entry.preview}
+                      </span>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <span
+                          className="text-[9px]"
+                          style={{ color: "var(--text-secondary)" }}
+                        >
+                          {new Date(entry.ts).toLocaleTimeString()}
+                        </span>
+                        <span
+                          className="text-[9px]"
+                          style={{ color: "var(--text-secondary)" }}
+                        >
+                          {expanded ? "▲" : "▼"}
+                        </span>
+                      </div>
+                    </div>
+
+                    {expanded && (
+                      <div
+                        className="mt-2 max-h-36 overflow-auto border-t px-2 pb-2 pt-2 font-mono text-[10px] whitespace-pre-wrap"
+                        style={{ borderColor: "var(--border)" }}
+                      >
+                        {entry.lines.map((line, j) => (
+                          <div
+                            key={j}
+                            style={{
+                              color:
+                                line.type === "stderr"
+                                  ? "var(--red)"
+                                  : line.type === "info"
+                                    ? "var(--text-secondary)"
+                                    : "var(--text-primary)",
+                              fontStyle: line.type === "info" ? "italic" : "normal",
+                            }}
+                          >
+                            {line.text}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         )}
@@ -392,7 +456,7 @@ export default function OutputPanel({
 function Label({ children }) {
   return (
     <p
-      className="text-[9px] uppercase tracking-wider mb-1"
+      className="mb-1 text-[9px] uppercase tracking-[0.18em]"
       style={{ color: "var(--text-secondary)" }}
     >
       {children}
@@ -407,9 +471,9 @@ function PanelTab({ selected, onClick, children }) {
       role="tab"
       aria-selected={selected}
       onClick={onClick}
-      className="min-h-8 rounded-none px-6 py-1 text-[10px] font-semibold uppercase tracking-wider transition-colors sm:px-8 sm:text-[11px]"
+      className="liquid-surface min-h-9 rounded-xl px-5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] transition-all duration-150 hover:-translate-y-px sm:px-6 sm:text-[11px]"
       style={{
-        border: "none",
+        border: selected ? "1px solid var(--accent)" : "1px solid transparent",
         cursor: "pointer",
         background: selected ? "var(--accent)" : "transparent",
         color: selected ? "var(--bg-primary)" : "var(--text-secondary)",
