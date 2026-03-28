@@ -1,7 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import * as Y from "yjs";
 import { getYText, ydoc, roomId } from "../lib/yjs";
-import { SERVER_URL } from "../lib/config";
+import { ArchiveIcon } from "./ui/Icons";
+
+const timeButtonClass =
+  "liquid-surface inline-flex items-center justify-center rounded-2xl border text-[11px] font-semibold transition-all duration-150 disabled:cursor-not-allowed disabled:opacity-35 sm:text-xs";
 
 export default function TimeTravel({ editorRef, activeFile }) {
   const [snapshots, setSnapshots] = useState([]);
@@ -131,42 +134,94 @@ export default function TimeTravel({ editorRef, activeFile }) {
     replaying && sliderValue >= 0 && sliderValue < liveIndex;
 
   const barShellClass =
-    "flex min-h-12 w-full items-center border-b px-3 py-2.5 sm:px-4";
+    "panel-shell flex min-h-[4.25rem] w-full items-center border-b px-3 py-3 sm:px-4";
   const barStyle = {
-    background: "var(--bg-secondary)",
     borderColor: "var(--border)",
   };
 
   if (snapshots.length === 0) {
     return (
       <div
-        className={`${barShellClass} text-xs sm:text-sm`}
-        style={{ ...barStyle, color: "var(--text-secondary)" }}
+        className={barShellClass}
+        style={barStyle}
       >
-        No snapshots yet (saves every 10s)
+        <div
+          className="soft-card flex w-full items-center gap-3 px-4 py-3"
+          style={{ background: "var(--bg-tertiary)" }}
+        >
+          <div
+            className="flex h-10 w-10 items-center justify-center rounded-2xl"
+            style={{
+              background: "color-mix(in srgb, var(--accent) 14%, var(--bg-secondary))",
+              color: "var(--accent)",
+            }}
+          >
+            <ArchiveIcon className="h-4 w-4" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-[12px] font-semibold" style={{ color: "var(--text-primary)" }}>
+              No snapshots yet
+            </p>
+            <p className="text-[10px]" style={{ color: "var(--text-secondary)" }}>
+              Automatic snapshots appear here every 10 seconds while the room is active.
+            </p>
+          </div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className={`${barShellClass} flex-wrap gap-2`} style={barStyle}>
-      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2 sm:gap-3">
-        <span
-          className="shrink-0 text-[11px] font-semibold whitespace-nowrap sm:text-xs"
+    <div className={`${barShellClass} flex-wrap gap-3`} style={barStyle}>
+      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3 sm:gap-4">
+        <div
+          className="soft-card flex items-center gap-3 rounded-2xl px-3 py-2"
           style={{
-            color: replaying ? "var(--yellow)" : "var(--text-secondary)",
-            marginLeft: "10px",
+            background: replaying
+              ? "color-mix(in srgb, var(--yellow) 10%, var(--bg-tertiary))"
+              : "var(--bg-tertiary)",
+            boxShadow: replaying
+              ? "inset 0 0 0 1px color-mix(in srgb, var(--yellow) 20%, var(--border)), 0 12px 24px rgba(0,0,0,0.16)"
+              : undefined,
           }}
         >
-          {replaying ? "REPLAY" : "Timeline"}
-        </span>
+          <div
+            className="flex h-10 w-10 items-center justify-center rounded-2xl"
+            style={{
+              background: replaying
+                ? "color-mix(in srgb, var(--yellow) 18%, var(--bg-secondary))"
+                : "color-mix(in srgb, var(--accent) 14%, var(--bg-secondary))",
+              color: replaying ? "var(--yellow)" : "var(--accent)",
+            }}
+          >
+            <ArchiveIcon className="h-4 w-4" />
+          </div>
+          <div className="min-w-0">
+            <span
+              className="block whitespace-nowrap text-[11px] font-semibold uppercase tracking-[0.18em] sm:text-xs"
+              style={{
+                color: replaying ? "var(--yellow)" : "var(--accent)",
+              }}
+            >
+              {replaying ? "Replay Mode" : "Time Travel"}
+            </span>
+            <span
+              className="block text-[10px] uppercase tracking-[0.16em]"
+              style={{ color: "var(--text-secondary)" }}
+            >
+              {sliderValue >= 0 && snapshots[sliderValue]
+                ? snapshots[sliderValue].label
+                : "Live workspace"}
+            </span>
+          </div>
+        </div>
 
         <button
           type="button"
           aria-label="Pas înapoi în istoric"
           disabled={!canStepBack}
           onClick={handleMinus}
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border text-lg font-semibold leading-none transition-opacity disabled:cursor-not-allowed disabled:opacity-35"
+          className={`${timeButtonClass} h-10 w-10 shrink-0 text-lg leading-none`}
           style={{
             borderColor: "var(--border)",
             background: "var(--bg-tertiary)",
@@ -182,8 +237,10 @@ export default function TimeTravel({ editorRef, activeFile }) {
           max={liveIndex}
           value={sliderValue === -1 ? liveIndex : sliderValue}
           onChange={handleSliderChange}
-          className="h-2 min-w-[6rem] flex-1 accent-purple-400 sm:min-w-[8rem]"
-          style={{ accentColor: "var(--accent)" }}
+          className="timeline-slider h-2 min-w-[8rem] flex-1 sm:min-w-[12rem]"
+          style={{
+            background: `linear-gradient(90deg, var(--accent) 0%, var(--accent) ${((sliderValue === -1 ? liveIndex : sliderValue) / Math.max(liveIndex || 1, 1)) * 100}%, color-mix(in srgb, var(--bg-primary) 65%, var(--border)) ${((sliderValue === -1 ? liveIndex : sliderValue) / Math.max(liveIndex || 1, 1)) * 100}%, color-mix(in srgb, var(--bg-primary) 65%, var(--border)) 100%)`,
+          }}
         />
 
         <button
@@ -191,7 +248,7 @@ export default function TimeTravel({ editorRef, activeFile }) {
           aria-label="Pas înainte spre Live"
           disabled={!canStepForward}
           onClick={handlePlus}
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border text-lg font-semibold leading-none transition-opacity disabled:cursor-not-allowed disabled:opacity-35"
+          className={`${timeButtonClass} h-10 w-10 shrink-0 text-lg leading-none`}
           style={{
             borderColor: "var(--border)",
             background: "var(--bg-tertiary)",
@@ -201,14 +258,6 @@ export default function TimeTravel({ editorRef, activeFile }) {
           +
         </button>
 
-        <span
-          className="shrink-0 text-[11px] whitespace-nowrap sm:text-xs"
-          style={{ color: "var(--text-secondary)" }}
-        >
-          {sliderValue >= 0 && snapshots[sliderValue]
-            ? snapshots[sliderValue].label
-            : "Live"}
-        </span>
       </div>
 
       <div className="flex shrink-0 flex-wrap items-center gap-2">
@@ -221,12 +270,14 @@ export default function TimeTravel({ editorRef, activeFile }) {
               ? "Folosește această versiune ca document live (colaborativ)"
               : "Disponibil doar în modul replay"
           }
-          className="rounded-md px-3 py-1.5 text-[11px] font-semibold transition-opacity sm:text-xs"
+          className={`${timeButtonClass} px-4 py-2`}
           style={{
             background: replaying ? "var(--blue)" : "var(--bg-tertiary)",
             color: replaying ? "var(--bg-primary)" : "var(--text-secondary)",
             opacity: replaying ? 1 : 0.55,
-            padding: "0.5rem 1rem",
+            borderColor: replaying
+              ? "color-mix(in srgb, var(--blue) 45%, var(--border))"
+              : "var(--border)",
           }}
         >
           Save
@@ -241,13 +292,14 @@ export default function TimeTravel({ editorRef, activeFile }) {
               ? "Revino la documentul live dinainte de replay"
               : "Ești deja pe Live"
           }
-          className="rounded-md px-3 py-1.5 text-[11px] font-semibold transition-opacity sm:text-xs"
+          className={`${timeButtonClass} px-4 py-2`}
           style={{
             background: replaying ? "var(--green)" : "var(--bg-tertiary)",
             color: replaying ? "var(--bg-primary)" : "var(--text-secondary)",
             opacity: replaying ? 1 : 0.55,
-            padding: "0.5rem 1rem",
-            marginRight: "10px",
+            borderColor: replaying
+              ? "color-mix(in srgb, var(--green) 45%, var(--border))"
+              : "var(--border)",
           }}
         >
           Back to Live

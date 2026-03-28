@@ -191,20 +191,20 @@ function AiMessage({ msg, onDelete }) {
   /* ── User message: bulă la dreapta; ștergere în stânga bulei (fără suprapunere pe text) ── */
   if (isUser) {
     return (
-      <div className="group/msg flex flex-col items-end gap-0.5">
-        <div className="flex max-w-full flex-row-reverse items-start gap-1">
+      <div className="group/msg flex flex-col items-end gap-1">
+        <div className="flex max-w-full flex-row-reverse items-start gap-2">
           <div
-            className="max-w-[82%] rounded-xl rounded-tr-sm px-2.5 py-1.5"
+            className="soft-card max-w-[82%] rounded-2xl rounded-tr-md px-3 py-2.5"
             style={{
               background:
-                "color-mix(in srgb, var(--blue) 15%, var(--bg-tertiary))",
-              border:
-                "1px solid color-mix(in srgb, var(--blue) 20%, var(--border))",
-              padding: "4px",
+                "linear-gradient(180deg, color-mix(in srgb, var(--blue) 16%, var(--bg-tertiary)) 0%, color-mix(in srgb, var(--blue) 10%, var(--bg-secondary)) 100%)",
+              borderColor:
+                "color-mix(in srgb, var(--blue) 28%, var(--border))",
+              boxShadow: "0 14px 26px rgba(0,0,0,0.14)",
             }}
           >
             <p
-              className="whitespace-pre-wrap break-words text-[11px] leading-snug"
+              className="whitespace-pre-wrap break-words text-[11px] leading-relaxed"
               style={{ color: "var(--text-primary)" }}
             >
               {msg.content}
@@ -236,19 +236,18 @@ function AiMessage({ msg, onDelete }) {
   return (
     <div className="group/msg">
       {/* Label + time + actions */}
-      <div className="mb-1 flex items-center gap-1.5">
+      <div className="mb-2 flex items-center gap-2">
         <span
-          className="inline-flex h-[22px] items-center gap-1 rounded-md border pl-1 pr-1.5 text-[9px] font-bold uppercase tracking-wide"
+          className="inline-flex h-[24px] items-center gap-1 rounded-xl border pl-1 pr-2 text-[9px] font-bold uppercase tracking-[0.16em] shadow-[0_10px_20px_rgba(0,0,0,0.08)]"
           style={{
             background: `color-mix(in srgb, ${meta.accent} 14%, var(--bg-tertiary))`,
             borderColor: `color-mix(in srgb, ${meta.accent} 22%, var(--border))`,
             color: meta.accent,
-            padding: "10px",
           }}
         >
           {meta.aiIcon ? (
             <span
-              className="flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded"
+              className="flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-lg"
               style={{
                 background: `color-mix(in srgb, ${meta.accent} 20%, var(--bg-primary))`,
                 color: meta.accent,
@@ -285,8 +284,11 @@ function AiMessage({ msg, onDelete }) {
 
       {/* Content */}
       <div
-        className="text-[11px] leading-relaxed"
-        style={{ color: "var(--text-primary)" }}
+        className="soft-card rounded-2xl px-3.5 py-3 text-[11px] leading-relaxed"
+        style={{
+          color: "var(--text-primary)",
+          background: "linear-gradient(180deg, color-mix(in srgb, var(--bg-tertiary) 94%, white 6%) 0%, var(--bg-tertiary) 100%)",
+        }}
       >
         {segments.map((seg, i) =>
           seg.type === "text" ? (
@@ -296,7 +298,7 @@ function AiMessage({ msg, onDelete }) {
           ) : (
             <div
               key={i}
-              className="my-1.5 overflow-hidden rounded"
+              className="my-2 overflow-hidden rounded-xl"
               style={{
                 background: "var(--bg-primary)",
                 border: "1px solid var(--border)",
@@ -304,18 +306,18 @@ function AiMessage({ msg, onDelete }) {
             >
               {seg.lang && (
                 <div
-                  className="border-b px-2 py-0.5"
+                  className="border-b px-2.5 py-1"
                   style={{ borderColor: "var(--border)" }}
                 >
                   <span
-                    className="text-[8px] font-medium uppercase tracking-wider opacity-40"
+                    className="text-[8px] font-medium uppercase tracking-[0.16em] opacity-50"
                     style={{ color: "var(--text-secondary)" }}
                   >
                     {seg.lang}
                   </span>
                 </div>
               )}
-              <pre className="overflow-x-auto p-2 text-[10px] font-mono leading-snug">
+              <pre className="overflow-x-auto p-2.5 text-[10px] font-mono leading-snug">
                 <code>{seg.content}</code>
               </pre>
             </div>
@@ -325,7 +327,7 @@ function AiMessage({ msg, onDelete }) {
 
       {msg.blockId && (
         <div
-          className="mt-1 inline-flex items-center gap-1 text-[9px] opacity-60"
+          className="mt-2 inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-[9px] opacity-80"
           style={{ color: "var(--accent)" }}
         >
           <span>↗</span>
@@ -340,24 +342,68 @@ function AiMessage({ msg, onDelete }) {
 
 function ThinkingDots() {
   return (
-    <div className="flex items-center gap-1 py-2">
-      {[0, 1, 2].map((i) => (
+    <div
+      className="soft-card mx-2.5 my-2 flex items-center gap-3 px-3 py-3"
+      style={{ background: "var(--bg-tertiary)" }}
+    >
+      <div className="flex items-center gap-1.5">
+        {[0, 1, 2].map((i) => (
+          <span
+            key={i}
+            className="block h-2 w-2 rounded-full animate-bounce"
+            style={{
+              background: "var(--accent)",
+              animationDelay: `${i * 0.15}s`,
+              opacity: 0.85,
+            }}
+          />
+        ))}
+      </div>
+      <div className="min-w-0">
+        <p className="text-[11px] font-semibold" style={{ color: "var(--text-primary)" }}>
+          AI is thinking
+        </p>
+        <p className="text-[10px]" style={{ color: "var(--text-secondary)" }}>
+          Generating a response for your current file.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function EmptyState({ eyebrow, title, description, children }) {
+  return (
+    <div
+      className="soft-card mx-2.5 my-3 flex flex-col items-center gap-2 px-4 py-6 text-center"
+      style={{ background: "var(--bg-tertiary)" }}
+    >
+      <div
+        className="flex h-10 w-10 items-center justify-center rounded-2xl"
+        style={{
+          background: "color-mix(in srgb, var(--accent) 14%, var(--bg-secondary))",
+          color: "var(--accent)",
+        }}
+      >
+        <AiGlyph className="h-4 w-4" />
+      </div>
+      {eyebrow && (
         <span
-          key={i}
-          className="block h-1 w-1 rounded-full animate-bounce"
-          style={{
-            background: "var(--accent)",
-            animationDelay: `${i * 0.15}s`,
-            opacity: 0.6,
-          }}
-        />
-      ))}
-      <span
-        className="ml-1 text-[9px] opacity-50"
+          className="text-[9px] font-bold uppercase tracking-[0.18em]"
+          style={{ color: "var(--accent)" }}
+        >
+          {eyebrow}
+        </span>
+      )}
+      <p className="text-[12px] font-semibold" style={{ color: "var(--text-primary)" }}>
+        {title}
+      </p>
+      <p
+        className="max-w-[18rem] text-[10px] leading-relaxed"
         style={{ color: "var(--text-secondary)" }}
       >
-        thinking…
-      </span>
+        {description}
+      </p>
+      {children}
     </div>
   );
 }
@@ -380,6 +426,7 @@ export default function Sidebar({ editorRef, activeFile, language, output }) {
   const [prompt, setPrompt] = useState("");
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [showPromptTools, setShowPromptTools] = useState(false);
   const [users, setUsers] = useState([]);
   const scrollRef = useRef(null);
   const textareaRef = useRef(null);
@@ -391,6 +438,17 @@ export default function Sidebar({ editorRef, activeFile, language, output }) {
       behavior: "smooth",
     });
   }, [messages, loading]);
+
+  useEffect(() => {
+    if (!showPromptTools) return;
+    const onDoc = (e) => {
+      if (!e.target.closest?.("[data-ai-prompt-tools]")) {
+        setShowPromptTools(false);
+      }
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [showPromptTools]);
 
   // Presence
   useEffect(() => {
@@ -540,17 +598,35 @@ export default function Sidebar({ editorRef, activeFile, language, output }) {
     { id: "presence", label: "Who's Here" },
   ];
 
+  const promptActions = [
+    {
+      id: "explain",
+      label: "Explain selection",
+      description: "Understand highlighted code",
+      onClick: () => handleQuick("explain"),
+    },
+    {
+      id: "fix",
+      label: "Fix last error",
+      description: "Use the latest stderr output",
+      onClick: () => handleQuick("fix"),
+    },
+    {
+      id: "tests",
+      label: "Generate tests",
+      description: "Create a test file",
+      onClick: () => handleQuick("tests"),
+    },
+  ];
+
   return (
     <div
-      className="flex h-full w-72 flex-col border-l"
-      style={{
-        background: "var(--bg-secondary)",
-        borderColor: "var(--border)",
-      }}
+      className="panel-shell flex h-full w-72 flex-col border-l"
+      style={{ borderColor: "var(--border)" }}
     >
       {/* Tab bar — same segment style as TopBar, înălțime generoasă */}
       <div
-        className="flex shrink-0 items-stretch gap-px border-b px-2 py-2"
+        className="flex shrink-0 items-stretch gap-2 border-b px-3 py-3"
         style={{ borderColor: "var(--border)" }}
       >
         {TABS.map((t) => (
@@ -558,7 +634,7 @@ export default function Sidebar({ editorRef, activeFile, language, output }) {
             key={t.id}
             type="button"
             onClick={() => setTab(t.id)}
-            className="flex min-h-[2.75rem] flex-1 items-center justify-center rounded-none border px-2 py-3 text-[11px] font-semibold uppercase tracking-wider transition-all duration-100 hover:brightness-110 active:scale-[0.95] sm:min-h-[3rem] sm:text-xs"
+            className="liquid-surface flex min-h-[2.9rem] flex-1 items-center justify-center rounded-2xl border px-2 py-3 text-[11px] font-semibold uppercase tracking-[0.16em] shadow-[0_12px_24px_rgba(0,0,0,0.14)] transition-all duration-150 hover:-translate-y-px hover:brightness-110 active:scale-[0.95] sm:min-h-[3rem] sm:text-xs"
             style={{
               background: tab === t.id ? "var(--accent)" : "var(--bg-tertiary)",
               color:
@@ -587,7 +663,7 @@ export default function Sidebar({ editorRef, activeFile, language, output }) {
                 AI Assistant
               </span>
               <span
-                className="shrink-0 rounded-none border px-2 py-1 font-mono text-[10px] sm:text-[11px]"
+                className="shrink-0 rounded-xl border px-2.5 py-1 font-mono text-[10px] shadow-[0_10px_18px_rgba(0,0,0,0.1)] sm:text-[11px]"
                 style={{
                   background: "var(--bg-tertiary)",
                   borderColor: "var(--border)",
@@ -600,7 +676,7 @@ export default function Sidebar({ editorRef, activeFile, language, output }) {
             {messages.length > 0 && (
               <button
                 onClick={() => setMessages([])}
-                className="shrink-0 rounded-none border px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide transition-all hover:brightness-110 active:scale-[0.93] sm:text-[11px]"
+                className="liquid-surface shrink-0 rounded-xl border px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide shadow-[0_10px_18px_rgba(0,0,0,0.1)] transition-all duration-150 hover:-translate-y-px hover:brightness-110 active:scale-[0.93] sm:text-[11px]"
                 style={{
                   background: "var(--bg-tertiary)",
                   color: "var(--text-secondary)",
@@ -616,22 +692,11 @@ export default function Sidebar({ editorRef, activeFile, language, output }) {
           {/* Messages */}
           <div ref={scrollRef} className="flex-1 overflow-y-auto px-2.5 py-2">
             {messages.length === 0 && !loading && (
-              <div className="flex flex-col items-center gap-1.5 px-2 py-10 text-center">
-                <span className="text-xl leading-none opacity-25" aria-hidden>
-                  ✦
-                </span>
-                <p
-                  className="text-[11px] font-medium"
-                  style={{ color: "var(--text-primary)" }}
-                >
-                  Ask anything about your code
-                </p>
-                <p
-                  className="text-[10px] leading-snug opacity-50"
-                  style={{ color: "var(--text-secondary)" }}
-                >
-                  Suggestions appear as editor blocks.
-                </p>
+              <EmptyState
+                eyebrow="AI Workspace"
+                title="Ask anything about your code"
+                description="Explain logic, fix issues, generate tests or insert editor suggestions directly into the file."
+              >
                 <div className="mt-2 w-full space-y-1">
                   {[
                     "Refactor this function",
@@ -645,7 +710,7 @@ export default function Sidebar({ editorRef, activeFile, language, output }) {
                         setPrompt(hint);
                         textareaRef.current?.focus();
                       }}
-                      className="w-full rounded px-2.5 py-2 text-left text-[11px] font-medium transition-all duration-100 hover:brightness-110 active:scale-[0.98]"
+                      className="liquid-surface w-full rounded-xl px-3 py-2.5 text-left text-[11px] font-medium shadow-[0_10px_18px_rgba(0,0,0,0.08)] transition-all duration-150 hover:-translate-y-px hover:brightness-110 active:scale-[0.98]"
                       style={{
                         background: "var(--bg-tertiary)",
                         color: "var(--text-secondary)",
@@ -655,7 +720,7 @@ export default function Sidebar({ editorRef, activeFile, language, output }) {
                     </button>
                   ))}
                 </div>
-              </div>
+              </EmptyState>
             )}
 
             <div className="space-y-3">
@@ -669,11 +734,11 @@ export default function Sidebar({ editorRef, activeFile, language, output }) {
 
           {/* Input area */}
           <div
-            className="shrink-0 border-t p-3 space-y-2"
+            className="shrink-0 border-t px-3 py-3.5 space-y-3"
             style={{ borderColor: "var(--border)" }}
           >
             {/* Quick actions — deasupra textarea */}
-            <div className="flex gap-0.5">
+            <div className="grid grid-cols-3 gap-1.5">
               {QUICK_ACTIONS.map((a) => (
                 <button
                   key={a.key}
@@ -681,7 +746,7 @@ export default function Sidebar({ editorRef, activeFile, language, output }) {
                   onClick={() => handleQuick(a.key)}
                   disabled={loading}
                   title={a.title}
-                  className="flex flex-1 flex-col items-center justify-center gap-1 rounded-none  py-3 text-[10px] font-semibold uppercase tracking-wide transition-all duration-100 hover:brightness-110 active:scale-[0.93] disabled:pointer-events-none disabled:opacity-45"
+                  className="liquid-surface flex min-h-[4.1rem] flex-col items-center justify-center gap-1.5 rounded-[1.15rem] px-2 py-3.5 text-[10px] font-semibold uppercase tracking-[0.14em] shadow-[0_10px_18px_rgba(0,0,0,0.08)] transition-all duration-150 hover:-translate-y-px hover:brightness-110 active:scale-[0.93] disabled:pointer-events-none disabled:opacity-45"
                   style={{
                     background: "var(--bg-tertiary)",
                     color: "var(--text-secondary)",
@@ -695,12 +760,83 @@ export default function Sidebar({ editorRef, activeFile, language, output }) {
             </div>
 
             <div
-              className="relative rounded-none border"
+              className="soft-card relative overflow-visible rounded-[1.25rem]"
               style={{
-                background: "var(--bg-tertiary)",
-                borderColor: "var(--border)",
+                background:
+                  "linear-gradient(180deg, color-mix(in srgb, var(--bg-tertiary) 92%, white 8%) 0%, color-mix(in srgb, var(--bg-primary) 72%, var(--bg-tertiary)) 100%)",
               }}
             >
+              <div
+                className="flex items-center justify-between border-b px-3.5 py-3"
+                style={{ borderColor: "color-mix(in srgb, var(--border) 86%, transparent)" }}
+              >
+                <div className="flex items-center gap-2.5">
+                  <span
+                    className="flex h-8 w-8 items-center justify-center rounded-2xl"
+                    style={{
+                      background: "color-mix(in srgb, var(--accent) 14%, var(--bg-secondary))",
+                      color: "var(--accent)",
+                    }}
+                  >
+                    <AiGlyph className="h-4 w-4" />
+                  </span>
+                  <div>
+                    <p className="text-[12px] font-semibold" style={{ color: "var(--text-primary)" }}>
+                      AI Composer
+                    </p>
+                    <p className="text-[9px] uppercase tracking-[0.18em]" style={{ color: "var(--text-secondary)" }}>
+                      Smart prompt actions
+                    </p>
+                  </div>
+                </div>
+
+                <div className="relative" data-ai-prompt-tools>
+                  <button
+                    type="button"
+                    onClick={() => setShowPromptTools((v) => !v)}
+                    className="liquid-surface inline-flex items-center gap-1.5 rounded-2xl border px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] shadow-[0_10px_18px_rgba(0,0,0,0.08)] transition-all duration-150 hover:-translate-y-px hover:brightness-110"
+                    style={{
+                      background: showPromptTools
+                        ? "color-mix(in srgb, var(--accent) 12%, var(--bg-tertiary))"
+                        : "var(--bg-tertiary)",
+                      color: showPromptTools ? "var(--accent)" : "var(--text-secondary)",
+                      borderColor: showPromptTools
+                        ? "color-mix(in srgb, var(--accent) 22%, var(--border))"
+                        : "var(--border)",
+                    }}
+                  >
+                    <span>AI Tools</span>
+                    <span className={`transition-transform duration-150 ${showPromptTools ? "rotate-45" : ""}`}>+</span>
+                  </button>
+
+                  {showPromptTools && (
+                    <div className="floating-panel absolute right-0 top-[calc(100%+10px)] z-20 w-56 p-2">
+                      <div className="space-y-1">
+                        {promptActions.map((action) => (
+                          <button
+                            key={action.id}
+                            type="button"
+                            onClick={() => {
+                              setShowPromptTools(false);
+                              action.onClick();
+                            }}
+                            className="w-full rounded-2xl px-3 py-2.5 text-left transition-all duration-150 hover:-translate-y-px hover:brightness-110"
+                            style={{
+                              background: "var(--bg-tertiary)",
+                              color: "var(--text-primary)",
+                            }}
+                          >
+                            <span className="block text-[11px] font-semibold">{action.label}</span>
+                            <span className="block text-[9px] uppercase tracking-[0.14em]" style={{ color: "var(--text-secondary)" }}>
+                              {action.description}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
               <textarea
                 ref={textareaRef}
                 value={prompt}
@@ -712,22 +848,36 @@ export default function Sidebar({ editorRef, activeFile, language, output }) {
                   }
                 }}
                 placeholder="Ask AI… (Enter to send, Shift+Enter for newline)"
-                rows={3}
-                className="w-full resize-none bg-transparent p-2.5 pb-8 text-xs outline-none"
+                rows={4}
+                className="w-full resize-none bg-transparent px-3.5 py-3.5 pb-16 text-[12px] leading-relaxed outline-none"
                 style={{ color: "var(--text-primary)" }}
               />
-              <div className="absolute bottom-2 right-2 flex items-center gap-1">
+              <div className="absolute bottom-3 left-3.5 flex items-center gap-2">
                 <span
-                  className="text-[9px]"
-                  style={{ color: "var(--text-secondary)" }}
+                  className="rounded-full px-2 py-1 text-[9px] uppercase tracking-[0.14em]"
+                  style={{
+                    background: "color-mix(in srgb, var(--bg-primary) 72%, var(--border))",
+                    color: "var(--text-secondary)",
+                  }}
                 >
-                  {prompt.length > 0 ? `${prompt.length} chars` : ""}
+                  Shift+Enter newline
+                </span>
+              </div>
+              <div className="absolute bottom-3 right-3 flex items-center gap-2.5">
+                <span
+                  className="rounded-full px-2 py-1 text-[9px] uppercase tracking-[0.14em]"
+                  style={{
+                    background: "color-mix(in srgb, var(--bg-primary) 72%, var(--border))",
+                    color: "var(--text-secondary)",
+                  }}
+                >
+                  {prompt.length > 0 ? `${prompt.length} chars` : "Ready"}
                 </span>
                 <button
                   type="button"
                   onClick={handleAsk}
                   disabled={loading || !prompt.trim()}
-                  className="rounded-none border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide transition-all duration-100 hover:brightness-110 active:scale-[0.93] disabled:pointer-events-none disabled:opacity-45"
+                  className="liquid-surface rounded-2xl border px-4 py-2.5 text-[10px] font-bold uppercase tracking-[0.16em] shadow-[0_12px_20px_rgba(0,0,0,0.12)] transition-all duration-150 hover:-translate-y-px hover:brightness-110 active:scale-[0.93] disabled:pointer-events-none disabled:opacity-45"
                   style={{
                     background:
                       prompt.trim() && !loading
@@ -768,7 +918,7 @@ export default function Sidebar({ editorRef, activeFile, language, output }) {
               Who&apos;s Here
             </span>
             <span
-              className="shrink-0 rounded-none border px-2 py-1 font-mono text-[10px] sm:text-[11px]"
+              className="shrink-0 rounded-xl border px-2.5 py-1 font-mono text-[10px] shadow-[0_10px_18px_rgba(0,0,0,0.1)] sm:text-[11px]"
               style={{
                 background: "var(--bg-tertiary)",
                 borderColor: "var(--border)",
@@ -780,26 +930,25 @@ export default function Sidebar({ editorRef, activeFile, language, output }) {
           </div>
           <div className="flex-1 space-y-2 overflow-y-auto p-3">
             {users.length === 0 && (
-              <p
-                className="mb-2 text-[11px] sm:text-xs"
-                style={{ color: "var(--text-secondary)" }}
-              >
-                No one else connected yet.
-              </p>
+              <EmptyState
+                eyebrow="Presence"
+                title="No collaborators here yet"
+                description="When someone joins the room, they’ll appear here with their avatar, activity and live cursor color."
+              />
             )}
             <div className="space-y-2">
               {users.map((u) => (
                 <div
                   key={u.clientId}
-                  className="flex items-center gap-2.5 rounded-none border px-2.5 py-2"
+                  className="soft-card flex items-center gap-2.5 rounded-2xl px-3 py-2.5"
                   style={{
                     background: "var(--bg-tertiary)",
-                    borderColor: "var(--border)",
+                    borderColor: "color-mix(in srgb, var(--border) 92%, transparent)",
                   }}
                 >
                   <div
                     className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold"
-                    style={{ background: u.color, color: "#1e1e2e" }}
+                    style={{ background: u.color, color: "#050806" }}
                   >
                     {u.name?.[0]?.toUpperCase()}
                   </div>
@@ -811,14 +960,14 @@ export default function Sidebar({ editorRef, activeFile, language, output }) {
                       {u.name}
                     </p>
                     <p
-                      className="text-[10px]"
+                      className="text-[10px] uppercase tracking-[0.16em]"
                       style={{ color: "var(--text-secondary)" }}
                     >
-                      editing
+                      editing live
                     </p>
                   </div>
                   <div
-                    className="h-2 w-2 shrink-0 rounded-full"
+                    className="h-2.5 w-2.5 shrink-0 rounded-full shadow-[0_0_0_4px_rgba(143,247,167,0.12)]"
                     style={{ background: "var(--green)" }}
                   />
                 </div>

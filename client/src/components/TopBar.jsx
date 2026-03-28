@@ -4,6 +4,19 @@ import { wsProvider, roomId, getYText, yFiles } from "../lib/yjs";
 import { useAuth } from "../lib/auth";
 import { SERVER_URL } from "../lib/config";
 import SettingsPanel from "./SettingsPanel";
+import {
+  ArchiveIcon,
+  ChevronDownIcon,
+  EyeIcon,
+  ForkIcon,
+  LockIcon,
+  LoginIcon,
+  PlayIcon,
+  SettingsIcon,
+  ShareIcon,
+  SparkIcon,
+  CloseIcon,
+} from "./ui/Icons";
 
 const LANGUAGES = [
   "javascript",
@@ -32,9 +45,9 @@ function Divider() {
 
 function BrandMark() {
   return (
-    <div className="flex shrink-0 items-center gap-2.5 select-none">
+    <div className="flex shrink-0 items-center gap-3 select-none">
       <div
-        className="flex h-9 w-9 items-center justify-center rounded-lg border shadow-[0_8px_20px_rgba(0,0,0,0.24)] sm:h-10 sm:w-10"
+        className="flex h-10 w-10 items-center justify-center rounded-2xl border shadow-[0_14px_28px_rgba(0,0,0,0.24)] sm:h-11 sm:w-11"
         style={{
           background: "linear-gradient(135deg, color-mix(in srgb, var(--accent) 88%, white 12%) 0%, color-mix(in srgb, var(--accent) 68%, var(--blue) 32%) 100%)",
           borderColor: "color-mix(in srgb, var(--accent) 40%, var(--border))",
@@ -47,12 +60,14 @@ function BrandMark() {
         </svg>
       </div>
 
-      <span
-        className="shrink-0 text-[18px] font-black uppercase tracking-[-0.06em] sm:text-[21px]"
-        style={{ color: "var(--text-primary)" }}
-      >
-        ITECIFY
-      </span>
+      <div className="min-w-0">
+        <span
+          className="block shrink-0 text-[18px] font-black uppercase tracking-[-0.06em] sm:text-[21px]"
+          style={{ color: "var(--text-primary)" }}
+        >
+          ITECIFY
+        </span>
+      </div>
     </div>
   );
 }
@@ -65,9 +80,10 @@ function Btn({ onClick, disabled, className = "", style = {}, title, children })
       disabled={disabled}
       title={title}
       className={`inline-flex h-9 shrink-0 select-none items-center justify-center gap-1
-        rounded-none border px-3 text-[11px] font-semibold uppercase tracking-wide
-        transition-all duration-100 ease-out
-        hover:brightness-110
+        liquid-surface rounded-xl border px-3 text-[11px] font-semibold uppercase tracking-wide
+        shadow-[0_10px_22px_rgba(0,0,0,0.16)]
+        transition-all duration-150 ease-out
+        hover:-translate-y-px hover:brightness-110
         active:scale-[0.93] active:opacity-80
         disabled:pointer-events-none disabled:opacity-45
         sm:h-10 sm:px-4 sm:text-xs
@@ -103,9 +119,17 @@ function LanguageDropdown({ language, onLanguageChange }) {
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
         aria-haspopup="listbox"
-        className="min-w-[7rem] sm:min-w-[8.5rem]"
+        className="min-w-[8.5rem] justify-between gap-2 sm:min-w-[9.25rem]"
+        style={{
+          background: open
+            ? "color-mix(in srgb, var(--accent) 12%, var(--bg-tertiary))"
+            : "var(--bg-tertiary)",
+          borderColor: open
+            ? "color-mix(in srgb, var(--accent) 28%, var(--border))"
+            : "var(--border)",
+        }}
       >
-        <span className="truncate">{language}</span>
+        <span className="truncate text-left">{language}</span>
         <span
           className={`ml-auto opacity-60 transition-transform duration-150 ${open ? "rotate-180" : ""}`}
           aria-hidden
@@ -115,11 +139,9 @@ function LanguageDropdown({ language, onLanguageChange }) {
       </Btn>
       {open && (
         <ul
-          className="absolute top-[calc(100%+4px)] left-0 z-50 max-h-60 min-w-full overflow-auto rounded-none border py-1"
+          className="floating-panel absolute left-0 top-[calc(100%+10px)] z-50 max-h-72 min-w-[13rem] overflow-auto p-2.5"
           style={{
-            background: "var(--bg-secondary)",
-            borderColor: "var(--border)",
-            boxShadow: "0 12px 40px rgba(0,0,0,0.4)",
+            transformOrigin: "top left",
           }}
           role="listbox"
         >
@@ -127,17 +149,36 @@ function LanguageDropdown({ language, onLanguageChange }) {
             <li key={lang} role="option" aria-selected={language === lang}>
               <button
                 type="button"
-                className="w-full px-3 py-2 text-left text-[11px] font-medium transition-colors hover:opacity-90 sm:text-xs"
+                className="flex w-full items-center justify-between rounded-2xl pl-4 pr-3 py-2.5 text-left text-[11px] font-semibold capitalize transition-all duration-150 hover:-translate-y-px hover:brightness-110 sm:text-xs"
                 style={{
-                  background: language === lang ? "var(--bg-tertiary)" : "transparent",
+                  background:
+                    language === lang
+                      ? "color-mix(in srgb, var(--accent) 12%, var(--bg-tertiary))"
+                      : "transparent",
                   color: language === lang ? "var(--accent)" : "var(--text-primary)",
+                  boxShadow:
+                    language === lang
+                      ? "inset 0 0 0 1px color-mix(in srgb, var(--accent) 22%, var(--border))"
+                      : "none",
                 }}
                 onClick={() => {
                   onLanguageChange(lang);
                   setOpen(false);
                 }}
               >
-                {lang}
+                <span>{lang}</span>
+                <span
+                  className="rounded-full px-2 py-0.5 text-[9px] uppercase tracking-[0.16em]"
+                  style={{
+                    color: language === lang ? "var(--bg-primary)" : "var(--text-secondary)",
+                    background:
+                      language === lang
+                        ? "var(--accent)"
+                        : "color-mix(in srgb, var(--bg-primary) 72%, var(--border))",
+                  }}
+                >
+                  {lang.slice(0, 2)}
+                </span>
               </button>
             </li>
           ))}
@@ -213,7 +254,7 @@ export default function TopBar({
     if (user) {
       wsProvider.awareness.setLocalStateField("user", {
         name: user.name || user.login,
-        color: wsProvider.awareness.getLocalState()?.user?.color || "#cba6f7",
+        color: wsProvider.awareness.getLocalState()?.user?.color || "#8ff7a7",
         avatar: user.avatar,
       });
     }
@@ -324,20 +365,20 @@ export default function TopBar({
 
   return (
     <div
-      className="flex h-12 w-full min-w-0 items-center justify-between gap-2 border-b px-3 sm:gap-3 sm:px-4"
-      style={{ background: "var(--bg-secondary)", borderColor: "var(--border)" }}
+      className="panel-shell flex h-14 w-full min-w-0 items-center justify-between gap-3 border-b px-3.5 sm:gap-4 sm:px-5"
+      style={{ borderColor: "var(--border)" }}
     >
-      <div className="flex min-w-0 flex-1 items-center gap-1.5 sm:gap-2">
+      <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
         <BrandMark />
       </div>
 
-      <div className="flex min-w-0 shrink-0 flex-wrap items-center justify-end gap-1.5 sm:gap-2">
+      <div className="flex min-w-0 shrink-0 flex-wrap items-center justify-end gap-2 sm:gap-2.5">
         <div className="flex items-center gap-1.5 sm:gap-2">
           <LanguageDropdown language={language} onLanguageChange={onLanguageChange} />
 
           {viewOnly && (
             <span
-              className="inline-flex h-9 shrink-0 items-center rounded-none border px-2 text-[10px] font-semibold uppercase tracking-wide sm:h-10 sm:px-3 sm:text-[11px]"
+              className="liquid-surface inline-flex h-10 shrink-0 items-center rounded-xl border px-3 text-[10px] font-semibold uppercase tracking-[0.16em] shadow-[0_10px_22px_rgba(0,0,0,0.14)] sm:px-3.5 sm:text-[11px]"
               style={{
                 background: "var(--bg-tertiary)",
                 color: "var(--text-secondary)",
@@ -360,7 +401,8 @@ export default function TopBar({
                 minWidth: "5rem",
               }}
             >
-              {running ? "Running…" : "Run"}
+              <PlayIcon className="h-3.5 w-3.5" />
+              <span>{running ? "Running…" : "Run"}</span>
             </Btn>
           )}
         </div>
@@ -379,19 +421,23 @@ export default function TopBar({
               color: copied ? "var(--bg-primary)" : "var(--text-primary)",
             }}
           >
-            {copied ? "Copied" : "Share"}
+            <ShareIcon className="h-3.5 w-3.5" />
+            <span>{copied ? "Copied" : "Share"}</span>
           </Btn>
 
           <Btn onClick={handleShareReadOnly} title="Copy read-only link">
-            View link
+            <EyeIcon className="h-3.5 w-3.5" />
+            <span>View link</span>
           </Btn>
 
           <Btn onClick={handleFork} title="Fork this session into a new room">
-            Fork
+            <ForkIcon className="h-3.5 w-3.5" />
+            <span>Fork</span>
           </Btn>
 
           <Btn onClick={handleZip} title="Download all files as ZIP">
-            ZIP
+            <ArchiveIcon className="h-3.5 w-3.5" />
+            <span>ZIP</span>
           </Btn>
 
           <Btn
@@ -416,6 +462,7 @@ export default function TopBar({
                   : "var(--text-secondary)",
             }}
           >
+            <SparkIcon className="h-3.5 w-3.5" />
             {gistState === "saving"
               ? "…"
               : gistState === "done"
@@ -441,14 +488,12 @@ export default function TopBar({
                   background: "var(--bg-tertiary)",
                 }}
               >
-                🔒
+                <LockIcon className="h-4 w-4" />
               </Btn>
               {showPasswordPanel && (
                 <div
-                  className="absolute right-0 top-10 z-50 rounded-none border p-3 shadow-xl sm:top-11"
+                  className="floating-panel absolute right-0 top-[calc(100%+10px)] z-50 p-3 sm:top-[calc(100%+12px)]"
                   style={{
-                    background: "var(--bg-tertiary)",
-                    borderColor: "var(--border)",
                     width: 220,
                   }}
                 >
@@ -464,12 +509,7 @@ export default function TopBar({
                     onChange={(e) => setPasswordInput(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && handleSetPassword()}
                     placeholder="New password (blank = remove)"
-                    className="mb-2 w-full rounded-none border px-2 py-1 text-xs outline-none"
-                    style={{
-                      background: "var(--bg-primary)",
-                      color: "var(--text-primary)",
-                      borderColor: "var(--border)",
-                    }}
+                    className="panel-input mb-2 px-2.5 py-2 text-xs"
                   />
                   <Btn
                     onClick={handleSetPassword}
@@ -510,15 +550,12 @@ export default function TopBar({
                   borderColor: "var(--border)",
                 }}
               >
-                Login
+                <LoginIcon className="h-3.5 w-3.5" />
+                <span>Login</span>
               </Btn>
               {showLogin && (
                 <div
-                  className="absolute right-0 top-10 z-50 flex min-w-[11rem] flex-col gap-1.5 rounded-none border p-2 shadow-xl sm:top-11"
-                  style={{
-                    background: "var(--bg-secondary)",
-                    borderColor: "var(--border)",
-                  }}
+                  className="floating-panel absolute right-0 top-[calc(100%+10px)] z-50 flex min-w-[11rem] flex-col gap-1.5 p-2 sm:top-[calc(100%+12px)]"
                 >
                   <Btn
                     onClick={() => {
@@ -593,10 +630,8 @@ export default function TopBar({
 
               {showMyRooms && (
                 <div
-                  className="absolute right-0 top-10 z-50 max-h-80 overflow-hidden rounded-none border shadow-xl sm:top-11"
+                  className="floating-panel absolute right-0 top-[calc(100%+10px)] z-50 max-h-80 overflow-hidden sm:top-[calc(100%+12px)]"
                   style={{
-                    background: "var(--bg-tertiary)",
-                    borderColor: "var(--border)",
                     width: 240,
                   }}
                 >
@@ -616,7 +651,7 @@ export default function TopBar({
                       className="text-xs opacity-50 hover:opacity-100"
                       style={{ color: "var(--text-secondary)" }}
                     >
-                      ✕
+                      <CloseIcon className="h-3.5 w-3.5" />
                     </button>
                   </div>
                   <div className="max-h-64 overflow-y-auto">
@@ -666,7 +701,7 @@ export default function TopBar({
               }}
               aria-expanded={showSettings}
             >
-              ⚙
+              <SettingsIcon className="h-4 w-4" />
             </Btn>
             {showSettings && settings && (
               <SettingsPanel
