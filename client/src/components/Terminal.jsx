@@ -1,4 +1,5 @@
 import { useRef, useEffect } from "react";
+import { TERM_WS_URL } from "../lib/config";
 import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
@@ -38,8 +39,7 @@ export default function Terminal() {
     fitAddon.fit();
     termRef.current = term;
 
-    const termPort = import.meta.env.VITE_TERM_WS_PORT || "1235";
-    const ws = new WebSocket(`ws://${window.location.hostname}:${termPort}`);
+    const ws = new WebSocket(TERM_WS_URL);
     wsRef.current = ws;
 
     ws.onopen = () => {

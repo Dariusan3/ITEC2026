@@ -6,8 +6,9 @@ import Sidebar from './components/Sidebar'
 import OutputPanel from './components/OutputPanel'
 import TimeTravel from './components/TimeTravel'
 import ConnectionBanner from './components/ConnectionBanner'
-import { yFiles, getYText, roomId, idbPersistence } from './lib/yjs'
+import { yFiles, getYText, roomId, idbPersistence, wsProvider } from './lib/yjs'
 import { saveRoomNow } from './lib/saveRoom'
+import { SERVER_URL } from './lib/config'
 
 // C2: Read-only mode — ?view=1 in URL
 const viewOnly = new URLSearchParams(window.location.search).has('view')
@@ -67,12 +68,33 @@ export default function App() {
   const [packages, setPackages] = useState('')
   const [envVars, setEnvVars] = useState('')
   const [settings, setSettings] = useState(loadSettings)
-  const [idbReady, setIdbReady] = useState(false)
+  const [editorReady, setEditorReady] = useState(false)
   const editorRef = useRef(null)
 
-  // Wait for IndexedDB to restore persisted content before mounting editor
+  // Mount editor only after BOTH IDB and WS initial sync complete.
+  // The server now awaits loadRoom before sending SYNC_STEP2, so by the time
+  // wsProvider fires 'synced', the full persisted code is already in ydoc.
+  // A 4-second timeout ensures the editor always appears (e.g. offline).
   useEffect(() => {
-    idbPersistence.whenSynced.then(() => setIdbReady(true))
+    let idbDone = false
+    let wsDone = false
+    const tryReady = () => { if (idbDone && wsDone) setEditorReady(true) }
+
+    idbPersistence.whenSynced.then(() => { idbDone = true; tryReady() })
+
+    if (wsProvider.synced) {
+      wsDone = true
+      tryReady()
+    } else {
+      wsProvider.on('synced', function onSync() {
+        wsProvider.off('synced', onSync)
+        wsDone = true
+        tryReady()
+      })
+    }
+
+    const fallback = setTimeout(() => setEditorReady(true), 4000)
+    return () => clearTimeout(fallback)
   }, [])
 
   // Save room on page unload (refresh, close, navigate away)
@@ -89,7 +111,7 @@ export default function App() {
   const [passwordUnlocked, setPasswordUnlocked] = useState(false)
 
   useEffect(() => {
-    fetch(`/api/room/${roomId}/has-password`, { credentials: 'include' })
+    fetch(`${SERVER_URL}/api/room/${roomId}/has-password`, { credentials: 'include' })
       .then(r => r.json())
       .then(d => { if (d.hasPassword) setPasswordRequired(true) })
       .catch(() => {})
@@ -98,7 +120,7 @@ export default function App() {
   const handleUnlock = async () => {
     setPasswordError('')
     try {
-      const res = await fetch(`/api/room/${roomId}/verify-password`, {
+      const res = await fetch(`${SERVER_URL}/api/room/${roomId}/verify-password`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -149,7 +171,7 @@ export default function App() {
     setOutput([{ type: 'info', text: `▶ Running ${activeFile}...` }])
 
     try {
-      const res = await fetch('/api/run', {
+      const res = await fetch(`${SERVER_URL}/api/run`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -259,7 +281,7 @@ export default function App() {
         <div className="flex flex-col flex-1 overflow-hidden">
           <TimeTravel editorRef={editorRef} activeFile={activeFile} />
           <div className="flex-1 overflow-hidden">
-            {idbReady
+            {editorReady
               ? <Editor ref={editorRef} language={language} activeFile={activeFile} settings={settings} readOnly={viewOnly} />
               : (
                 <div className="editor-loading">

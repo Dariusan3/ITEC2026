@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import JSZip from "jszip";
 import { wsProvider, roomId, getYText, yFiles } from "../lib/yjs";
 import { useAuth } from "../lib/auth";
+import { SERVER_URL } from "../lib/config";
 import SettingsPanel from "./SettingsPanel";
 import {
   ArchiveIcon,
@@ -187,6 +188,46 @@ function LanguageDropdown({ language, onLanguageChange }) {
   );
 }
 
+function OnlineUsers({ wsProvider }) {
+  const [users, setUsers] = useState([])
+
+  useEffect(() => {
+    function update() {
+      const localId = wsProvider.awareness.clientID
+      const states = []
+      wsProvider.awareness.getStates().forEach((state, id) => {
+        if (id !== localId && state.user?.name) {
+          states.push({ id, name: state.user.name, color: state.user.color || '#cba6f7' })
+        }
+      })
+      setUsers(states)
+    }
+    wsProvider.awareness.on('change', update)
+    update()
+    return () => wsProvider.awareness.off('change', update)
+  }, [wsProvider])
+
+  if (users.length === 0) return null
+
+  return (
+    <div className="flex items-center gap-1" title={`${users.length} other${users.length > 1 ? 's' : ''} online`}>
+      {users.slice(0, 5).map((u) => (
+        <div
+          key={u.id}
+          title={u.name}
+          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[9px] font-bold"
+          style={{ background: u.color, color: '#1e1e2e', border: '1.5px solid var(--bg-primary)' }}
+        >
+          {u.name.slice(0, 2).toUpperCase()}
+        </div>
+      ))}
+      {users.length > 5 && (
+        <span className="text-[9px]" style={{ color: 'var(--text-secondary)' }}>+{users.length - 5}</span>
+      )}
+    </div>
+  )
+}
+
 export default function TopBar({
   settings,
   onSettingsChange,
@@ -242,7 +283,7 @@ export default function TopBar({
     setGistState("saving");
     try {
       const content = getYText(filename).toString();
-      const res = await fetch("/api/gist", {
+      const res = await fetch(`${SERVER_URL}/api/gist`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ filename, content }),
@@ -290,7 +331,7 @@ export default function TopBar({
   const handleSetPassword = async () => {
     const pw = passwordInput.trim();
     try {
-      const res = await fetch(`/api/room/${roomId}/set-password`, {
+      const res = await fetch(`${SERVER_URL}/api/room/${roomId}/set-password`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -366,6 +407,9 @@ export default function TopBar({
           )}
         </div>
 
+        <Divider />
+
+        <OnlineUsers wsProvider={wsProvider} />
         <Divider />
 
         <div className="flex max-w-[100vw] flex-wrap items-center gap-1.5 sm:gap-2">
@@ -556,7 +600,7 @@ export default function TopBar({
                   onClick={() => {
                     setShowMyRooms((v) => !v);
                     if (!showMyRooms) {
-                      fetch("/api/rooms/mine", { credentials: "include" })
+                      fetch(`${SERVER_URL}/api/rooms/mine`, { credentials: "include" })
                         .then((r) => r.json())
                         .then((d) => setMyRooms(d.rooms || []))
                         .catch(() => {});

@@ -17,7 +17,7 @@ export default function TimeTravel({ editorRef, activeFile }) {
   const fetchSnapshots = useCallback(async () => {
     try {
       const q = new URLSearchParams({ room: roomId });
-      const res = await fetch(`/api/snapshots?${q}`);
+      const res = await fetch(`${SERVER_URL}/api/snapshots?${q}`);
       const data = await res.json();
       setSnapshots(data.snapshots || []);
     } catch {}
@@ -69,7 +69,7 @@ export default function TimeTravel({ editorRef, activeFile }) {
 
       try {
         const sq = new URLSearchParams({ room: roomId });
-        const res = await fetch(`/api/snapshots/${snapshot.timestamp}?${sq}`);
+        const res = await fetch(`${SERVER_URL}/api/snapshots/${snapshot.timestamp}?${sq}`);
         const data = await res.json();
         if (data.snapshot) {
           const update = Uint8Array.from(atob(data.snapshot), (c) =>

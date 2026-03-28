@@ -204,7 +204,7 @@ export default function OutputPanel({
       {stdinOpen && tab !== "terminal" && (
         <div className="space-y-2 overflow-auto max-h-48 px-3.5 py-3">
           <div>
-            <Label>stdin</Label>
+            <Label>stdin (mod batch, nu terminal interactiv)</Label>
             <textarea
               value={stdin}
               onChange={(e) => onStdinChange(e.target.value)}
@@ -217,6 +217,16 @@ export default function OutputPanel({
                 color: "var(--text-primary)",
               }}
             />
+            <p
+              className="mt-1.5 text-[10px] leading-relaxed"
+              style={{ color: "var(--text-secondary)" }}
+            >
+              La Run, <strong>tot</strong> textul de mai sus e trimis odată în program — nu se poate tasta „după fiecare
+              prompt” ca în consolă. Pune aici, în ordine, toate valorile (câte o linie per{" "}
+              <code className="rounded bg-[var(--bg-primary)] px-0.5">scanf</code>). Numerele din mesaje (ex. „numărul
+              0…9”) vin din <code className="rounded bg-[var(--bg-primary)] px-0.5">printf</code> / variabilele tale,
+              nu sunt introduse automat de sandbox.
+            </p>
           </div>
           <div>
             <Label>packages (npm/pip)</Label>
@@ -317,18 +327,50 @@ export default function OutputPanel({
                           : "var(--text-primary)",
                       }}
                     >
-                      {entry.hasError ? "✗ " : "✓ "}
-                      {entry.preview}
-                    </span>
-                    <span
-                      className="text-[9px] shrink-0"
-                      style={{ color: "var(--text-secondary)" }}
-                    >
-                      {new Date(entry.ts).toLocaleTimeString()}
-                    </span>
+                      <span
+                        className="text-[10px] font-mono truncate"
+                        style={{
+                          color: entry.hasError ? "var(--red)" : "var(--text-primary)",
+                        }}
+                      >
+                        {entry.hasError ? "✗ " : "✓ "}
+                        {entry.preview}
+                      </span>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-[9px]" style={{ color: "var(--text-secondary)" }}>
+                          {new Date(entry.ts).toLocaleTimeString()}
+                        </span>
+                        <span className="text-[9px]" style={{ color: "var(--text-secondary)" }}>
+                          {expanded ? "▲" : "▼"}
+                        </span>
+                      </div>
+                    </div>
+                    {expanded && (
+                      <div
+                        className="max-h-36 overflow-auto px-2 pb-2 font-mono text-[10px] whitespace-pre-wrap border-t"
+                        style={{ borderColor: "var(--border)" }}
+                      >
+                        {entry.lines.map((line, j) => (
+                          <div
+                            key={j}
+                            style={{
+                              color:
+                                line.type === "stderr"
+                                  ? "var(--red)"
+                                  : line.type === "info"
+                                    ? "var(--text-secondary)"
+                                    : "var(--text-primary)",
+                              fontStyle: line.type === "info" ? "italic" : "normal",
+                            }}
+                          >
+                            {line.text}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         )}
