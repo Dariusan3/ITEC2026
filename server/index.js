@@ -12,13 +12,33 @@ const { encoding, decoding } = require("lib0");
 const PORT = process.env.PORT || 3001;
 const WS_PORT = process.env.WS_PORT || 1234;
 
+// --- Database (Supabase) ---
+const db = require("./db");
+db.init();
+
 // --- Express API server ---
 const app = express();
 const session = require("express-session");
 
+// Use Postgres-backed session store when DATABASE_URL is set, otherwise in-memory
+let sessionStore;
+if (process.env.DATABASE_URL) {
+  const pgSession = require("connect-pg-simple")(session);
+  sessionStore = new pgSession({
+    conString: process.env.DATABASE_URL,
+    tableName: "session",
+    createTableIfMissing: false,
+    ttl: 7 * 24 * 60 * 60, // 7 days in seconds
+  });
+  console.log("[iTECify] Session store: Postgres");
+} else {
+  console.log("[iTECify] Session store: in-memory (set DATABASE_URL for persistence)");
+}
+
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
 app.use(session({
+  store: sessionStore,
   secret: process.env.SESSION_SECRET || "itecify-dev-secret",
   resave: false,
   saveUninitialized: false,
@@ -27,6 +47,12 @@ app.use(session({
 
 app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", timestamp: Date.now() });
+});
+
+app.get("/api/db/status", async (_req, res) => {
+  if (!db.isEnabled()) return res.json({ enabled: false, reason: "SUPABASE_URL not configured" });
+  const ok = await db.ping();
+  res.json({ enabled: true, connected: ok });
 });
 
 // --- AI suggestion endpoint ---
@@ -374,7 +400,7 @@ async function runDirect(code, language, onData, stdin = "") {
 }
 
 app.post("/api/run", async (req, res) => {
-  const { code, language, stdin = "", packages = [], env = {} } = req.body;
+  const { code, language, stdin = "", packages = [], env = {}, roomId } = req.body;
   if (!code) return res.status(400).json({ error: "No code provided" });
 
   const config = LANG_CONFIG[language];
@@ -417,6 +443,17 @@ app.post("/api/run", async (req, res) => {
 
   send("done", "");
   res.end();
+
+  // Persist run history (fire-and-forget)
+  if (roomId) {
+    db.insertRunHistory({
+      roomId,
+      userLogin: req.session?.user?.login ?? null,
+      language,
+      hasError: false,
+      preview: code.split("\n")[0].slice(0, 80),
+    }).catch(() => {});
+  }
 });
 
 // --- GitHub OAuth ---
@@ -464,6 +501,9 @@ app.get("/auth/github/callback", async (req, res) => {
       avatar: user.avatar_url,
       token: tokenData.access_token,
     };
+
+    // Persist user to DB (fire-and-forget)
+    db.upsertUser({ id: user.id, login: user.login, name: user.name || user.login, avatar: user.avatar_url }).catch(() => {});
 
     res.redirect(`${CLIENT_ORIGIN}?auth=ok`);
   } catch (err) {
@@ -666,6 +706,17 @@ const SYNC_STEP2 = 1;
 const SYNC_UPDATE = 2;
 
 const docs = new Map();
+// Debounce timers for room saves: docName → timer
+const saveTimers = new Map();
+
+function scheduleRoomSave(docName, doc) {
+  clearTimeout(saveTimers.get(docName));
+  saveTimers.set(docName, setTimeout(async () => {
+    const roomId = docName.startsWith("itecify-") ? docName.slice("itecify-".length) : docName;
+    await db.saveRoom(roomId, doc).catch(() => {});
+    saveTimers.delete(docName);
+  }, 3000));
+}
 
 function getYDoc(docName) {
   if (docs.has(docName)) return docs.get(docName);
@@ -674,6 +725,49 @@ function getYDoc(docName) {
   doc.conns = new Map();
   doc.awareness = { states: new Map(), meta: new Map() };
   docs.set(docName, doc);
+
+  const roomId = docName.startsWith("itecify-") ? docName.slice("itecify-".length) : docName;
+
+  // Broadcast any update the server applies to the doc (e.g. from DB load)
+  doc.on("update", (update, origin) => {
+    if (origin === "db-load") {
+      // Broadcast the loaded content to all already-connected clients
+      const encoder = encoding.createEncoder();
+      encoding.writeVarUint(encoder, MSG_SYNC);
+      encoding.writeVarUint(encoder, SYNC_UPDATE);
+      encoding.writeVarUint8Array(encoder, update);
+      broadcastUpdate(doc, encoding.toUint8Array(encoder), null);
+    }
+  });
+
+  // Observe chat array: persist new messages that weren't loaded from DB
+  const yChat = doc.getArray("chat");
+  let chatPersistedCount = 0;
+  yChat.observe((_event, transaction) => {
+    if (transaction.origin === "db-load") {
+      // These were loaded from DB — update baseline, don't re-insert
+      chatPersistedCount = yChat.length;
+      return;
+    }
+    const all = yChat.toArray();
+    const newMsgs = all.slice(chatPersistedCount);
+    for (const msg of newMsgs) {
+      if (msg && msg.id && msg.text) {
+        db.insertChatMessage(roomId, msg).catch(() => {});
+      }
+    }
+    chatPersistedCount = all.length;
+  });
+
+  // Load room from DB (non-blocking — updates broadcast via doc "update" listener above)
+  db.loadRoom(roomId, doc).then((result) => {
+    if (result?.fileCount) {
+      console.log(`[DB] Room ${roomId} loaded — ${result.fileCount} file(s), ${result.messageCount} message(s)`);
+      chatPersistedCount = result.messageCount ?? 0;
+    }
+  }).catch((err) => {
+    console.error(`[DB] loadRoom failed for ${roomId}:`, err.message);
+  });
 
   // Time-travel: snapshot every 10 seconds while doc has connections
   doc._snapshotInterval = setInterval(async () => {
@@ -794,6 +888,8 @@ function setupConnection(ws, req) {
           encoding.writeVarUint(encoder, SYNC_UPDATE);
           encoding.writeVarUint8Array(encoder, update);
           broadcastUpdate(doc, encoding.toUint8Array(encoder), ws);
+          // Debounced DB persist
+          scheduleRoomSave(docName, doc);
         }
       }
     } else if (msgType === MSG_AWARENESS) {
@@ -819,8 +915,14 @@ function setupConnection(ws, req) {
     }
     if (doc.conns.size === 0) {
       clearInterval(doc._snapshotInterval);
-      doc.destroy();
-      docs.delete(doc.name);
+      // Cancel any pending debounced save and flush immediately
+      clearTimeout(saveTimers.get(docName));
+      saveTimers.delete(docName);
+      const roomIdOnClose = docName.startsWith("itecify-") ? docName.slice("itecify-".length) : docName;
+      db.saveRoom(roomIdOnClose, doc).catch(() => {}).finally(() => {
+        doc.destroy();
+        docs.delete(doc.name);
+      });
     }
   });
 

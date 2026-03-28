@@ -75,7 +75,7 @@ This document tracks all planned features grouped by category, with effort estim
 | # | Feature | Effort | Notes |
 |---|---------|--------|-------|
 | I1 | **Deploy frontend to Vercel** | XS | Vercel MCP is available — run `deploy_to_vercel` from the client folder |
-| I2 | **Persistent rooms (DB)** | L | Store room file contents in PostgreSQL/MongoDB so they survive server restart |
+| I2 | **Persistent rooms (Supabase)** | L | Schema designed, migrations written — see [DATABASE.md](DATABASE.md). Needs integration wiring in server/index.js |
 | I3 | **Health dashboard** | S | `/admin` page showing active rooms, connected users, Redis status, Docker status |
 | I4 | **WebRTC P2P sync** | XL | Replace Yjs WebSocket with WebRTC for peer-to-peer sync (reduces server load) |
 | I5 | **Horizontal scaling** | XL | Use `y-redis` provider so multiple server instances share Yjs state via Redis |

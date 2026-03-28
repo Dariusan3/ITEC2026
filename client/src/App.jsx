@@ -6,7 +6,7 @@ import Sidebar from './components/Sidebar'
 import OutputPanel from './components/OutputPanel'
 import TimeTravel from './components/TimeTravel'
 import ConnectionBanner from './components/ConnectionBanner'
-import { yFiles, getYText } from './lib/yjs'
+import { yFiles, getYText, roomId } from './lib/yjs'
 
 const DEFAULT_SETTINGS = {
   theme: 'vs-dark',
@@ -77,7 +77,7 @@ export default function App() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          code, language, stdin,
+          code, language, stdin, roomId,
           packages: packages.split(/[\s,]+/).filter(Boolean),
           env: Object.fromEntries(
             envVars.split('\n').map(l => l.trim()).filter(l => l.includes('='))

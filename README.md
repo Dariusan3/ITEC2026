@@ -76,8 +76,10 @@ ITEC2026/
 | 4 | Terminal + Time-Travel | Done | [PHASE-4.md](docs/PHASE-4.md) |
 | 5 | Polish, UX & Auth | Done | [PHASE-5.md](docs/PHASE-5.md) |
 | 6+ | Roadmap | Planned | [ROADMAP.md](docs/ROADMAP.md) |
+| DB  | Supabase Persistence | Designed | [DATABASE.md](docs/DATABASE.md) |
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for all planned features with effort estimates.
+See [docs/DATABASE.md](docs/DATABASE.md) for the full database architecture and migration guide.
 
 ## Getting Started
 
