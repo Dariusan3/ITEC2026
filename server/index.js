@@ -82,6 +82,22 @@ const os = require("os");
 
 const docker = new Docker();
 
+/** OCI platform for pulls/creates — avoids exec format error when image arch mismatches the host. */
+function getDockerLinuxPlatform() {
+  const env = process.env.DOCKER_PLATFORM?.trim();
+  if (env) {
+    const parts = env.split("/");
+    return { os: parts[0] || "linux", architecture: parts[1] || "amd64" };
+  }
+  const architecture =
+    process.env.DOCKER_PLATFORM_ARCH?.trim()
+    || (process.arch === "arm64" ? "arm64" : "amd64");
+  return { os: "linux", architecture };
+}
+
+const DOCKER_LINUX_PLATFORM = getDockerLinuxPlatform();
+const DOCKER_PLATFORM_SPEC = `${DOCKER_LINUX_PLATFORM.os}/${DOCKER_LINUX_PLATFORM.architecture}`;
+
 const LANG_CONFIG = {
   javascript: { ext: ".js", image: "node:20-slim", cmd: ["node", "/sandbox/code.js"], pkgMgr: "npm" },
   typescript: { ext: ".ts", image: "node:20-slim", cmd: ["node", "/sandbox/code.ts"], pkgMgr: "npm" },
@@ -131,6 +147,27 @@ async function isDockerAvailable() {
   }
 }
 
+/** Docker Engine does not auto-pull on createContainer; ensure image exists locally. */
+async function ensureDockerImage(image) {
+  try {
+    await docker.getImage(image).inspect();
+    return;
+  } catch {
+    // not present locally
+  }
+  console.log(`[iTECify] Pulling Docker image ${image} (${DOCKER_PLATFORM_SPEC})...`);
+  await new Promise((resolve, reject) => {
+    docker.pull(
+      image,
+      { platform: DOCKER_PLATFORM_SPEC },
+      (err, stream) => {
+        if (err) return reject(err);
+        docker.modem.followProgress(stream, (followErr) => (followErr ? reject(followErr) : resolve()));
+      },
+    );
+  });
+}
+
 function scanCode(code, language) {
   const patterns = DANGEROUS_PATTERNS[language] || [];
   const warnings = [];
@@ -143,6 +180,8 @@ function scanCode(code, language) {
 }
 
 async function runInDocker(code, config, onData, stdin = "", packages = []) {
+  await ensureDockerImage(config.image);
+
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "itecify-"));
   const tmpFile = path.join(tmpDir, `code${config.ext}`);
   fs.writeFileSync(tmpFile, code);
@@ -156,6 +195,7 @@ async function runInDocker(code, config, onData, stdin = "", packages = []) {
   try {
     container = await docker.createContainer({
       Image: config.image,
+      Platform: DOCKER_PLATFORM_SPEC,
       Cmd: cmd,
       HostConfig: {
         Memory: 128 * 1024 * 1024,
@@ -163,7 +203,8 @@ async function runInDocker(code, config, onData, stdin = "", packages = []) {
         CpuQuota: 50000,
         NetworkMode: network,
         Binds: [`${tmpDir}:/sandbox:ro`],
-        AutoRemove: true,
+        // AutoRemove + wait() races on Docker Desktop (404 no such container after fast exit)
+        AutoRemove: false,
       },
       AttachStdin: hasStdin,
       OpenStdin: hasStdin,
@@ -213,6 +254,13 @@ async function runInDocker(code, config, onData, stdin = "", packages = []) {
     }
     throw err;
   } finally {
+    if (container) {
+      try {
+        await container.remove({ force: true });
+      } catch {
+        // already removed or daemon hiccup
+      }
+    }
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 }
@@ -456,10 +504,19 @@ const pty = require("node-pty");
 let sharedPty = null;
 const termClients = new Set();
 
+function getDefaultShell() {
+  if (process.platform === "win32") {
+    if (process.env.COMSPEC) return process.env.COMSPEC;
+    const root = process.env.SystemRoot || process.env.windir || "C:\\Windows";
+    return path.join(root, "System32", "cmd.exe");
+  }
+  return process.env.SHELL || "/bin/bash";
+}
+
 function getOrCreatePty() {
   if (sharedPty) return sharedPty;
   try {
-    const shell = process.env.SHELL || "/bin/zsh";
+    const shell = getDefaultShell();
     sharedPty = pty.spawn(shell, [], {
       name: "xterm-256color",
       cols: 120,
@@ -489,8 +546,16 @@ function getOrCreatePty() {
   }
 }
 
-const TERM_WS_PORT = 1235;
+const TERM_WS_PORT = Number(process.env.TERM_WS_PORT) || 1235;
 const termWss = new WebSocketServer({ port: TERM_WS_PORT });
+termWss.on("error", (err) => {
+  if (err.code === "EADDRINUSE") {
+    console.error(`[iTECify] Port ${TERM_WS_PORT} already in use (terminal WS). Stop the other \`npm run dev\` or change TERM_WS_PORT / VITE_TERM_WS_PORT in .env.`);
+  } else {
+    console.error("[iTECify] Terminal WebSocket error:", err.message);
+  }
+  process.exit(1);
+});
 
 termWss.on("connection", (ws) => {
   termClients.add(ws);
@@ -702,6 +767,14 @@ function setupConnection(ws, req) {
 }
 
 const wss = new WebSocketServer({ port: WS_PORT });
+wss.on("error", (err) => {
+  if (err.code === "EADDRINUSE") {
+    console.error(`[iTECify] Port ${WS_PORT} already in use (Yjs WS). Stop the other \`npm run dev\` or change WS_PORT / VITE_WS_PORT in .env.`);
+  } else {
+    console.error("[iTECify] Yjs WebSocket error:", err.message);
+  }
+  process.exit(1);
+});
 wss.on("connection", setupConnection);
 console.log(
   `[iTECify] Yjs WebSocket server running on ws://localhost:${WS_PORT}`,

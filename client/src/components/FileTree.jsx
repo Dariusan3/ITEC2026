@@ -107,27 +107,35 @@ export default function FileTree({ activeFile, onFileSelect }) {
 
   return (
     <div
-      className="w-48 h-full border-r flex flex-col select-none"
-      style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border)' }}
+      className="flex h-full w-48 flex-col select-none border-r"
+      style={{ background: "var(--bg-secondary)", borderColor: "var(--border)" }}
     >
-      {/* Header */}
       <div className="flex items-center justify-between px-3 py-2">
-        <span className="text-[10px] uppercase tracking-wider font-semibold"
-          style={{ color: 'var(--text-secondary)' }}>Explorer</span>
+        <span
+          className="text-[10px] font-semibold uppercase tracking-wider"
+          style={{ color: "var(--text-secondary)" }}
+        >
+          Explorer
+        </span>
         <button
-          onClick={() => { setCreating(true); setNewName('') }}
+          type="button"
+          onClick={() => {
+            setCreating(true);
+            setNewName("");
+          }}
           className="text-sm font-bold leading-none hover:opacity-70"
-          style={{ color: 'var(--accent)' }}
+          style={{ color: "var(--accent)" }}
           title="New file"
-        >+</button>
+        >
+          +
+        </button>
       </div>
 
-      {/* File list */}
-      <div className="flex-1 overflow-y-auto px-2 space-y-0.5">
-        {files.map(({ name, language }) => {
-          const icon = LANG_ICONS[language] || LANG_ICONS.javascript
-          const isActive = activeFile === name
-          const isRenaming = renamingFile === name
+      <div className="flex-1 space-y-0.5 overflow-y-auto px-2">
+        {files.map(({ name, language: lang }) => {
+          const icon = LANG_ICONS[lang] || LANG_ICONS.javascript;
+          const isActive = activeFile === name;
+          const isRenaming = renamingFile === name;
 
           return (
             <div key={name}>
@@ -135,78 +143,108 @@ export default function FileTree({ activeFile, onFileSelect }) {
                 <input
                   ref={renameInputRef}
                   value={renameTo}
-                  onChange={e => setRenameTo(e.target.value)}
+                  onChange={(e) => setRenameTo(e.target.value)}
                   onBlur={renameFile}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter') renameFile()
-                    if (e.key === 'Escape') setRenamingFile(null)
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") renameFile();
+                    if (e.key === "Escape") setRenamingFile(null);
                   }}
-                  className="w-full text-xs px-2 py-1 rounded outline-none"
-                  style={{ background: 'var(--bg-tertiary)', color: 'var(--text-primary)', border: '1px solid var(--accent)' }}
+                  className="w-full rounded px-2 py-1 text-xs outline-none"
+                  style={{
+                    background: "var(--bg-tertiary)",
+                    color: "var(--text-primary)",
+                    border: "1px solid var(--accent)",
+                  }}
                 />
               ) : (
                 <div
-                  onClick={() => onFileSelect(name, language)}
-                  onContextMenu={e => openContextMenu(e, name)}
-                  className="flex items-center gap-2 px-2 py-1 rounded text-xs cursor-pointer group"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => onFileSelect(name, lang)}
+                  onContextMenu={(e) => openContextMenu(e, name)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      onFileSelect(name, lang);
+                    }
+                  }}
+                  className="group flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-xs"
                   style={{
-                    background: isActive ? 'var(--bg-tertiary)' : 'transparent',
-                    color: 'var(--text-primary)',
+                    background: isActive ? "var(--bg-tertiary)" : "transparent",
+                    color: "var(--text-primary)",
                   }}
                 >
-                  <span style={{ color: icon.color, fontWeight: 700, fontSize: 9 }}>{icon.icon}</span>
+                  <span style={{ color: icon.color, fontWeight: 700, fontSize: 9 }}>
+                    {icon.icon}
+                  </span>
                   <span className="flex-1 truncate">{name}</span>
                 </div>
               )}
             </div>
-          )
+          );
         })}
 
-        {/* New file input */}
         {creating && (
           <input
             ref={newInputRef}
             value={newName}
-            onChange={e => setNewName(e.target.value)}
+            onChange={(e) => setNewName(e.target.value)}
             onBlur={createFile}
-            onKeyDown={e => {
-              if (e.key === 'Enter') createFile()
-              if (e.key === 'Escape') { setCreating(false); setNewName('') }
+            onKeyDown={(e) => {
+              if (e.key === "Enter") createFile();
+              if (e.key === "Escape") {
+                setCreating(false);
+                setNewName("");
+              }
             }}
             placeholder="filename.js"
-            className="w-full text-xs px-2 py-1 rounded outline-none"
-            style={{ background: 'var(--bg-tertiary)', color: 'var(--text-primary)', border: '1px solid var(--accent)' }}
+            className="w-full rounded px-2 py-1 text-xs outline-none"
+            style={{
+              background: "var(--bg-tertiary)",
+              color: "var(--text-primary)",
+              border: "1px solid var(--accent)",
+            }}
           />
         )}
       </div>
 
-      {/* Right-click context menu */}
       {contextMenu && (
         <div
-          className="fixed z-50 rounded shadow-lg py-1 text-xs"
+          className="fixed z-50 rounded py-1 text-xs shadow-lg"
           style={{
-            top: contextMenu.y, left: contextMenu.x,
-            background: 'var(--bg-tertiary)', border: '1px solid var(--border)',
+            top: contextMenu.y,
+            left: contextMenu.x,
+            background: "var(--bg-tertiary)",
+            border: "1px solid var(--border)",
             minWidth: 140,
           }}
-          onClick={e => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
         >
           <button
-            className="w-full text-left px-3 py-1.5 hover:opacity-70"
-            style={{ color: 'var(--text-primary)' }}
+            type="button"
+            className="w-full px-3 py-1.5 text-left hover:opacity-70"
+            style={{ color: "var(--text-primary)" }}
             onClick={() => {
-              setRenamingFile(contextMenu.filename)
-              setRenameTo(contextMenu.filename)
-              setContextMenu(null)
+              setRenamingFile(contextMenu.filename);
+              setRenameTo(contextMenu.filename);
+              setContextMenu(null);
             }}
-          >Rename</button>
+          >
+            Rename
+          </button>
           <button
-            className="w-full text-left px-3 py-1.5 hover:opacity-70"
-            style={{ color: 'var(--red)' }}
-            onClick={() => { deleteFile(contextMenu.filename); setContextMenu(null) }}
-          >Delete</button>
+            type="button"
+            className="w-full px-3 py-1.5 text-left hover:opacity-70"
+            style={{ color: "var(--red)" }}
+            onClick={() => {
+              deleteFile(contextMenu.filename);
+              setContextMenu(null);
+            }}
+          >
+            Delete
+          </button>
         </div>
       )}
     </div>
-  )
+  );
 }
