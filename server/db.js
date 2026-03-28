@@ -6,6 +6,7 @@
  */
 
 const { createClient } = require("@supabase/supabase-js");
+const Y = require("yjs");
 
 let supabase = null;
 let enabled = false;
@@ -45,7 +46,7 @@ async function touchRoom(roomId) {
 // Seeds the doc with persisted file content + chat history.
 // Uses transact origin "db-load" so Yjs observers can skip these inserts.
 
-async function loadRoom(roomId, doc) {
+async function loadRoom(roomId, doc, userId = null) {
   if (!enabled) return null;
 
   // Ensure room row exists
@@ -53,11 +54,41 @@ async function loadRoom(roomId, doc) {
     .from("rooms")
     .upsert({ id: roomId }, { onConflict: "id", ignoreDuplicates: true });
 
-  // Load files
-  const { data: files, error: filesErr } = await supabase
-    .from("files")
-    .select("filename, language, content")
-    .eq("room_id", roomId);
+  // Load Yjs binary state — idempotent, no CRDT duplication
+  const { data: room } = await supabase
+    .from("rooms")
+    .select("yjs_state")
+    .eq("id", roomId)
+    .maybeSingle();
+
+  if (room?.yjs_state) {
+    try {
+      const update = Buffer.from(room.yjs_state, "base64");
+      Y.applyUpdate(doc, update, "db-load");
+      console.log(`[DB] Room ${roomId} loaded from Yjs binary state`);
+
+      // Count for logging
+      const yFiles = doc.getMap("files");
+      const yChat = doc.getArray("chat");
+      return { fileCount: yFiles.size, messageCount: yChat.length };
+    } catch (err) {
+      console.error(`[DB] loadRoom yjs_state error for ${roomId}:`, err.message);
+    }
+  }
+
+  // Fallback: load from files table (legacy rooms saved before yjs_state column).
+  // Prefer the authenticated user's own rows; fall back to anonymous rows if none found.
+  let filesQuery = supabase.from("files").select("filename, language, content").eq("room_id", roomId);
+  if (userId != null) filesQuery = filesQuery.eq("user_id", userId);
+  else filesQuery = filesQuery.is("user_id", null);
+
+  let { data: files, error: filesErr } = await filesQuery;
+
+  // If no user-specific rows, widen the search to any row for this room
+  if (!filesErr && (!files || files.length === 0) && userId != null) {
+    ({ data: files, error: filesErr } = await supabase
+      .from("files").select("filename, language, content").eq("room_id", roomId));
+  }
 
   if (filesErr) {
     console.error(`[DB] loadRoom files error for ${roomId}:`, filesErr.message);
@@ -77,6 +108,17 @@ async function loadRoom(roomId, doc) {
         }
       });
     }, "db-load");
+
+    // Promote to binary yjs_state so future loads skip this non-idempotent path
+    // (prevents content duplication when client IDB and server both have the same text)
+    const yjsState = Buffer.from(Y.encodeStateAsUpdate(doc)).toString("base64");
+    supabase.from("rooms").upsert(
+      { id: roomId, yjs_state: yjsState, last_active: new Date().toISOString() },
+      { onConflict: "id" }
+    ).then(({ error }) => {
+      if (error) console.error(`[DB] loadRoom promote yjs_state error for ${roomId}:`, error.message);
+      else console.log(`[DB] Room ${roomId} promoted from files table to yjs_state`);
+    });
   }
 
   // Load last 100 chat messages
@@ -95,16 +137,10 @@ async function loadRoom(roomId, doc) {
     doc.transact(() => {
       const yChat = doc.getArray("chat");
       if (yChat.length === 0) {
-        yChat.insert(
-          0,
-          messages.map((m) => ({
-            id: m.id,
-            author: m.author,
-            color: m.author_color,
-            text: m.text,
-            time: new Date(m.created_at).getTime(),
-          }))
-        );
+        yChat.insert(0, messages.map((m) => ({
+          id: m.id, author: m.author, color: m.author_color,
+          text: m.text, time: new Date(m.created_at).getTime(),
+        })));
       }
     }, "db-load");
   }
@@ -116,37 +152,54 @@ async function loadRoom(roomId, doc) {
 // Upserts all files in the Yjs doc to the DB.
 // Called on a debounced schedule (3 s after last update) and on doc destroy.
 
-async function saveRoom(roomId, doc) {
+async function saveRoom(roomId, doc, userId = null) {
   if (!enabled) return;
 
   const yFiles = doc.getMap("files");
-  if (yFiles.size === 0) return;
+  if (yFiles.size === 0) {
+    console.log(`[DB] saveRoom skipped for ${roomId} — yFiles empty (doc not yet synced)`);
+    return;
+  }
 
+  // Don't overwrite good data with an empty doc (timing guard)
   const entries = [];
   yFiles.forEach((meta, filename) => {
-    const yText = doc.getText(`file:${filename}`);
+    const content = doc.getText(`file:${filename}`).toString();
     entries.push({
       room_id: roomId,
       filename,
       language: meta?.language ?? "javascript",
-      content: yText.toString(),
+      content,
       updated_at: new Date().toISOString(),
+      user_id: userId ?? null,  // must always be present so ON CONFLICT can resolve it
     });
   });
 
-  const { error } = await supabase
-    .from("files")
-    .upsert(entries, { onConflict: "room_id,filename" });
-
-  if (error) {
-    console.error(`[DB] saveRoom error for ${roomId}:`, error.message);
+  const hasContent = entries.some(e => e.content.length > 0);
+  if (!hasContent) {
+    console.log(`[DB] saveRoom skipped for ${roomId} — all files empty`);
     return;
   }
 
-  await supabase
-    .from("rooms")
-    .update({ last_active: new Date().toISOString() })
-    .eq("id", roomId);
+  // Save binary Yjs state — CRDT-safe, no duplication on load
+  const yjsState = Buffer.from(Y.encodeStateAsUpdate(doc)).toString("base64");
+
+  // Ensure room row exists first, then upsert yjs_state (never use update — it silently fails if row missing)
+  await supabase.from("rooms").upsert(
+    { id: roomId, yjs_state: yjsState, last_active: new Date().toISOString() },
+    { onConflict: "id" }
+  ).then(({ error }) => {
+    if (error) console.error(`[DB] saveRoom rooms upsert error for ${roomId}:`, error.message);
+  });
+
+  // files_uniq_room_file_user: UNIQUE(room_id, filename, user_id) NULLS NOT DISTINCT
+  // Works for both authenticated (user_id = id) and anonymous (user_id = NULL) rows.
+  const { error: filesError } = await supabase
+    .from("files")
+    .upsert(entries, { onConflict: "room_id,filename,user_id" });
+
+  if (filesError) console.error(`[DB] saveRoom files error for ${roomId}:`, filesError.message);
+  else console.log(`[DB] Saved room ${roomId} — ${entries.length} file(s), ${entries.reduce((s, e) => s + e.content.length, 0)} chars (user_id=${userId ?? "anon"})`);
 }
 
 // ─── Users ────────────────────────────────────────────────────────────────────
@@ -201,11 +254,13 @@ async function insertRunHistory({ roomId, userLogin, language, hasError, preview
 // ─── Client-driven save ───────────────────────────────────────────────────────
 // Called from the /api/room/:id/save endpoint with explicit file contents from the client.
 
-async function saveRoomFiles(roomId, entries) {
+async function saveRoomFiles(roomId, entries, userId = null) {
   if (!enabled || !entries.length) return;
+  // Always stamp user_id (even as null) so ON CONFLICT (room_id,filename,user_id) resolves correctly
+  const stamped = entries.map(e => ({ ...e, user_id: userId ?? null }));
   const { error } = await supabase
     .from("files")
-    .upsert(entries, { onConflict: "room_id,filename" });
+    .upsert(stamped, { onConflict: "room_id,filename,user_id" });
   if (error) console.error(`[DB] saveRoomFiles error for ${roomId}:`, error.message);
   else {
     await supabase.from("rooms").update({ last_active: new Date().toISOString() }).eq("id", roomId);

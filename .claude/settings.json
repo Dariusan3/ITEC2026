@@ -27,7 +27,8 @@
       "mcp__supabase__apply_migration",
       "Bash(node -e \"require\\(''express-rate-limit''\\)\")",
       "Bash(node -e \"require\\(''''jszip''''\\)\")",
-      "Bash(node -e \"require\\(''''bcrypt''''\\)\")"
+      "Bash(node -e \"require\\(''''bcrypt''''\\)\")",
+      "Bash(node -e \"const Y = require\\(''yjs''\\); console.log\\(''yjs ok''\\)\")"
     ]
   }
 }

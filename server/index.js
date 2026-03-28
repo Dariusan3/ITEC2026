@@ -706,8 +706,20 @@ app.post("/api/room/:roomId/save", async (req, res) => {
 
     if (entries.length === 0) return res.json({ ok: true });
 
-    // Use the db module's supabase client via a helper
-    await db.saveRoomFiles(roomId, entries);
+    // Save plain-text files (stamped with the logged-in user's id if available)
+    const saveUserId = req.session?.user?.id ?? null;
+    await db.saveRoomFiles(roomId, entries, saveUserId);
+
+    // Also flush the server's in-memory Yjs doc → updates yjs_state in DB.
+    // loadRoom prefers yjs_state, so without this the OAuth redirect would
+    // load a stale snapshot and lose any edits made in the last few seconds.
+    const docName = `itecify-${roomId}`;
+    if (docs.has(docName)) {
+      clearTimeout(saveTimers.get(docName));
+      saveTimers.delete(docName);
+      await db.saveRoom(roomId, docs.get(docName), saveUserId).catch(() => {});
+    }
+
     res.json({ ok: true });
   } catch (err) {
     console.error("[Save] Error:", err.message);
@@ -932,17 +944,18 @@ function scheduleRoomSave(docName, doc) {
   clearTimeout(saveTimers.get(docName));
   saveTimers.set(docName, setTimeout(async () => {
     const roomId = docName.startsWith("itecify-") ? docName.slice("itecify-".length) : docName;
-    await db.saveRoom(roomId, doc).catch(() => {});
+    await db.saveRoom(roomId, doc, doc.lastUserId ?? null).catch(() => {});
     saveTimers.delete(docName);
   }, 3000));
 }
 
-function getYDoc(docName) {
+function getYDoc(docName, userId = null) {
   if (docs.has(docName)) return docs.get(docName);
   const doc = new Y.Doc();
   doc.name = docName;
   doc.conns = new Map();
   doc.awareness = { states: new Map(), meta: new Map() };
+  doc.lastUserId = null; // updated whenever an authenticated user connects
   docs.set(docName, doc);
 
   const roomId = docName.startsWith("itecify-") ? docName.slice("itecify-".length) : docName;
@@ -979,7 +992,7 @@ function getYDoc(docName) {
   });
 
   // Load room from DB (non-blocking — updates broadcast via doc "update" listener above)
-  db.loadRoom(roomId, doc).then((result) => {
+  db.loadRoom(roomId, doc, userId).then((result) => {
     if (result?.fileCount) {
       console.log(`[DB] Room ${roomId} loaded — ${result.fileCount} file(s), ${result.messageCount} message(s)`);
       chatPersistedCount = result.messageCount ?? 0;
@@ -1070,15 +1083,18 @@ function applyAwarenessUpdate(doc, buf, conn) {
 function setupConnection(ws, req) {
   const urlPath = req.url.slice(1).split("?")[0];
   const docName = urlPath || "default";
-  const doc = getYDoc(docName);
+  // Resolve userId before getYDoc so the first loadRoom call receives it
+  const userId = req.session?.user?.id ?? null;
+  const doc = getYDoc(docName, userId);
 
   doc.conns.set(ws, new Set());
 
   // Record room membership for logged-in users (session is available via cookies on the upgrade request)
   const roomIdFromDoc = docName.startsWith("itecify-") ? docName.slice("itecify-".length) : docName;
-  const userId = req.session?.user?.id ?? null;
   if (userId) {
     db.touchRoomMember(roomIdFromDoc, userId).catch(() => {});
+    // Track the most recently connected authenticated user so saves carry user_id
+    doc.lastUserId = userId;
   }
 
   ws.on("message", (rawMsg) => {
@@ -1146,7 +1162,7 @@ function setupConnection(ws, req) {
       clearTimeout(saveTimers.get(docName));
       saveTimers.delete(docName);
       const roomIdOnClose = docName.startsWith("itecify-") ? docName.slice("itecify-".length) : docName;
-      db.saveRoom(roomIdOnClose, doc).catch(() => {}).finally(() => {
+      db.saveRoom(roomIdOnClose, doc, doc.lastUserId ?? null).catch(() => {}).finally(() => {
         doc.destroy();
         docs.delete(doc.name);
       });
