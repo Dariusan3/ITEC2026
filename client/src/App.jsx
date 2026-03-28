@@ -6,7 +6,7 @@ import Sidebar from './components/Sidebar'
 import OutputPanel from './components/OutputPanel'
 import TimeTravel from './components/TimeTravel'
 import ConnectionBanner from './components/ConnectionBanner'
-import { yFiles, getYText, roomId, idbPersistence } from './lib/yjs'
+import { yFiles, getYText, roomId, idbPersistence, wsProvider } from './lib/yjs'
 import { saveRoomNow } from './lib/saveRoom'
 
 // C2: Read-only mode — ?view=1 in URL
@@ -67,12 +67,33 @@ export default function App() {
   const [packages, setPackages] = useState('')
   const [envVars, setEnvVars] = useState('')
   const [settings, setSettings] = useState(loadSettings)
-  const [idbReady, setIdbReady] = useState(false)
+  const [editorReady, setEditorReady] = useState(false)
   const editorRef = useRef(null)
 
-  // Wait for IndexedDB to restore persisted content before mounting editor
+  // Mount editor only after BOTH IDB and WS initial sync complete.
+  // The server now awaits loadRoom before sending SYNC_STEP2, so by the time
+  // wsProvider fires 'synced', the full persisted code is already in ydoc.
+  // A 4-second timeout ensures the editor always appears (e.g. offline).
   useEffect(() => {
-    idbPersistence.whenSynced.then(() => setIdbReady(true))
+    let idbDone = false
+    let wsDone = false
+    const tryReady = () => { if (idbDone && wsDone) setEditorReady(true) }
+
+    idbPersistence.whenSynced.then(() => { idbDone = true; tryReady() })
+
+    if (wsProvider.synced) {
+      wsDone = true
+      tryReady()
+    } else {
+      wsProvider.on('synced', function onSync() {
+        wsProvider.off('synced', onSync)
+        wsDone = true
+        tryReady()
+      })
+    }
+
+    const fallback = setTimeout(() => setEditorReady(true), 4000)
+    return () => clearTimeout(fallback)
   }, [])
 
   // Save room on page unload (refresh, close, navigate away)
@@ -260,7 +281,7 @@ export default function App() {
         <div className="flex flex-col flex-1 overflow-hidden">
           <TimeTravel editorRef={editorRef} activeFile={activeFile} />
           <div className="flex-1 overflow-hidden">
-            {idbReady
+            {editorReady
               ? <Editor ref={editorRef} language={language} activeFile={activeFile} settings={settings} readOnly={viewOnly} />
               : <div className="flex h-full items-center justify-center text-xs" style={{ color: 'var(--text-secondary)' }}>Loading...</div>
             }

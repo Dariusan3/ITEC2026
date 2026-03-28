@@ -1287,8 +1287,10 @@ function getYDoc(docName, userId = null) {
     chatPersistedCount = all.length;
   });
 
-  // Load room from DB (non-blocking — updates broadcast via doc "update" listener above)
-  db.loadRoom(roomId, doc, userId)
+  // Load room from DB. Store the promise so SYNC_STEP1 can await it before
+  // sending SYNC_STEP2 — this guarantees the client always gets the full
+  // persisted content in the initial sync, without needing a page refresh.
+  doc.loadRoomPromise = db.loadRoom(roomId, doc, userId)
     .then((result) => {
       if (result?.fileCount) {
         console.log(
@@ -1404,7 +1406,7 @@ function setupConnection(ws, req) {
     doc.lastUserId = userId;
   }
 
-  ws.on("message", (rawMsg) => {
+  ws.on("message", async (rawMsg) => {
     const message = new Uint8Array(rawMsg);
     const decoder = decoding.createDecoder(message);
     const msgType = decoding.readVarUint(decoder);
@@ -1413,6 +1415,10 @@ function setupConnection(ws, req) {
       const syncType = decoding.readVarUint(decoder);
 
       if (syncType === SYNC_STEP1) {
+        // Wait for DB load to finish so SYNC_STEP2 contains the full persisted
+        // state — client gets everything in the initial handshake, no refresh needed.
+        await (doc.loadRoomPromise || Promise.resolve());
+
         // Client sends state vector, server responds with diff
         const sv = decoding.readVarUint8Array(decoder);
         const encoder = encoding.createEncoder();
