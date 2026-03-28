@@ -49,14 +49,29 @@ function BrandMark() {
       <div
         className="flex h-10 w-10 items-center justify-center rounded-2xl border shadow-[0_14px_28px_rgba(0,0,0,0.24)] sm:h-11 sm:w-11"
         style={{
-          background: "linear-gradient(135deg, color-mix(in srgb, var(--accent) 88%, white 12%) 0%, color-mix(in srgb, var(--accent) 68%, var(--blue) 32%) 100%)",
+          background:
+            "linear-gradient(135deg, color-mix(in srgb, var(--accent) 88%, white 12%) 0%, color-mix(in srgb, var(--accent) 68%, var(--blue) 32%) 100%)",
           borderColor: "color-mix(in srgb, var(--accent) 40%, var(--border))",
         }}
         aria-hidden
       >
-        <svg viewBox="0 0 24 24" className="h-5 w-5 sm:h-5.5 sm:w-5.5" fill="none">
-          <path d="M7 6.5h10M7 12h6.5M7 17.5h10" stroke="var(--bg-primary)" strokeWidth="2.2" strokeLinecap="round" />
-          <path d="M16.5 9.5v5" stroke="rgba(24,24,37,0.68)" strokeWidth="2" strokeLinecap="round" />
+        <svg
+          viewBox="0 0 24 24"
+          className="h-5 w-5 sm:h-5.5 sm:w-5.5"
+          fill="none"
+        >
+          <path
+            d="M7 6.5h10M7 12h6.5M7 17.5h10"
+            stroke="var(--bg-primary)"
+            strokeWidth="2.2"
+            strokeLinecap="round"
+          />
+          <path
+            d="M16.5 9.5v5"
+            stroke="rgba(24,24,37,0.68)"
+            strokeWidth="2"
+            strokeLinecap="round"
+          />
         </svg>
       </div>
 
@@ -72,7 +87,14 @@ function BrandMark() {
   );
 }
 
-function Btn({ onClick, disabled, className = "", style = {}, title, children }) {
+function Btn({
+  onClick,
+  disabled,
+  className = "",
+  style = {},
+  title,
+  children,
+}) {
   return (
     <button
       type="button"
@@ -155,7 +177,8 @@ function LanguageDropdown({ language, onLanguageChange }) {
                     language === lang
                       ? "color-mix(in srgb, var(--accent) 12%, var(--bg-tertiary))"
                       : "transparent",
-                  color: language === lang ? "var(--accent)" : "var(--text-primary)",
+                  color:
+                    language === lang ? "var(--accent)" : "var(--text-primary)",
                   boxShadow:
                     language === lang
                       ? "inset 0 0 0 1px color-mix(in srgb, var(--accent) 22%, var(--border))"
@@ -170,7 +193,10 @@ function LanguageDropdown({ language, onLanguageChange }) {
                 <span
                   className="rounded-full px-2 py-0.5 text-[9px] uppercase tracking-[0.16em]"
                   style={{
-                    color: language === lang ? "var(--bg-primary)" : "var(--text-secondary)",
+                    color:
+                      language === lang
+                        ? "var(--bg-primary)"
+                        : "var(--text-secondary)",
                     background:
                       language === lang
                         ? "var(--accent)"
@@ -189,43 +215,56 @@ function LanguageDropdown({ language, onLanguageChange }) {
 }
 
 function OnlineUsers({ wsProvider }) {
-  const [users, setUsers] = useState([])
+  const [users, setUsers] = useState([]);
 
   useEffect(() => {
     function update() {
-      const localId = wsProvider.awareness.clientID
-      const states = []
+      const localId = wsProvider.awareness.clientID;
+      const states = [];
       wsProvider.awareness.getStates().forEach((state, id) => {
         if (id !== localId && state.user?.name) {
-          states.push({ id, name: state.user.name, color: state.user.color || '#cba6f7' })
+          states.push({
+            id,
+            name: state.user.name,
+            color: state.user.color || "#cba6f7",
+          });
         }
-      })
-      setUsers(states)
+      });
+      setUsers(states);
     }
-    wsProvider.awareness.on('change', update)
-    update()
-    return () => wsProvider.awareness.off('change', update)
-  }, [wsProvider])
+    wsProvider.awareness.on("change", update);
+    update();
+    return () => wsProvider.awareness.off("change", update);
+  }, [wsProvider]);
 
-  if (users.length === 0) return null
+  if (users.length === 0) return null;
 
   return (
-    <div className="flex items-center gap-1" title={`${users.length} other${users.length > 1 ? 's' : ''} online`}>
+    <div
+      className="flex items-center gap-1"
+      title={`${users.length} other${users.length > 1 ? "s" : ""} online`}
+    >
       {users.slice(0, 5).map((u) => (
         <div
           key={u.id}
           title={u.name}
           className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[9px] font-bold"
-          style={{ background: u.color, color: '#1e1e2e', border: '1.5px solid var(--bg-primary)' }}
+          style={{
+            background: u.color,
+            color: "#1e1e2e",
+            border: "1.5px solid var(--bg-primary)",
+          }}
         >
           {u.name.slice(0, 2).toUpperCase()}
         </div>
       ))}
       {users.length > 5 && (
-        <span className="text-[9px]" style={{ color: 'var(--text-secondary)' }}>+{users.length - 5}</span>
+        <span className="text-[9px]" style={{ color: "var(--text-secondary)" }}>
+          +{users.length - 5}
+        </span>
       )}
     </div>
-  )
+  );
 }
 
 export default function TopBar({
@@ -356,7 +395,10 @@ export default function TopBar({
     yFiles.forEach((meta, fname) => {
       forkedFiles[fname] = { meta, content: getYText(fname).toString() };
     });
-    sessionStorage.setItem(`itecify-fork-${newRoom}`, JSON.stringify(forkedFiles));
+    sessionStorage.setItem(
+      `itecify-fork-${newRoom}`,
+      JSON.stringify(forkedFiles),
+    );
     window.open(
       `${window.location.origin}${window.location.pathname}?fork=${newRoom}#${newRoom}`,
       "_blank",
@@ -409,7 +451,10 @@ export default function TopBar({
 
       <div className="flex min-w-0 shrink-0 flex-wrap items-center justify-end gap-2 sm:gap-2.5">
         <div className="flex items-center gap-1.5 sm:gap-2">
-          <LanguageDropdown language={language} onLanguageChange={onLanguageChange} />
+          <LanguageDropdown
+            language={language}
+            onLanguageChange={onLanguageChange}
+          />
 
           {viewOnly && (
             <span
@@ -457,7 +502,10 @@ export default function TopBar({
             </Btn>
           )}
           {!viewOnly && onViteDemo && (
-            <Btn onClick={onViteDemo} title="Încarcă un proiect Vite+React minimal în cameră">
+            <Btn
+              onClick={onViteDemo}
+              title="Înlocuiește toate fișierele din cameră cu exemplul Vite minimal (mockup Preview). Necesar dacă ai monorepo iTECify în cameră."
+            >
               Vite demo
             </Btn>
           )}
@@ -496,8 +544,12 @@ export default function TopBar({
               onClick={() => setShowDiffMenu((s) => !s)}
               title="Compare current file with another file"
               style={{
-                background: diffTargetFile ? "var(--bg-primary)" : "var(--bg-tertiary)",
-                color: diffTargetFile ? "var(--accent)" : "var(--text-secondary)",
+                background: diffTargetFile
+                  ? "var(--bg-primary)"
+                  : "var(--bg-tertiary)",
+                color: diffTargetFile
+                  ? "var(--accent)"
+                  : "var(--text-secondary)",
                 borderColor: diffTargetFile ? "var(--accent)" : "var(--border)",
               }}
             >
@@ -646,7 +698,8 @@ export default function TopBar({
                       className="mt-1.5 text-center text-[10px]"
                       style={{
                         color:
-                          passwordMsg.includes("!") || passwordMsg.includes("removed")
+                          passwordMsg.includes("!") ||
+                          passwordMsg.includes("removed")
                             ? "var(--green)"
                             : "var(--red)",
                       }}
@@ -673,9 +726,7 @@ export default function TopBar({
                 <span>Login</span>
               </Btn>
               {showLogin && (
-                <div
-                  className="floating-panel absolute right-0 top-[calc(100%+10px)] z-50 flex min-w-[11rem] flex-col gap-1.5 p-2 sm:top-[calc(100%+12px)]"
-                >
+                <div className="floating-panel absolute right-0 top-[calc(100%+10px)] z-50 flex min-w-[11rem] flex-col gap-1.5 p-2 sm:top-[calc(100%+12px)]">
                   <Btn
                     onClick={() => {
                       loginGitHub();
@@ -719,7 +770,9 @@ export default function TopBar({
                   onClick={() => {
                     setShowMyRooms((v) => !v);
                     if (!showMyRooms) {
-                      fetch(`${SERVER_URL}/api/rooms/mine`, { credentials: "include" })
+                      fetch(`${SERVER_URL}/api/rooms/mine`, {
+                        credentials: "include",
+                      })
                         .then((r) => r.json())
                         .then((d) => setMyRooms(d.rooms || []))
                         .catch(() => {});
@@ -793,10 +846,18 @@ export default function TopBar({
                             borderColor: "var(--border)",
                           }}
                         >
-                          <span className="font-mono" style={{ color: "var(--accent)" }}>
+                          <span
+                            className="font-mono"
+                            style={{ color: "var(--accent)" }}
+                          >
                             #{r.room_id}
                           </span>
-                          <span style={{ color: "var(--text-secondary)", fontSize: 10 }}>
+                          <span
+                            style={{
+                              color: "var(--text-secondary)",
+                              fontSize: 10,
+                            }}
+                          >
                             {new Date(r.last_seen).toLocaleDateString()}
                           </span>
                         </a>

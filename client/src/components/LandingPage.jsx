@@ -301,9 +301,9 @@ export default function LandingPage() {
             className="flex whitespace-nowrap text-[10px] font-bold uppercase tracking-[0.2em]"
             style={{ color: 'var(--text-secondary)', animation: 'marquee 22s linear infinite' }}
           >
-            {Array.from({ length: 3 }).flatMap(() =>
+            {Array.from({ length: 3 }).flatMap((_, rep) =>
               ['Real-time sync', 'AI-powered', '10+ languages', 'Time travel', 'Zero setup', 'Docker sandbox', 'Open source', 'Free to use'].map((item, i) => (
-                <span key={`${item}-${i}`} className="px-8">
+                <span key={`marquee-${rep}-${i}`} className="px-8">
                   {item}
                   <span className="ml-8" style={{ color: 'var(--accent)' }}>✦</span>
                 </span>

@@ -1,7 +1,9 @@
 /**
  * Minimal Vite + React workspace for testing the Docker preview.
- * Apply with mergeViteTemplate(yFiles, getYText) from the client.
+ * Apply with mergeVitePreviewTemplate(yFiles, getYText) from the client.
  */
+import { ydoc } from "./yjs";
+
 export const VITE_PREVIEW_TEMPLATE_FILES = {
   "package.json": JSON.stringify(
     {
@@ -81,24 +83,41 @@ button { margin-top: 1rem; padding: 0.5rem 1rem; cursor: pointer; }
 `,
 };
 
+/** Căi incluse în demo — utile pentru confirmare în UI */
+export const VITE_PREVIEW_TEMPLATE_PATHS = new Set(
+  Object.keys(VITE_PREVIEW_TEMPLATE_FILES),
+);
+
 /** @typedef {{ language: string }} FileMeta */
 
 /**
+ * Înlocuiește **tot** conținutul camerei cu proiectul minimal Vite.
+ * (Dacă doar suprascrii câteva fișiere, monorepo-ul iTECify — client/, server/ —
+ * rămâne în Yjs și Preview pornește în continuare `concurrently` pe tot proiectul.)
+ *
  * @param {import('yjs').Map<string, FileMeta>} yFiles
  * @param {(name: string) => import('yjs').Text} getYText
  */
 export function mergeVitePreviewTemplate(yFiles, getYText) {
-  const metaFor = (fname) => {
-    if (fname.endsWith(".json")) return { language: "json" };
-    if (fname.endsWith(".css")) return { language: "css" };
-    if (fname.endsWith(".html")) return { language: "html" };
-    if (fname.endsWith(".jsx")) return { language: "javascript" };
-    return { language: "javascript" };
-  };
-  for (const [fname, content] of Object.entries(VITE_PREVIEW_TEMPLATE_FILES)) {
-    yFiles.set(fname, metaFor(fname));
-    const y = getYText(fname);
-    y.delete(0, y.length);
-    y.insert(0, content);
-  }
+  ydoc.transact(() => {
+    for (const name of [...yFiles.keys()]) {
+      yFiles.delete(name);
+    }
+
+    const metaFor = (fname) => {
+      if (fname.endsWith(".json")) return { language: "json" };
+      if (fname.endsWith(".css")) return { language: "css" };
+      if (fname.endsWith(".html")) return { language: "html" };
+      if (fname.endsWith(".jsx")) return { language: "javascript" };
+      return { language: "javascript" };
+    };
+    for (const [fname, content] of Object.entries(
+      VITE_PREVIEW_TEMPLATE_FILES,
+    )) {
+      yFiles.set(fname, metaFor(fname));
+      const y = getYText(fname);
+      y.delete(0, y.length);
+      y.insert(0, content);
+    }
+  }, "vite-demo");
 }
