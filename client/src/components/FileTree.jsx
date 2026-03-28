@@ -23,7 +23,9 @@ const LANG_ICONS = {
 
 const EXT_TO_LANG = {
   js: "javascript",
+  jsx: "javascript",
   ts: "typescript",
+  tsx: "typescript",
   py: "python",
   rs: "rust",
   go: "go",

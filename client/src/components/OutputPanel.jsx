@@ -40,6 +40,12 @@ export default function OutputPanel({
   onPackagesChange,
   envVars,
   onEnvVarsChange,
+  previewIframeSrc = null,
+  previewError = null,
+  previewNotice = null,
+  focusPreviewSignal = 0,
+  onPreviewStop,
+  previewDisabled = false,
 }) {
   const [collapsed, setCollapsed] = useState(false);
   const [tab, setTab] = useState("output");
@@ -53,6 +59,10 @@ export default function OutputPanel({
     }
   });
   const scrollRef = useRef(null);
+
+  useEffect(() => {
+    if (focusPreviewSignal > 0) setTab("preview");
+  }, [focusPreviewSignal]);
 
   // Persist run history
   useEffect(() => {
@@ -109,7 +119,7 @@ export default function OutputPanel({
           className="text-[10px] font-semibold uppercase tracking-[0.16em]"
           style={{ color: "var(--text-secondary)" }}
         >
-          Output &amp; Terminal
+          ▶ Output / Terminal / Preview
         </span>
       </div>
     );
@@ -129,7 +139,7 @@ export default function OutputPanel({
         <div
           className="soft-card flex min-w-0 items-center gap-1 p-1 sm:gap-1.5"
           role="tablist"
-          aria-label="Output, Terminal sau istoric"
+          aria-label="Output, Terminal, Preview sau istoric"
         >
           <PanelTab
             selected={tab === "output"}
@@ -143,6 +153,14 @@ export default function OutputPanel({
           >
             Terminal
           </PanelTab>
+          {!previewDisabled && (
+            <PanelTab
+              selected={tab === "preview"}
+              onClick={() => setTab("preview")}
+            >
+              Preview
+            </PanelTab>
+          )}
           <PanelTab
             selected={tab === "history"}
             onClick={() => setTab("history")}
@@ -155,6 +173,16 @@ export default function OutputPanel({
         </div>
 
         <div className="flex shrink-0 items-center gap-1.5">
+          {tab === "preview" && previewIframeSrc && onPreviewStop && (
+            <button
+              type="button"
+              onClick={onPreviewStop}
+              className="rounded-none px-2 py-1 text-[10px] font-semibold uppercase tracking-wide hover:opacity-80"
+              style={{ color: "var(--red)", marginRight: "6px" }}
+            >
+              Stop preview
+            </button>
+          )}
           {output && tab === "output" && (
             <button
               type="button"
@@ -180,6 +208,7 @@ export default function OutputPanel({
               background: stdinOpen ? "var(--bg-tertiary)" : "transparent",
             }}
             onClick={() => setStdinOpen((o) => !o)}
+            disabled={tab === "preview"}
           >
             stdin / pkgs
           </button>
@@ -201,7 +230,7 @@ export default function OutputPanel({
       </div>
 
       {/* Stdin + Packages + Env vars panel */}
-      {stdinOpen && tab !== "terminal" && (
+      {stdinOpen && tab !== "terminal" && tab !== "preview" && (
         <div className="space-y-2 overflow-auto max-h-48 px-3.5 py-3">
           <div>
             <Label>stdin (mod batch, nu terminal interactiv)</Label>
@@ -295,6 +324,47 @@ export default function OutputPanel({
         {tab === "terminal" && (
           <div className="h-full min-h-0">
             <Terminal />
+          </div>
+        )}
+        {!previewDisabled && tab === "preview" && (
+          <div className="flex h-full min-h-0 flex-col">
+            {previewNotice && (
+              <p
+                className="shrink-0 px-2 py-1.5 text-[11px] leading-snug"
+                style={{
+                  color: "var(--green)",
+                  background: "color-mix(in srgb, var(--green) 12%, var(--bg-tertiary))",
+                }}
+              >
+                {previewNotice}
+              </p>
+            )}
+            {previewError && (
+              <p
+                className="shrink-0 px-2 py-1.5 text-[11px]"
+                style={{ color: "var(--red)", background: "var(--bg-tertiary)" }}
+              >
+                {previewError}
+              </p>
+            )}
+            {!previewIframeSrc ? (
+              <p
+                className="p-3 text-xs leading-relaxed"
+                style={{ color: "var(--text-secondary)" }}
+              >
+                Pornește <strong>Preview</strong> din bara de sus (lângă Run). Necesită{" "}
+                <strong>Docker</strong> și un proiect cu <code className="text-[10px]">package.json</code>{" "}
+                (ex. Vite sau Next). Poți folosi <strong>Vite demo</strong> ca să încarci un exemplu React.
+                Previzualizarea se deschide pe un port local al containerului (nu prin același URL ca
+                editorul), ca scripturile Vite să nu încarce greșit aplicația iTECify.
+              </p>
+            ) : (
+              <iframe
+                title="Live preview"
+                className="min-h-0 w-full flex-1 border-0 bg-white"
+                src={previewIframeSrc}
+              />
+            )}
           </div>
         )}
         {tab === "history" && (
