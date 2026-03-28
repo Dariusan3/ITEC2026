@@ -189,7 +189,7 @@ async function runInDocker(code, config, onData, stdin = "", packages = []) {
   const { cmd, network, warning } = buildCmdWithPackages(config, packages);
   if (warning) onData("info", warning);
 
-  const hasStdin = stdin && stdin.trim().length > 0;
+  const hasStdin = !!(stdin && stdin.trim().length > 0);
 
   let container;
   try {

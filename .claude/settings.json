@@ -7,7 +7,16 @@
       "Bash(node -e \"require\\(''''./index.js''''\\)\")",
       "Bash(node -c index.js)",
       "Bash(echo $SHELL)",
-      "Bash(npm ls:*)"
+      "Bash(npm ls:*)",
+      "Bash(node -e \"const pty = require\\(''node-pty''\\); console.log\\(''loaded ok''\\); const p = pty.spawn\\(''/bin/zsh'', [], { name: ''xterm-256color'', cols: 80, rows: 24, cwd: process.env.HOME, env: process.env }\\); p.onData\\(d => { console.log\\(''output:'', d.slice\\(0,20\\)\\); p.kill\\(\\); }\\); setTimeout\\(\\(\\) => { p.kill\\(\\); process.exit\\(0\\); }, 3000\\);\")",
+      "Bash(npm rebuild:*)",
+      "Bash(node -e \"const pty = require\\(''node-pty''\\); const p = pty.spawn\\(''/bin/zsh'', [], { name: ''xterm-256color'', cols: 80, rows: 24, cwd: process.env.HOME, env: process.env }\\); p.onData\\(d => { console.log\\(''ok''\\); p.kill\\(\\); process.exit\\(0\\); }\\); setTimeout\\(\\(\\) => process.exit\\(1\\), 3000\\);\")",
+      "Bash(npm show:*)",
+      "Bash(node -e \"const d=JSON.parse\\(require\\(''''fs''''\\).readFileSync\\(''''/dev/stdin'''',''''utf8''''\\)\\); console.log\\(d.slice\\(-5\\).join\\(''''\\\\n''''\\)\\)\")",
+      "Bash(node -e \"const pty = require\\(''''node-pty''''\\); const p = pty.spawn\\(''''/bin/zsh'''', [], { name: ''''xterm-256color'''', cols: 80, rows: 24, cwd: process.env.HOME, env: process.env }\\); p.onData\\(d => { console.log\\(''''ok''''\\); p.kill\\(\\); process.exit\\(0\\); }\\); setTimeout\\(\\(\\) => process.exit\\(1\\), 3000\\);\")",
+      "Bash(node -p \"process.arch\")",
+      "Bash(chmod +x /Users/osadicidarius/Documents/projects/ITEC2026/server/node_modules/node-pty/prebuilds/darwin-arm64/spawn-helper)",
+      "Bash(node -e \"const pty = require\\(''node-pty''\\); const p = pty.spawn\\(''/bin/zsh'', [], { name: ''xterm-256color'', cols: 80, rows: 24, cwd: process.env.HOME, env: process.env }\\); p.onData\\(d => { console.log\\(''ok''\\); p.kill\\(\\); process.exit\\(0\\); }\\); setTimeout\\(\\(\\) => { console.log\\(''timeout''\\); process.exit\\(1\\); }, 3000\\);\")"
     ]
   }
 }
