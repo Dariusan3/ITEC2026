@@ -29,7 +29,13 @@ export default function TopBar({ settings, onSettingsChange,
   const [copied, setCopied] = useState(false);
   const [gistState, setGistState] = useState("idle");
   const [showSettings, setShowSettings] = useState(false);
-  const { user, login, logout } = useAuth();
+  const [showLogin, setShowLogin] = useState(false);
+  const [showPasswordPanel, setShowPasswordPanel] = useState(false);
+  const [passwordInput, setPasswordInput] = useState("");
+  const [passwordMsg, setPasswordMsg] = useState("");
+  const [showMyRooms, setShowMyRooms] = useState(false);
+  const [myRooms, setMyRooms] = useState([]);
+  const { user, loginGitHub, loginGoogle, logout } = useAuth();
 
   useEffect(() => {
     if (user) {
@@ -107,6 +113,26 @@ export default function TopBar({ settings, onSettingsChange,
     // Store fork payload in sessionStorage for the new tab to pick up
     sessionStorage.setItem(`itecify-fork-${newRoom}`, JSON.stringify(forkedFiles));
     window.open(`${window.location.origin}${window.location.pathname}?fork=${newRoom}#${newRoom}`, "_blank");
+  };
+
+  // Room password — set or clear
+  const handleSetPassword = async () => {
+    const pw = passwordInput.trim();
+    try {
+      const res = await fetch(`/api/room/${roomId}/set-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ password: pw }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) throw new Error(data.error || "Failed");
+      setPasswordMsg(pw ? "Password set!" : "Password removed.");
+      setPasswordInput("");
+      setTimeout(() => { setPasswordMsg(""); setShowPasswordPanel(false); }, 2000);
+    } catch (err) {
+      setPasswordMsg(err.message);
+    }
   };
 
   // P1: ZIP export
@@ -276,27 +302,96 @@ export default function TopBar({ settings, onSettingsChange,
           </button>
         )}
 
+        {/* Room password button (only when logged in) */}
+        {user && (
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setShowPasswordPanel(p => !p)}
+              title="Set room password"
+              className="rounded px-2 py-1 text-xs hover:opacity-70"
+              style={{ color: "var(--text-secondary)", border: "1px solid var(--border)" }}
+            >🔒</button>
+            {showPasswordPanel && (
+              <div
+                className="absolute right-0 top-9 z-50 rounded-lg p-3 shadow-xl"
+                style={{ background: "var(--bg-tertiary)", border: "1px solid var(--border)", width: 220 }}
+              >
+                <p className="text-[10px] font-semibold mb-2" style={{ color: "var(--text-secondary)" }}>
+                  Room password
+                </p>
+                <input
+                  type="password"
+                  value={passwordInput}
+                  onChange={e => setPasswordInput(e.target.value)}
+                  onKeyDown={e => e.key === "Enter" && handleSetPassword()}
+                  placeholder="New password (blank = remove)"
+                  className="w-full rounded px-2 py-1 text-xs outline-none mb-2"
+                  style={{ background: "var(--bg-primary)", color: "var(--text-primary)", border: "1px solid var(--border)" }}
+                />
+                <button
+                  type="button"
+                  onClick={handleSetPassword}
+                  className="w-full rounded px-2 py-1 text-xs font-semibold"
+                  style={{ background: "var(--accent)", color: "var(--bg-primary)" }}
+                >Save</button>
+                {passwordMsg && (
+                  <p className="text-[10px] mt-1.5 text-center" style={{ color: passwordMsg.includes("!") || passwordMsg.includes("removed") ? "var(--green)" : "var(--red)" }}>
+                    {passwordMsg}
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Login/user section */}
         {user === null && (
-          <button
-            type="button"
-            onClick={login}
-            className="rounded px-3 py-1 text-xs font-semibold"
-            style={{
-              background: "var(--bg-tertiary)",
-              color: "var(--text-secondary)",
-              border: "1px solid var(--border)",
-            }}
-          >
-            ⇢ Login with GitHub
-          </button>
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setShowLogin(l => !l)}
+              className="rounded px-3 py-1 text-xs font-semibold"
+              style={{ background: "var(--bg-tertiary)", color: "var(--text-secondary)", border: "1px solid var(--border)" }}
+            >⇢ Login</button>
+            {showLogin && (
+              <div
+                className="absolute right-0 top-9 z-50 rounded-lg p-3 shadow-xl flex flex-col gap-2"
+                style={{ background: "var(--bg-tertiary)", border: "1px solid var(--border)", width: 180 }}
+              >
+                <button
+                  type="button"
+                  onClick={loginGitHub}
+                  className="rounded px-3 py-1.5 text-xs font-semibold text-left"
+                  style={{ background: "var(--bg-primary)", color: "var(--text-primary)", border: "1px solid var(--border)" }}
+                >⌥ GitHub</button>
+                <button
+                  type="button"
+                  onClick={loginGoogle}
+                  className="rounded px-3 py-1.5 text-xs font-semibold text-left"
+                  style={{ background: "var(--bg-primary)", color: "var(--text-primary)", border: "1px solid var(--border)" }}
+                >G Google</button>
+              </div>
+            )}
+          </div>
         )}
         {user && (
-          <div className="flex items-center gap-1.5">
+          <div className="relative flex items-center gap-1.5">
             {user.avatar && (
               <img
                 src={user.avatar}
                 alt={user.name}
-                className="h-6 w-6 rounded-full"
+                className="h-6 w-6 rounded-full cursor-pointer hover:opacity-80"
+                title="My rooms"
+                onClick={() => {
+                  setShowMyRooms(v => !v);
+                  if (!showMyRooms) {
+                    fetch("/api/rooms/mine", { credentials: "include" })
+                      .then(r => r.json())
+                      .then(d => setMyRooms(d.rooms || []))
+                      .catch(() => {});
+                  }
+                }}
               />
             )}
             <span className="text-xs" style={{ color: "var(--text-secondary)" }}>
@@ -307,9 +402,40 @@ export default function TopBar({ settings, onSettingsChange,
               onClick={logout}
               className="rounded px-1.5 py-0.5 text-[10px]"
               style={{ color: "var(--text-secondary)", border: "1px solid var(--border)" }}
-            >
-              out
-            </button>
+            >out</button>
+
+            {/* My Rooms dropdown */}
+            {showMyRooms && (
+              <div
+                className="absolute right-0 top-9 z-50 rounded-lg shadow-xl overflow-hidden"
+                style={{ background: "var(--bg-tertiary)", border: "1px solid var(--border)", width: 240, maxHeight: 320 }}
+              >
+                <div className="px-3 py-2 flex items-center justify-between" style={{ borderBottom: "1px solid var(--border)" }}>
+                  <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-secondary)" }}>
+                    My Rooms
+                  </span>
+                  <button onClick={() => setShowMyRooms(false)} className="text-xs opacity-50 hover:opacity-100" style={{ color: "var(--text-secondary)" }}>✕</button>
+                </div>
+                <div className="overflow-y-auto" style={{ maxHeight: 260 }}>
+                  {myRooms.length === 0 ? (
+                    <p className="text-xs px-3 py-4 text-center" style={{ color: "var(--text-secondary)" }}>No rooms yet</p>
+                  ) : myRooms.map(r => (
+                    <a
+                      key={r.room_id}
+                      href={`${window.location.origin}${window.location.pathname}#${r.room_id}`}
+                      onClick={() => setShowMyRooms(false)}
+                      className="flex items-center justify-between px-3 py-2 hover:opacity-80 text-xs"
+                      style={{ color: "var(--text-primary)", borderBottom: "1px solid var(--border)22", display: "flex" }}
+                    >
+                      <span className="font-mono" style={{ color: "var(--accent)" }}>#{r.room_id}</span>
+                      <span style={{ color: "var(--text-secondary)", fontSize: 10 }}>
+                        {new Date(r.last_seen).toLocaleDateString()}
+                      </span>
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 

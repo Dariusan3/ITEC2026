@@ -198,6 +198,67 @@ async function insertRunHistory({ roomId, userLogin, language, hasError, preview
   if (error) console.error("[DB] insertRunHistory error:", error.message);
 }
 
+// ─── Client-driven save ───────────────────────────────────────────────────────
+// Called from the /api/room/:id/save endpoint with explicit file contents from the client.
+
+async function saveRoomFiles(roomId, entries) {
+  if (!enabled || !entries.length) return;
+  const { error } = await supabase
+    .from("files")
+    .upsert(entries, { onConflict: "room_id,filename" });
+  if (error) console.error(`[DB] saveRoomFiles error for ${roomId}:`, error.message);
+  else {
+    await supabase.from("rooms").update({ last_active: new Date().toISOString() }).eq("id", roomId);
+  }
+}
+
+// ─── Room members ─────────────────────────────────────────────────────────────
+
+async function touchRoomMember(roomId, userId) {
+  if (!enabled || !userId) return;
+  await supabase.from("room_members").upsert(
+    { room_id: roomId, user_id: userId, last_seen: new Date().toISOString() },
+    { onConflict: "room_id,user_id" }
+  );
+}
+
+async function getUserRooms(userId) {
+  if (!enabled) return [];
+  const { data, error } = await supabase
+    .from("room_members")
+    .select("room_id, last_seen, rooms(last_active)")
+    .eq("user_id", userId)
+    .order("last_seen", { ascending: false })
+    .limit(20);
+  if (error) { console.error("[DB] getUserRooms error:", error.message); return []; }
+  return data ?? [];
+}
+
+// ─── Room password ────────────────────────────────────────────────────────────
+
+async function getRoomMeta(roomId) {
+  if (!enabled) return { data: null };
+  const { data, error } = await supabase
+    .from("rooms")
+    .select("id, password_hash")
+    .eq("id", roomId)
+    .maybeSingle();
+  if (error) console.error("[DB] getRoomMeta error:", error.message);
+  return { data };
+}
+
+async function setRoomPassword(roomId, hash) {
+  if (!enabled) return false;
+  // Ensure room row exists first
+  await supabase.from("rooms").upsert({ id: roomId }, { onConflict: "id", ignoreDuplicates: true });
+  const { error } = await supabase
+    .from("rooms")
+    .update({ password_hash: hash })
+    .eq("id", roomId);
+  if (error) { console.error("[DB] setRoomPassword error:", error.message); return false; }
+  return true;
+}
+
 // ─── Status ───────────────────────────────────────────────────────────────────
 
 async function ping() {
@@ -213,7 +274,12 @@ module.exports = {
   loadRoom,
   saveRoom,
   upsertUser,
+  touchRoomMember,
+  getUserRooms,
   insertChatMessage,
   insertRunHistory,
+  saveRoomFiles,
+  getRoomMeta,
+  setRoomPassword,
   ping,
 };

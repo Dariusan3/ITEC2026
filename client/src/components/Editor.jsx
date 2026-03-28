@@ -47,8 +47,6 @@ self.MonacoEnvironment = {
   },
 };
 
-const AI_BLOCK_CLASS = "ai-block-decoration";
-
 const Editor = forwardRef(function Editor(
   { language, activeFile, settings = {}, readOnly = false },
   ref,
@@ -73,6 +71,18 @@ const Editor = forwardRef(function Editor(
     const model = editor.getModel();
     const targetLine = Math.min(block.line, model.getLineCount());
     const lineContent = model.getLineContent(targetLine);
+
+    // Guard: if suggestion is accidentally a JSON string, extract the code
+    let code = block.suggestion ?? "";
+    if (typeof code === "string" && code.trimStart().startsWith("{")) {
+      try {
+        const parsed = JSON.parse(code);
+        if (parsed.suggestion) code = parsed.suggestion;
+      } catch {}
+    }
+    // Strip surrounding markdown fences if present
+    code = code.replace(/^```[\w]*\n?/, "").replace(/\n?```$/, "");
+
     editor.executeEdits("ai-accept", [
       {
         range: {
@@ -81,7 +91,7 @@ const Editor = forwardRef(function Editor(
           endLineNumber: targetLine,
           endColumn: lineContent.length + 1,
         },
-        text: "\n" + block.suggestion,
+        text: "\n" + code,
       },
     ]);
     yAiBlocks.delete(blockId);

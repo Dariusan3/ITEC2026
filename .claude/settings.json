@@ -26,7 +26,8 @@
       "mcp__supabase__list_projects",
       "mcp__supabase__apply_migration",
       "Bash(node -e \"require\\(''express-rate-limit''\\)\")",
-      "Bash(node -e \"require\\(''''jszip''''\\)\")"
+      "Bash(node -e \"require\\(''''jszip''''\\)\")",
+      "Bash(node -e \"require\\(''''bcrypt''''\\)\")"
     ]
   }
 }

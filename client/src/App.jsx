@@ -6,7 +6,8 @@ import Sidebar from './components/Sidebar'
 import OutputPanel from './components/OutputPanel'
 import TimeTravel from './components/TimeTravel'
 import ConnectionBanner from './components/ConnectionBanner'
-import { yFiles, getYText, roomId } from './lib/yjs'
+import { yFiles, getYText, roomId, idbPersistence } from './lib/yjs'
+import { saveRoomNow } from './lib/saveRoom'
 
 // C2: Read-only mode — ?view=1 in URL
 const viewOnly = new URLSearchParams(window.location.search).has('view')
@@ -66,7 +67,48 @@ export default function App() {
   const [packages, setPackages] = useState('')
   const [envVars, setEnvVars] = useState('')
   const [settings, setSettings] = useState(loadSettings)
+  const [idbReady, setIdbReady] = useState(false)
   const editorRef = useRef(null)
+
+  // Wait for IndexedDB to restore persisted content before mounting editor
+  useEffect(() => {
+    idbPersistence.whenSynced.then(() => setIdbReady(true))
+  }, [])
+
+  // Save room on page unload (refresh, close, navigate away)
+  useEffect(() => {
+    const handler = () => saveRoomNow()
+    window.addEventListener('beforeunload', handler)
+    return () => window.removeEventListener('beforeunload', handler)
+  }, [])
+
+  // Room password gate
+  const [passwordRequired, setPasswordRequired] = useState(false)
+  const [passwordInput, setPasswordInput] = useState('')
+  const [passwordError, setPasswordError] = useState('')
+  const [passwordUnlocked, setPasswordUnlocked] = useState(false)
+
+  useEffect(() => {
+    fetch(`/api/room/${roomId}/has-password`, { credentials: 'include' })
+      .then(r => r.json())
+      .then(d => { if (d.hasPassword) setPasswordRequired(true) })
+      .catch(() => {})
+  }, [])
+
+  const handleUnlock = async () => {
+    setPasswordError('')
+    try {
+      const res = await fetch(`/api/room/${roomId}/verify-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ password: passwordInput }),
+      })
+      const data = await res.json()
+      if (data.ok) setPasswordUnlocked(true)
+      else setPasswordError(data.error || 'Wrong password')
+    } catch { setPasswordError('Error checking password') }
+  }
 
   const handleSettingsChange = useCallback((next) => {
     setSettings(next)
@@ -165,6 +207,39 @@ export default function App() {
     }
   }, [activeFile, language])
 
+  // Password gate — show before the full app if room is locked
+  if (passwordRequired && !passwordUnlocked) {
+    return (
+      <div className="flex h-full w-full items-center justify-center" style={{ background: 'var(--bg-primary)' }}>
+        <div className="rounded-xl p-8 w-80 shadow-2xl" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)' }}>
+          <p className="text-lg font-bold mb-1" style={{ color: 'var(--accent)' }}>iTECify</p>
+          <p className="text-xs mb-4" style={{ color: 'var(--text-secondary)' }}>
+            Room <span className="font-mono" style={{ color: 'var(--text-primary)' }}>#{roomId}</span> is password protected.
+          </p>
+          <input
+            type="password"
+            value={passwordInput}
+            onChange={e => setPasswordInput(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && handleUnlock()}
+            placeholder="Enter room password"
+            autoFocus
+            className="w-full rounded px-3 py-2 text-sm outline-none mb-3"
+            style={{ background: 'var(--bg-tertiary)', color: 'var(--text-primary)', border: '1px solid var(--border)' }}
+          />
+          {passwordError && (
+            <p className="text-xs mb-2" style={{ color: 'var(--red)' }}>{passwordError}</p>
+          )}
+          <button
+            type="button"
+            onClick={handleUnlock}
+            className="w-full rounded px-3 py-2 text-sm font-semibold"
+            style={{ background: 'var(--accent)', color: 'var(--bg-primary)' }}
+          >Unlock</button>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="flex flex-col h-full w-full">
       <ConnectionBanner />
@@ -185,7 +260,10 @@ export default function App() {
         <div className="flex flex-col flex-1 overflow-hidden">
           <TimeTravel editorRef={editorRef} />
           <div className="flex-1 overflow-hidden">
-            <Editor ref={editorRef} language={language} activeFile={activeFile} settings={settings} readOnly={viewOnly} />
+            {idbReady
+              ? <Editor ref={editorRef} language={language} activeFile={activeFile} settings={settings} readOnly={viewOnly} />
+              : <div className="flex h-full items-center justify-center text-xs" style={{ color: 'var(--text-secondary)' }}>Loading...</div>
+            }
           </div>
           <OutputPanel
             output={output}

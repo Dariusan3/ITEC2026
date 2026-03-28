@@ -37,13 +37,14 @@ if (process.env.DATABASE_URL) {
 
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
-app.use(session({
+const sessionMiddleware = session({
   store: sessionStore,
   secret: process.env.SESSION_SECRET || "itecify-dev-secret",
   resave: false,
   saveUninitialized: false,
   cookie: { httpOnly: true, maxAge: 7 * 24 * 60 * 60 * 1000 },
-}));
+});
+app.use(sessionMiddleware);
 
 app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", timestamp: Date.now() });
@@ -505,19 +506,21 @@ const GITHUB_CLIENT_SECRET = process.env.GITHUB_CLIENT_SECRET;
 const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || "http://localhost:5173";
 // OAuth callback must be registered in your GitHub OAuth app settings
 
-app.get("/auth/github", (_req, res) => {
+app.get("/auth/github", (req, res) => {
   if (!GITHUB_CLIENT_ID) return res.status(503).send("GitHub OAuth not configured");
   const params = new URLSearchParams({
     client_id: GITHUB_CLIENT_ID,
     scope: "read:user",
     redirect_uri: `${CLIENT_ORIGIN}/auth/github/callback`,
+    state: req.query.room || "",
   });
   res.redirect(`https://github.com/login/oauth/authorize?${params}`);
 });
 
 app.get("/auth/github/callback", async (req, res) => {
-  const { code } = req.query;
-  if (!code) return res.redirect(`${CLIENT_ORIGIN}?auth=error`);
+  const { code, state: roomState } = req.query;
+  const roomHash = roomState ? `#${roomState}` : "";
+  if (!code) return res.redirect(`${CLIENT_ORIGIN}?auth=error${roomHash}`);
 
   try {
     const tokenRes = await fetch("https://github.com/login/oauth/access_token", {
@@ -548,10 +551,10 @@ app.get("/auth/github/callback", async (req, res) => {
     // Persist user to DB (fire-and-forget)
     db.upsertUser({ id: user.id, login: user.login, name: user.name || user.login, avatar: user.avatar_url }).catch(() => {});
 
-    res.redirect(`${CLIENT_ORIGIN}?auth=ok`);
+    res.redirect(`${CLIENT_ORIGIN}?auth=ok${roomHash}`);
   } catch (err) {
     console.error("[OAuth Error]", err.message);
-    res.redirect(`${CLIENT_ORIGIN}?auth=error`);
+    res.redirect(`${CLIENT_ORIGIN}?auth=error${roomHash}`);
   }
 });
 
@@ -561,8 +564,155 @@ app.get("/auth/me", (req, res) => {
   res.json({ user: { id, name, login, avatar } });
 });
 
+// Return rooms the logged-in user has visited
+app.get("/api/rooms/mine", async (req, res) => {
+  if (!req.session.user) return res.json({ rooms: [] });
+  const rooms = await db.getUserRooms(req.session.user.id);
+  res.json({ rooms });
+});
+
 app.post("/auth/logout", (req, res) => {
   req.session.destroy(() => res.json({ ok: true }));
+});
+
+// --- Google OAuth ---
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
+const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
+
+app.get("/auth/google", (req, res) => {
+  if (!GOOGLE_CLIENT_ID) return res.status(503).send("Google OAuth not configured");
+  const params = new URLSearchParams({
+    client_id: GOOGLE_CLIENT_ID,
+    redirect_uri: `${CLIENT_ORIGIN}/auth/google/callback`,
+    response_type: "code",
+    scope: "openid email profile",
+    access_type: "offline",
+    prompt: "select_account",
+    state: req.query.room || "",
+  });
+  res.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params}`);
+});
+
+app.get("/auth/google/callback", async (req, res) => {
+  const { code, state: roomState } = req.query;
+  const roomHash = roomState ? `#${roomState}` : "";
+  if (!code) return res.redirect(`${CLIENT_ORIGIN}?auth=error${roomHash}`);
+
+  try {
+    const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        code,
+        client_id: GOOGLE_CLIENT_ID,
+        client_secret: GOOGLE_CLIENT_SECRET,
+        redirect_uri: `${CLIENT_ORIGIN}/auth/google/callback`,
+        grant_type: "authorization_code",
+      }),
+    });
+    const tokenData = await tokenRes.json();
+    if (!tokenData.access_token) return res.redirect(`${CLIENT_ORIGIN}?auth=error`);
+
+    const userRes = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
+      headers: { Authorization: `Bearer ${tokenData.access_token}` },
+    });
+    const user = await userRes.json();
+
+    // Use a stable numeric ID from Google's sub claim (hashed to fit BIGINT)
+    const stableId = BigInt("0x" + Buffer.from(user.id).toString("hex").slice(0, 15));
+
+    req.session.user = {
+      id: Number(stableId),
+      name: user.name,
+      login: user.email.split("@")[0],
+      avatar: user.picture,
+      provider: "google",
+    };
+
+    db.upsertUser({
+      id: Number(stableId),
+      login: user.email.split("@")[0],
+      name: user.name,
+      avatar: user.picture,
+    }).catch(() => {});
+
+    res.redirect(`${CLIENT_ORIGIN}?auth=ok${roomHash}`);
+  } catch (err) {
+    console.error("[Google OAuth Error]", err.message);
+    res.redirect(`${CLIENT_ORIGIN}?auth=error${roomHash}`);
+  }
+});
+
+// --- Room password ---
+const bcrypt = require("bcrypt");
+
+// Check if a room has a password set
+app.get("/api/room/:roomId/has-password", async (req, res) => {
+  const { roomId } = req.params;
+  if (!db.isEnabled()) return res.json({ hasPassword: false });
+  const { data } = await db.getRoomMeta(roomId);
+  res.json({ hasPassword: !!(data?.password_hash) });
+});
+
+// Verify room password
+app.post("/api/room/:roomId/verify-password", async (req, res) => {
+  const { roomId } = req.params;
+  const { password } = req.body;
+  if (!password) return res.status(400).json({ ok: false, error: "password required" });
+
+  const { data } = await db.getRoomMeta(roomId);
+  if (!data?.password_hash) return res.json({ ok: true }); // no password set
+
+  const match = await bcrypt.compare(password, data.password_hash);
+  if (!match) return res.json({ ok: false, error: "Wrong password" });
+
+  // Store in session so they don't need to re-enter
+  if (!req.session.roomAccess) req.session.roomAccess = {};
+  req.session.roomAccess[roomId] = true;
+  res.json({ ok: true });
+});
+
+// Set or clear room password (must be logged in)
+app.post("/api/room/:roomId/set-password", async (req, res) => {
+  const { roomId } = req.params;
+  const { password } = req.body;
+  if (!req.session.user) return res.status(401).json({ error: "Login required to set room password" });
+
+  const hash = password ? await bcrypt.hash(password, 10) : null;
+  const ok = await db.setRoomPassword(roomId, hash);
+  res.json({ ok });
+});
+
+// --- Explicit room save (called by client on beforeunload / before OAuth) ---
+app.post("/api/room/:roomId/save", async (req, res) => {
+  const { roomId } = req.params;
+  const { files } = req.body; // { filename: { content, language } }
+  if (!files || typeof files !== "object") return res.json({ ok: false });
+
+  try {
+    // Ensure room row exists
+    await db.touchRoom(roomId);
+
+    // Save each file directly via Supabase
+    if (!db.isEnabled()) return res.json({ ok: true, skipped: true });
+
+    const entries = Object.entries(files).map(([filename, { content, language }]) => ({
+      room_id: roomId,
+      filename,
+      language: language || "javascript",
+      content: content || "",
+      updated_at: new Date().toISOString(),
+    }));
+
+    if (entries.length === 0) return res.json({ ok: true });
+
+    // Use the db module's supabase client via a helper
+    await db.saveRoomFiles(roomId, entries);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("[Save] Error:", err.message);
+    res.json({ ok: false, error: err.message });
+  }
 });
 
 // --- GitHub Gist ---
@@ -897,6 +1047,13 @@ function setupConnection(ws, req) {
 
   doc.conns.set(ws, new Set());
 
+  // Record room membership for logged-in users (session is available via cookies on the upgrade request)
+  const roomIdFromDoc = docName.startsWith("itecify-") ? docName.slice("itecify-".length) : docName;
+  const userId = req.session?.user?.id ?? null;
+  if (userId) {
+    db.touchRoomMember(roomIdFromDoc, userId).catch(() => {});
+  }
+
   ws.on("message", (rawMsg) => {
     const message = new Uint8Array(rawMsg);
     const decoder = decoding.createDecoder(message);
@@ -931,9 +1088,9 @@ function setupConnection(ws, req) {
           encoding.writeVarUint(encoder, SYNC_UPDATE);
           encoding.writeVarUint8Array(encoder, update);
           broadcastUpdate(doc, encoding.toUint8Array(encoder), ws);
-          // Debounced DB persist
-          scheduleRoomSave(docName, doc);
         }
+        // Save on both STEP2 (initial full sync) and UPDATE (edits)
+        scheduleRoomSave(docName, doc);
       }
     } else if (msgType === MSG_AWARENESS) {
       const awarenessData = decoding.readVarUint8Array(decoder);
@@ -986,7 +1143,11 @@ wss.on("error", (err) => {
   }
   process.exit(1);
 });
-wss.on("connection", setupConnection);
+// Apply session middleware to WS upgrade so req.session is available in setupConnection
+wss.on("connection", (ws, req) => {
+  const res = { getHeader: () => {}, setHeader: () => {}, end: () => {} };
+  sessionMiddleware(req, res, () => setupConnection(ws, req));
+});
 console.log(
   `[iTECify] Yjs WebSocket server running on ws://localhost:${WS_PORT}`,
 );

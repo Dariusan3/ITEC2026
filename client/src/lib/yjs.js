@@ -1,5 +1,6 @@
 import * as Y from 'yjs'
 import { WebsocketProvider } from 'y-websocket'
+import { IndexeddbPersistence } from 'y-indexeddb'
 
 const COLORS = [
   '#cba6f7', '#f38ba8', '#a6e3a1', '#89b4fa',
@@ -16,20 +17,26 @@ function getRandomName() {
 }
 
 function getOrCreateRoomId() {
-  let roomId = window.location.hash.slice(1)
-  if (!roomId) {
-    roomId = Math.random().toString(36).slice(2, 10)
-    window.location.hash = roomId
+  let id = window.location.hash.slice(1)
+  if (!id) {
+    id = Math.random().toString(36).slice(2, 10)
+    window.location.hash = id
   }
-  return roomId
+  return id
 }
 
 export const roomId = getOrCreateRoomId()
 
-const ydoc = new Y.Doc()
+export const ydoc = new Y.Doc()
 
+// ── Local persistence (IndexedDB) ───────────────────────────────────────────
+// Stores the Yjs doc in browser IndexedDB — survives page reloads, logouts,
+// and OAuth redirects without depending on server save timing.
+export const idbPersistence = new IndexeddbPersistence(`itecify-${roomId}`, ydoc)
+
+// ── WebSocket sync (server) ──────────────────────────────────────────────────
 const yjsPort = import.meta.env.VITE_WS_PORT || '1234'
-const wsProvider = new WebsocketProvider(
+export const wsProvider = new WebsocketProvider(
   `ws://${window.location.hostname}:${yjsPort}`,
   `itecify-${roomId}`,
   ydoc
@@ -41,20 +48,22 @@ const name = getRandomName()
 wsProvider.awareness.setLocalStateField('user', { name, color })
 
 // yFiles: Map of filename -> { language }
-const yFiles = ydoc.getMap('files')
-const yAiBlocks = ydoc.getMap('aiBlocks')
+export const yFiles = ydoc.getMap('files')
+export const yAiBlocks = ydoc.getMap('aiBlocks')
 
 // Get or create a Yjs text for a given filename
-function getYText(filename) {
+export function getYText(filename) {
   return ydoc.getText(`file:${filename}`)
 }
 
-// Seed default file if none exist
-if (yFiles.size === 0) {
-  yFiles.set('main.js', { language: 'javascript' })
-}
+// Seed default file only after IDB has loaded (so we don't overwrite persisted state)
+idbPersistence.whenSynced.then(() => {
+  if (yFiles.size === 0) {
+    yFiles.set('main.js', { language: 'javascript' })
+  }
+})
 
 // Legacy export
 const ytext = getYText('main.js')
 
-export { ydoc, wsProvider, ytext, yFiles, yAiBlocks, getYText, color, name }
+export { ytext, color, name }
