@@ -28,7 +28,8 @@
       "Bash(node -e \"require\\(''express-rate-limit''\\)\")",
       "Bash(node -e \"require\\(''''jszip''''\\)\")",
       "Bash(node -e \"require\\(''''bcrypt''''\\)\")",
-      "Bash(node -e \"const Y = require\\(''yjs''\\); console.log\\(''yjs ok''\\)\")"
+      "Bash(node -e \"const Y = require\\(''yjs''\\); console.log\\(''yjs ok''\\)\")",
+      "Bash(git pull:*)"
     ]
   }
 }

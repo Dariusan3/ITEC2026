@@ -8,6 +8,7 @@ import TimeTravel from './components/TimeTravel'
 import ConnectionBanner from './components/ConnectionBanner'
 import { yFiles, getYText, roomId, idbPersistence, wsProvider } from './lib/yjs'
 import { saveRoomNow } from './lib/saveRoom'
+import { SERVER_URL } from './lib/config'
 
 // C2: Read-only mode — ?view=1 in URL
 const viewOnly = new URLSearchParams(window.location.search).has('view')
@@ -110,7 +111,7 @@ export default function App() {
   const [passwordUnlocked, setPasswordUnlocked] = useState(false)
 
   useEffect(() => {
-    fetch(`/api/room/${roomId}/has-password`, { credentials: 'include' })
+    fetch(`${SERVER_URL}/api/room/${roomId}/has-password`, { credentials: 'include' })
       .then(r => r.json())
       .then(d => { if (d.hasPassword) setPasswordRequired(true) })
       .catch(() => {})
@@ -119,7 +120,7 @@ export default function App() {
   const handleUnlock = async () => {
     setPasswordError('')
     try {
-      const res = await fetch(`/api/room/${roomId}/verify-password`, {
+      const res = await fetch(`${SERVER_URL}/api/room/${roomId}/verify-password`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -170,7 +171,7 @@ export default function App() {
     setOutput([{ type: 'info', text: `▶ Running ${activeFile}...` }])
 
     try {
-      const res = await fetch('/api/run', {
+      const res = await fetch(`${SERVER_URL}/api/run`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

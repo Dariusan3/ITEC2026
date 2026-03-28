@@ -277,40 +277,65 @@ export default function OutputPanel({
                 No runs yet.
               </p>
             ) : (
-              history.map((entry, i) => (
-                <div
-                  key={i}
-                  className="rounded border px-2 py-1.5 cursor-pointer hover:opacity-80"
-                  style={{
-                    borderColor: "var(--border)",
-                    background: "var(--bg-tertiary)",
-                  }}
-                  onClick={() => {
-                    setHistoryOpen(i === historyOpen ? null : i);
-                    setTab("output");
-                  }}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <span
-                      className="text-[10px] font-mono truncate"
-                      style={{
-                        color: entry.hasError
-                          ? "var(--red)"
-                          : "var(--text-primary)",
-                      }}
+              history.map((entry, i) => {
+                const expanded = historyOpen === i;
+                return (
+                  <div
+                    key={i}
+                    className="rounded border"
+                    style={{
+                      borderColor: expanded ? "var(--accent)" : "var(--border)",
+                      background: "var(--bg-tertiary)",
+                    }}
+                  >
+                    <div
+                      className="flex items-center justify-between gap-2 px-2 py-1.5 cursor-pointer hover:opacity-80"
+                      onClick={() => setHistoryOpen(expanded ? null : i)}
                     >
-                      {entry.hasError ? "✗ " : "✓ "}
-                      {entry.preview}
-                    </span>
-                    <span
-                      className="text-[9px] shrink-0"
-                      style={{ color: "var(--text-secondary)" }}
-                    >
-                      {new Date(entry.ts).toLocaleTimeString()}
-                    </span>
+                      <span
+                        className="text-[10px] font-mono truncate"
+                        style={{
+                          color: entry.hasError ? "var(--red)" : "var(--text-primary)",
+                        }}
+                      >
+                        {entry.hasError ? "✗ " : "✓ "}
+                        {entry.preview}
+                      </span>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-[9px]" style={{ color: "var(--text-secondary)" }}>
+                          {new Date(entry.ts).toLocaleTimeString()}
+                        </span>
+                        <span className="text-[9px]" style={{ color: "var(--text-secondary)" }}>
+                          {expanded ? "▲" : "▼"}
+                        </span>
+                      </div>
+                    </div>
+                    {expanded && (
+                      <div
+                        className="max-h-36 overflow-auto px-2 pb-2 font-mono text-[10px] whitespace-pre-wrap border-t"
+                        style={{ borderColor: "var(--border)" }}
+                      >
+                        {entry.lines.map((line, j) => (
+                          <div
+                            key={j}
+                            style={{
+                              color:
+                                line.type === "stderr"
+                                  ? "var(--red)"
+                                  : line.type === "info"
+                                    ? "var(--text-secondary)"
+                                    : "var(--text-primary)",
+                              fontStyle: line.type === "info" ? "italic" : "normal",
+                            }}
+                          >
+                            {line.text}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         )}

@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { yAiBlocks, getYText, yFiles, wsProvider } from "../lib/yjs";
+import { SERVER_URL } from "../lib/config";
 import Chat from "./Chat";
 
 // ─── helpers ────────────────────────────────────────────────────────────────
@@ -414,7 +415,7 @@ export default function Sidebar({ editorRef, activeFile, language, output }) {
     setLoading(true);
     try {
       const code = activeFile ? getYText(activeFile).toString() : "";
-      const res = await fetch("/api/ai/suggest", {
+      const res = await fetch(`${SERVER_URL}/api/ai/suggest`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -452,7 +453,7 @@ export default function Sidebar({ editorRef, activeFile, language, output }) {
             ?.getModel()
             ?.getValueInRange(editor.getSelection());
           if (!selection?.trim()) throw new Error("Select some code first.");
-          const res = await fetch("/api/ai/explain", {
+          const res = await fetch(`${SERVER_URL}/api/ai/explain`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ selection, language }),
@@ -467,6 +468,7 @@ export default function Sidebar({ editorRef, activeFile, language, output }) {
               "Nu am găsit erori în ultimul run. Rulează din nou cu stderr sau mesaj de compilare în panoul Output.",
             );
           const code = activeFile ? getYText(activeFile).toString() : "";
+          const res = await fetch(`${SERVER_URL}/api/ai/fix`, {
           const hintLine = extractErrorLineHint(errorBlob);
           const res = await fetch("/api/ai/fix", {
             method: "POST",
@@ -495,7 +497,7 @@ export default function Sidebar({ editorRef, activeFile, language, output }) {
         } else if (action === "tests") {
           if (!activeFile) throw new Error("No active file.");
           const code = getYText(activeFile).toString();
-          const res = await fetch("/api/ai/tests", {
+          const res = await fetch(`${SERVER_URL}/api/ai/tests`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ code, language }),

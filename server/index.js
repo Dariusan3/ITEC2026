@@ -10,7 +10,7 @@ const { WebSocketServer, WebSocket } = require("ws");
 const { encoding, decoding } = require("lib0");
 
 const PORT = process.env.PORT || 3001;
-const WS_PORT = process.env.WS_PORT || 1234;
+const IS_PROD = process.env.NODE_ENV === 'production';
 
 // --- Database (Supabase) ---
 const db = require("./db");
@@ -37,14 +37,20 @@ if (process.env.DATABASE_URL) {
   );
 }
 
-app.use(cors({ origin: true, credentials: true }));
+const allowedOrigin = process.env.CLIENT_ORIGIN || 'http://localhost:5173';
+app.use(cors({ origin: IS_PROD ? allowedOrigin : true, credentials: true }));
 app.use(express.json());
 const sessionMiddleware = session({
   store: sessionStore,
   secret: process.env.SESSION_SECRET || "itecify-dev-secret",
   resave: false,
   saveUninitialized: false,
-  cookie: { httpOnly: true, maxAge: 7 * 24 * 60 * 60 * 1000 },
+  cookie: {
+    httpOnly: true,
+    maxAge: 7 * 24 * 60 * 60 * 1000,
+    secure: IS_PROD,
+    sameSite: IS_PROD ? 'none' : 'lax',
+  },
 });
 app.use(sessionMiddleware);
 
@@ -1158,18 +1164,7 @@ function getOrCreatePty() {
   }
 }
 
-const TERM_WS_PORT = Number(process.env.TERM_WS_PORT) || 1235;
-const termWss = new WebSocketServer({ port: TERM_WS_PORT });
-termWss.on("error", (err) => {
-  if (err.code === "EADDRINUSE") {
-    console.error(
-      `[iTECify] Port ${TERM_WS_PORT} already in use (terminal WS). Stop the other \`npm run dev\` or change TERM_WS_PORT / VITE_TERM_WS_PORT in .env.`,
-    );
-  } else {
-    console.error("[iTECify] Terminal WebSocket error:", err.message);
-  }
-  process.exit(1);
-});
+const termWss = new WebSocketServer({ noServer: true });
 
 termWss.on("connection", (ws) => {
   termClients.add(ws);
@@ -1207,13 +1202,11 @@ termWss.on("connection", (ws) => {
   });
 });
 
-console.log(
-  `[iTECify] Shared terminal WebSocket on ws://localhost:${TERM_WS_PORT}`,
-);
-
 const apiServer = http.createServer(app);
 apiServer.listen(PORT, () => {
-  console.log(`[iTECify] API server running on http://localhost:${PORT}`);
+  console.log(`[iTECify] Server running on http://localhost:${PORT}`);
+  console.log(`[iTECify] Yjs WS  → ws://localhost:${PORT}/yjs`);
+  console.log(`[iTECify] Term WS → ws://localhost:${PORT}/term`);
 });
 
 // --- Yjs WebSocket collaboration server ---
@@ -1494,22 +1487,25 @@ function setupConnection(ws, req) {
   }
 }
 
-const wss = new WebSocketServer({ port: WS_PORT });
-wss.on("error", (err) => {
-  if (err.code === "EADDRINUSE") {
-    console.error(
-      `[iTECify] Port ${WS_PORT} already in use (Yjs WS). Stop the other \`npm run dev\` or change WS_PORT / VITE_WS_PORT in .env.`,
-    );
+const wss = new WebSocketServer({ noServer: true });
+
+// Unified WebSocket upgrade handler — routes /yjs/* and /term on the single HTTP port.
+// This allows Railway (and any single-port host) to serve both WS connections.
+apiServer.on("upgrade", (req, socket, head) => {
+  const pathname = req.url.split("?")[0];
+  const fakeRes = { getHeader: () => {}, setHeader: () => {}, end: () => {} };
+
+  if (pathname.startsWith("/yjs")) {
+    // Strip /yjs prefix so setupConnection sees the room name (e.g. /itecify-abc123)
+    req.url = req.url.slice("/yjs".length) || "/";
+    sessionMiddleware(req, fakeRes, () => {
+      wss.handleUpgrade(req, socket, head, (ws) => setupConnection(ws, req));
+    });
+  } else if (pathname.startsWith("/term")) {
+    termWss.handleUpgrade(req, socket, head, (ws) => {
+      termWss.emit("connection", ws, req);
+    });
   } else {
-    console.error("[iTECify] Yjs WebSocket error:", err.message);
+    socket.destroy();
   }
-  process.exit(1);
 });
-// Apply session middleware to WS upgrade so req.session is available in setupConnection
-wss.on("connection", (ws, req) => {
-  const res = { getHeader: () => {}, setHeader: () => {}, end: () => {} };
-  sessionMiddleware(req, res, () => setupConnection(ws, req));
-});
-console.log(
-  `[iTECify] Yjs WebSocket server running on ws://localhost:${WS_PORT}`,
-);
