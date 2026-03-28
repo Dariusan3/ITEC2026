@@ -37,8 +37,38 @@ function isSafeRelPath(p) {
   if (p.startsWith("/") || p.includes("..")) return false;
   const norm = path.posix.normalize(p.replace(/\\/g, "/"));
   if (norm.startsWith("..") || norm.includes("../")) return false;
-  if (norm.split("/").some((seg) => PROTECTED_SEGMENTS.has(seg))) return false;
+  /** Case-insensitive: pe Windows + bind mount Docker, „Node_modules” ca fișier blochează npm (ENOTDIR). */
+  if (
+    norm
+      .split("/")
+      .some((seg) => seg.length > 0 && PROTECTED_SEGMENTS.has(seg.toLowerCase()))
+  ) {
+    return false;
+  }
   return true;
+}
+
+/**
+ * Elimină fișierele (sau symlink-urile) numite ca `node_modules` — npm cere un director.
+ * Bind mount de pe Windows poate plia „Node_modules” cu „node_modules”.
+ */
+function removeNodeModulesPathConflicts(workspaceDir) {
+  try {
+    const entries = fs.readdirSync(workspaceDir, { withFileTypes: true });
+    for (const ent of entries) {
+      if (ent.name.toLowerCase() !== "node_modules") continue;
+      const abs = path.join(workspaceDir, ent.name);
+      try {
+        const st = fs.lstatSync(abs);
+        if (st.isDirectory()) continue;
+        fs.unlinkSync(abs);
+      } catch {
+        /* ignore */
+      }
+    }
+  } catch {
+    /* ignore */
+  }
 }
 
 function inferDevSetup(packageJsonText) {
@@ -49,27 +79,28 @@ function inferDevSetup(packageJsonText) {
     throw new Error("Invalid package.json");
   }
   const dev = String(p.scripts?.dev || "");
+  const preNpm = "rm -rf node_modules";
   if (/next\s/.test(dev)) {
     return {
       internalPort: 3000,
-      shellCmd: `set -e; cd /workspace && ${NPM_INSTALL} && npx next dev -H 0.0.0.0 -p 3000`,
+      shellCmd: `set -e; cd /workspace && ${preNpm} && ${NPM_INSTALL} && npx next dev -H 0.0.0.0 -p 3000`,
     };
   }
   if (/vite/.test(dev)) {
     return {
       internalPort: 5173,
-      shellCmd: `set -e; cd /workspace && ${NPM_INSTALL} && npm run dev -- --host 0.0.0.0 --port 5173`,
+      shellCmd: `set -e; cd /workspace && ${preNpm} && ${NPM_INSTALL} && npm run dev -- --host 0.0.0.0 --port 5173`,
     };
   }
   if (/webpack|vue-cli-service/.test(dev)) {
     return {
       internalPort: 8080,
-      shellCmd: `set -e; cd /workspace && ${NPM_INSTALL} && HOST=0.0.0.0 npm run dev`,
+      shellCmd: `set -e; cd /workspace && ${preNpm} && ${NPM_INSTALL} && HOST=0.0.0.0 npm run dev`,
     };
   }
   return {
     internalPort: 5173,
-    shellCmd: `set -e; cd /workspace && ${NPM_INSTALL} && npm run dev -- --host 0.0.0.0 --port 5173`,
+    shellCmd: `set -e; cd /workspace && ${preNpm} && ${NPM_INSTALL} && npm run dev -- --host 0.0.0.0 --port 5173`,
   };
 }
 
@@ -176,6 +207,132 @@ function waitForHttpPort(port, timeoutMs = PREVIEW_READY_MS) {
   });
 }
 
+/**
+ * Așteaptă HTTP pe port SAU respinge imediat dacă containerul moare/dispare
+ * (evită „loading” 9 min când npm install / dev server cade pe loc).
+ */
+async function waitForPreviewHttpOrContainerDeath(
+  docker,
+  containerId,
+  hostPort,
+  timeoutMs,
+) {
+  let intervalId = null;
+  const deathWatch = new Promise((_, reject) => {
+    const tick = async () => {
+      try {
+        const inspect = await docker.getContainer(containerId).inspect();
+        if (!inspect.State?.Running) {
+          if (intervalId) clearInterval(intervalId);
+          const code = inspect.State?.ExitCode;
+          let tail = "";
+          try {
+            const buf = await docker.getContainer(containerId).logs({
+              stdout: true,
+              stderr: true,
+              tail: 120,
+            });
+            tail = Buffer.isBuffer(buf) ? buf.toString("utf8") : String(buf);
+          } catch {
+            /* ignore */
+          }
+          const snippet = tail.trim()
+            ? `\n--- log container ---\n${tail.replace(/\r/g, "").slice(-3000)}`
+            : "";
+          reject(
+            new Error(
+              `Preview: containerul s-a oprit înainte să răspundă serverul de dev (exit ${code ?? "?"}).${snippet}`,
+            ),
+          );
+          return;
+        }
+      } catch (e) {
+        const msg = e.message || String(e);
+        const gone =
+          e.statusCode === 404 ||
+          /no such container/i.test(msg) ||
+          (/not found/i.test(msg) && /container/i.test(msg));
+        if (gone) {
+          if (intervalId) clearInterval(intervalId);
+          reject(
+            new Error(
+              "Preview: containerul Docker nu mai există (oprit sau șters). Repornește Docker Desktop și încearcă din nou.",
+            ),
+          );
+        }
+      }
+    };
+    intervalId = setInterval(tick, 2000);
+    setTimeout(tick, 800);
+  });
+
+  try {
+    await Promise.race([
+      waitForHttpPort(hostPort, timeoutMs),
+      deathWatch,
+    ]);
+  } finally {
+    if (intervalId) clearInterval(intervalId);
+  }
+}
+
+/**
+ * Docker Desktop poate întârzia popularea NetworkSettings.Ports după start (0–câteva secunde).
+ * Fără polling, apare „Could not read host port” deși containerul e sănătos.
+ */
+async function waitForPublishedHostPort(
+  docker,
+  containerId,
+  internalPort,
+  { maxWaitMs = 20000, intervalMs = 200 } = {},
+) {
+  const key = `${String(internalPort)}/tcp`;
+  const deadline = Date.now() + maxWaitMs;
+
+  while (Date.now() < deadline) {
+    let inspect;
+    try {
+      inspect = await docker.getContainer(containerId).inspect();
+    } catch (e) {
+      await new Promise((r) => setTimeout(r, intervalMs));
+      continue;
+    }
+
+    if (!inspect.State?.Running) {
+      await logPreviewContainerTail(
+        docker,
+        containerId,
+        "container oprit înainte de mapare port",
+      );
+      const code = inspect.State?.ExitCode;
+      throw new Error(
+        `Preview: containerul s-a oprit imediat după start (exit ${code ?? "?"}). Vezi logurile de mai sus în consolă.`,
+      );
+    }
+
+    const ports = inspect.NetworkSettings?.Ports || {};
+    const list = ports[key];
+    const hostPort = list?.[0]?.HostPort;
+    if (hostPort && String(hostPort).length > 0) {
+      const n = parseInt(hostPort, 10);
+      if (Number.isFinite(n) && n > 0) return n;
+    }
+
+    await new Promise((r) => setTimeout(r, intervalMs));
+  }
+
+  await logPreviewContainerTail(
+    docker,
+    containerId,
+    "mapare port inexistentă după timeout",
+  );
+  throw new Error(
+    "Preview: Docker nu a publicat portul pe host după ce containerul a pornit. " +
+      "Încearcă: repornește Docker Desktop, asigură-te că „Expose daemon” / WSL2 integration e activ, sau actualizează Docker. " +
+      "Dacă folosești VPN sau firewall, permite traficul către Docker.",
+  );
+}
+
 async function logPreviewContainerTail(docker, containerId, label) {
   if (!containerId || !docker) return;
   try {
@@ -221,6 +378,17 @@ async function startPreview(roomId, files, docker, platformSpec, options = {}) {
     throw new Error("package.json is required for preview");
   }
 
+  try {
+    const meta = JSON.parse(pkg);
+    console.log(
+      `[Preview] ${safe}: ${Object.keys(files).length} paths, package.name=${meta.name ?? "?"}`,
+    );
+  } catch {
+    console.log(
+      `[Preview] ${safe}: ${Object.keys(files).length} paths (package.json invalid?)`,
+    );
+  }
+
   const { internalPort, shellCmd } = inferDevSetup(pkg);
   const existing = previewSessions.get(safe);
 
@@ -230,8 +398,10 @@ async function startPreview(roomId, files, docker, platformSpec, options = {}) {
       existing.packageJsonSnapshot === pkg &&
       existing.internalPort === internalPort;
     if (running && sameProject) {
+      removeNodeModulesPathConflicts(existing.workspaceDir);
       const written = writeWorkspaceFiles(existing.workspaceDir, files);
       if (written === 0) throw new Error("No valid files to write");
+      removeNodeModulesPathConflicts(existing.workspaceDir);
       const newKeys = Object.keys(files).filter(isSafeRelPath);
       pruneRemovedFiles(
         existing.workspaceDir,
@@ -253,8 +423,10 @@ async function startPreview(roomId, files, docker, platformSpec, options = {}) {
   const workspaceDir = path.join(os.tmpdir(), `itecify-preview-${safe}`);
   fs.mkdirSync(workspaceDir, { recursive: true });
 
+  removeNodeModulesPathConflicts(workspaceDir);
   const written = writeWorkspaceFiles(workspaceDir, files);
   if (written === 0) throw new Error("No valid files to write");
+  removeNodeModulesPathConflicts(workspaceDir);
 
   await ensureImage(docker, "node:20-slim", platformSpec);
 
@@ -280,16 +452,19 @@ async function startPreview(roomId, files, docker, platformSpec, options = {}) {
   });
 
   await container.start();
-  const inspect = await container.inspect();
-  const binding =
-    inspect.NetworkSettings?.Ports?.[`${containerPortStr}/tcp`]?.[0]?.HostPort;
-  if (!binding) {
+  const startedInspect = await container.inspect();
+  const containerId = startedInspect.Id;
+  let hostPort;
+  try {
+    hostPort = await waitForPublishedHostPort(
+      docker,
+      containerId,
+      internalPort,
+    );
+  } catch (e) {
     await stopPreview(safe, docker);
-    throw new Error("Could not read host port for preview");
+    throw e;
   }
-
-  const hostPort = parseInt(binding, 10);
-  const containerId = inspect.Id;
   const fileKeysSnapshot = Object.keys(files).filter(isSafeRelPath);
   previewSessions.set(safe, {
     containerId,
@@ -302,7 +477,12 @@ async function startPreview(roomId, files, docker, platformSpec, options = {}) {
   });
 
   try {
-    await waitForHttpPort(hostPort, PREVIEW_READY_MS);
+    await waitForPreviewHttpOrContainerDeath(
+      docker,
+      containerId,
+      hostPort,
+      PREVIEW_READY_MS,
+    );
   } catch (e) {
     await logPreviewContainerTail(docker, containerId, "timeout / eroare ready");
     await stopPreview(safe, docker);

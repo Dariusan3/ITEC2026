@@ -18,8 +18,11 @@ import {
 } from "./lib/yjs";
 import { saveRoomNow } from "./lib/saveRoom";
 import { SERVER_URL } from "./lib/config";
-import { mergeVitePreviewTemplate } from "./lib/vitePreviewTemplate";
 import { SANDBOX_RUN_LANGUAGES } from "./lib/sandboxLanguages";
+import {
+  mergeVitePreviewTemplate,
+  VITE_PREVIEW_TEMPLATE_PATHS,
+} from "./lib/vitePreviewTemplate";
 
 // C2: Read-only mode — ?view=1 in URL
 const viewOnly = new URLSearchParams(window.location.search).has("view");
@@ -98,6 +101,8 @@ export default function App() {
   const [editorReady, setEditorReady] = useState(false);
   const [diffTargetFile, setDiffTargetFile] = useState(null);
   const editorRef = useRef(null);
+  /** După Vite demo, următorul Preview trebuie să oprească containerul vechi (ex. monorepo concurrently). */
+  const previewForceAfterViteDemoRef = useRef(false);
 
   const revealEditorLocation = useCallback((line, column = 1) => {
     requestAnimationFrame(() => {
@@ -342,24 +347,34 @@ export default function App() {
       setPreviewBusy(true);
       try {
         const files = collectWorkspaceFiles();
+        const forceAfterDemo = previewForceAfterViteDemoRef.current;
+        const force = !!opts.force || forceAfterDemo;
         const res = await fetch("/api/preview/start", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ roomId, files, force: !!opts.force }),
+          body: JSON.stringify({ roomId, files, force }),
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || "Preview failed");
-        // Iframe pe portul Docker: căile absolute Vite trebuie să rămână pe același host:port ca dev serverul din container.
+        if (forceAfterDemo) previewForceAfterViteDemoRef.current = false;
+        // IMPORTANT: nu folosi /api/preview/proxy ca src al iframe-ului. HTML-ul Vite are <script src="/src/main.jsx">;
+        // pe același origin cu editorul (localhost:5173) acel URL încarcă main.jsx-ul iTECify (LandingPage), nu Docker.
+        // Iframe pe host:port Docker (același hostname ca pagina) — Vite rezolvă căile absolute pe dev serverul din container.
         const port = Number(data.hostPort);
         if (Number.isFinite(port) && port > 0) {
           const host = window.location.hostname || "localhost";
           setPreviewIframeSrc(`http://${host}:${port}/`);
-        } else if (data.proxyPath) {
-          setPreviewIframeSrc(`${data.proxyPath}/`);
+        } else if (data.proxyPath && typeof data.proxyPath === "string") {
+          const base = data.proxyPath.replace(/\/$/, "");
+          setPreviewIframeSrc(`${base}/`);
         } else {
           throw new Error("Preview: răspuns invalid de la server");
         }
-        if (data.mode === "sync") {
+        if (forceAfterDemo) {
+          setPreviewNotice(
+            "Preview repornit complet după Vite demo — container Docker nou, doar proiectul minimal (pagina „iTECify live preview”).",
+          );
+        } else if (data.mode === "sync") {
           setPreviewNotice(
             "Sincronizat în container — Vite/HMR reîncarcă de obicei automat. Ține Shift+Preview pentru repornire completă (ex. după schimbări în dependencies).",
           );
@@ -395,7 +410,19 @@ export default function App() {
   }, [roomId]);
 
   const handleViteDemo = useCallback(() => {
+    const keys = [...yFiles.keys()];
+    const hasOther = keys.some((k) => !VITE_PREVIEW_TEMPLATE_PATHS.has(k));
+    if (
+      hasOther &&
+      !window.confirm(
+        "Înlocuiești tot conținutul camerei cu exemplul Vite minimal (pagina „iTECify live preview”)?\n\n" +
+          "Fișierele actuale (inclusiv monorepo client/server) dispar din această cameră pentru colaboratori.",
+      )
+    ) {
+      return;
+    }
     mergeVitePreviewTemplate(yFiles, getYText);
+    previewForceAfterViteDemoRef.current = true;
     setActiveFile("src/App.jsx");
     setLanguage("javascript");
   }, []);
@@ -414,8 +441,7 @@ export default function App() {
         { type: "info", text: `▶ Run nu se aplică la „${language}”.` },
         {
           type: "stderr",
-          text:
-            "Sandbox-ul rulează un singur fișier (JS/TS/Python/Rust/Go/Java/C). Pentru HTML/CSS/JSON sau proiecte Vite/React, folosește butonul Preview (Docker).",
+          text: "Sandbox-ul rulează un singur fișier (JS/TS/Python/Rust/Go/Java/C). Pentru HTML/CSS/JSON sau proiecte Vite/React, folosește butonul Preview (Docker).",
         },
       ]);
       return;

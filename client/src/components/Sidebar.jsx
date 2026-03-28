@@ -497,7 +497,6 @@ export default function Sidebar({ editorRef, activeFile, language, output, onFil
   const [prompt, setPrompt] = useState("");
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [showPromptTools, setShowPromptTools] = useState(false);
   const [users, setUsers] = useState([]);
   const scrollRef = useRef(null);
   const textareaRef = useRef(null);
@@ -513,17 +512,6 @@ export default function Sidebar({ editorRef, activeFile, language, output, onFil
       behavior: "smooth",
     });
   }, [messages, loading]);
-
-  useEffect(() => {
-    if (!showPromptTools) return;
-    const onDoc = (e) => {
-      if (!e.target.closest?.("[data-ai-prompt-tools]")) {
-        setShowPromptTools(false);
-      }
-    };
-    document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
-  }, [showPromptTools]);
 
   // Presence
   useEffect(() => {
@@ -752,27 +740,6 @@ export default function Sidebar({ editorRef, activeFile, language, output, onFil
     { id: "chat", label: "Chat" },
   ];
 
-  const promptActions = [
-    {
-      id: "explain",
-      label: "Explain selection",
-      description: "Understand highlighted code",
-      onClick: () => handleQuick("explain"),
-    },
-    {
-      id: "fix",
-      label: "Fix last error",
-      description: "Use the latest stderr output",
-      onClick: () => handleQuick("fix"),
-    },
-    {
-      id: "tests",
-      label: "Generate tests",
-      description: "Create a test file",
-      onClick: () => handleQuick("tests"),
-    },
-  ];
-
   return (
     <div
       className="panel-shell flex h-full w-72 flex-col border-l"
@@ -920,77 +887,6 @@ export default function Sidebar({ editorRef, activeFile, language, output, onFil
                   "linear-gradient(180deg, color-mix(in srgb, var(--bg-tertiary) 92%, white 8%) 0%, color-mix(in srgb, var(--bg-primary) 72%, var(--bg-tertiary)) 100%)",
               }}
             >
-              <div
-                className="flex items-center justify-between border-b px-3.5 py-3"
-                style={{ borderColor: "color-mix(in srgb, var(--border) 86%, transparent)" }}
-              >
-                <div className="flex items-center gap-2.5">
-                  <span
-                    className="flex h-8 w-8 items-center justify-center rounded-2xl"
-                    style={{
-                      background: "color-mix(in srgb, var(--accent) 14%, var(--bg-secondary))",
-                      color: "var(--accent)",
-                    }}
-                  >
-                    <AiGlyph className="h-4 w-4" />
-                  </span>
-                  <div>
-                    <p className="text-[12px] font-semibold" style={{ color: "var(--text-primary)" }}>
-                      AI Composer
-                    </p>
-                    <p className="text-[9px] uppercase tracking-[0.18em]" style={{ color: "var(--text-secondary)" }}>
-                      Smart prompt actions
-                    </p>
-                  </div>
-                </div>
-
-                <div className="relative" data-ai-prompt-tools>
-                  <button
-                    type="button"
-                    onClick={() => setShowPromptTools((v) => !v)}
-                    className="liquid-surface inline-flex items-center gap-1.5 rounded-2xl border px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] shadow-[0_10px_18px_rgba(0,0,0,0.08)] transition-all duration-150 hover:-translate-y-px hover:brightness-110"
-                    style={{
-                      background: showPromptTools
-                        ? "color-mix(in srgb, var(--accent) 12%, var(--bg-tertiary))"
-                        : "var(--bg-tertiary)",
-                      color: showPromptTools ? "var(--accent)" : "var(--text-secondary)",
-                      borderColor: showPromptTools
-                        ? "color-mix(in srgb, var(--accent) 22%, var(--border))"
-                        : "var(--border)",
-                    }}
-                  >
-                    <span>AI Tools</span>
-                    <span className={`transition-transform duration-150 ${showPromptTools ? "rotate-45" : ""}`}>+</span>
-                  </button>
-
-                  {showPromptTools && (
-                    <div className="floating-panel absolute right-0 top-[calc(100%+10px)] z-20 w-56 p-2">
-                      <div className="space-y-1">
-                        {promptActions.map((action) => (
-                          <button
-                            key={action.id}
-                            type="button"
-                            onClick={() => {
-                              setShowPromptTools(false);
-                              action.onClick();
-                            }}
-                            className="w-full rounded-2xl px-3 py-2.5 text-left transition-all duration-150 hover:-translate-y-px hover:brightness-110"
-                            style={{
-                              background: "var(--bg-tertiary)",
-                              color: "var(--text-primary)",
-                            }}
-                          >
-                            <span className="block text-[11px] font-semibold">{action.label}</span>
-                            <span className="block text-[9px] uppercase tracking-[0.14em]" style={{ color: "var(--text-secondary)" }}>
-                              {action.description}
-                            </span>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
               <textarea
                 ref={textareaRef}
                 value={prompt}
