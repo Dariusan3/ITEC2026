@@ -80,17 +80,24 @@ app.post("/api/ai/suggest", async (req, res) => {
       ],
     });
 
-    const text = chatCompletion.choices[0].message.content.trim();
+    const raw = chatCompletion.choices[0].message.content.trim();
+    // Strip markdown code fences if the model wrapped the JSON
+    const stripped = raw.replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "").trim();
     let parsed;
     try {
-      parsed = JSON.parse(text);
+      parsed = JSON.parse(stripped);
     } catch {
-      parsed = { suggestion: text, explanation: "AI suggestion" };
+      parsed = { suggestion: stripped, explanation: "AI suggestion" };
+    }
+    // Guard against double-encoded suggestion (JSON string inside JSON string)
+    let suggestion = parsed.suggestion ?? stripped;
+    if (typeof suggestion === "string" && suggestion.trim().startsWith("{")) {
+      try { const inner = JSON.parse(suggestion); suggestion = inner.suggestion ?? suggestion; } catch {}
     }
 
     res.json({
       id: `block_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-      suggestion: parsed.suggestion,
+      suggestion,
       explanation: parsed.explanation || "AI suggestion",
     });
   } catch (err) {
