@@ -201,10 +201,23 @@ function formatLockTime(value) {
   });
 }
 
+function getFirstWorkspaceFile() {
+  const first = [...yFiles.keys()][0] || null;
+  return {
+    file: first,
+    language: first ? yFiles.get(first)?.language || "javascript" : "javascript",
+  };
+}
+
 export default function App() {
-  const [activeFile, setActiveFile] = useState("main.js");
-  const [language, setLanguage] = useState("javascript");
-  const [openTabs, setOpenTabs] = useState(["main.js"]);
+  const [activeFile, setActiveFile] = useState(() => getFirstWorkspaceFile().file);
+  const [language, setLanguage] = useState(
+    () => getFirstWorkspaceFile().language,
+  );
+  const [openTabs, setOpenTabs] = useState(() => {
+    const initial = getFirstWorkspaceFile().file;
+    return initial ? [initial] : [];
+  });
   const [running, setRunning] = useState(false);
   const [output, setOutput] = useState(null);
   const [stdin, setStdin] = useState("");
@@ -607,17 +620,30 @@ export default function App() {
     [revealEditorLocation],
   );
 
-  // Seed initial file selection from Yjs on first load
+  // Keep the current tab selection aligned with the actual workspace files.
   useEffect(() => {
-    if (!yFiles.has(activeFile)) {
-      const first = [...yFiles.keys()][0];
-      if (first) {
-        const meta = yFiles.get(first);
-        setActiveFile(first);
-        setLanguage(meta?.language || "javascript");
-      }
-    }
-  }, []);
+    const syncSelection = () => {
+      const first = [...yFiles.keys()][0] || null;
+      const nextActive =
+        activeFile && yFiles.has(activeFile) ? activeFile : first;
+      const nextLanguage = nextActive
+        ? yFiles.get(nextActive)?.language || "javascript"
+        : "javascript";
+
+      setOpenTabs((prev) => {
+        const visible = prev.filter((filename) => yFiles.has(filename));
+        if (visible.length > 0) return visible;
+        return first ? [first] : [];
+      });
+
+      setActiveFile(nextActive);
+      setLanguage(nextLanguage);
+    };
+
+    yFiles.observe(syncSelection);
+    syncSelection();
+    return () => yFiles.unobserve(syncSelection);
+  }, [activeFile]);
 
   useEffect(() => {
     if (!diffTargetFile) return;

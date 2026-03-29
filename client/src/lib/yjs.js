@@ -73,7 +73,4 @@ idbPersistence.whenSynced.then(async () => {
   }
 })
 
-// Legacy export
-const ytext = getYText('main.js')
-
-export { ytext, color, name }
+export { color, name }
