@@ -12,12 +12,14 @@ import SettingsPanel from "./SettingsPanel";
 import {
   ArchiveIcon,
   ChevronDownIcon,
+  EyeIcon,
   ForkIcon,
   LockIcon,
   LoginIcon,
   PlayIcon,
   SettingsIcon,
   ShareIcon,
+  SparkIcon,
   CloseIcon,
 } from "./ui/Icons";
 
@@ -178,7 +180,7 @@ function LanguageDropdown({ language, onLanguageChange }) {
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
         aria-haspopup="listbox"
-        className="min-w-38 justify-between gap-2 sm:min-w-42"
+        className="min-w-32 justify-between gap-2 sm:min-w-36"
         style={{
           background: open
             ? "color-mix(in srgb, var(--accent) 12%, var(--bg-tertiary))"
@@ -334,6 +336,10 @@ export default function TopBar({
   onPreview,
   previewBusy = false,
   onViteDemo,
+  onFullstackDemo,
+  onOpenWorkspaceSearch,
+  roomNodeVersion = "20",
+  onRoomNodeVersionChange,
   roomRole = "member",
   onRoleChange,
   teacherBroadcast = "",
@@ -370,6 +376,8 @@ export default function TopBar({
   const [showPasswordPanel, setShowPasswordPanel] = useState(false);
   const [passwordInput, setPasswordInput] = useState("");
   const [passwordMsg, setPasswordMsg] = useState("");
+  const [showLocalRooms, setShowLocalRooms] = useState(false);
+  const [localRooms, setLocalRooms] = useState(() => loadLocalHistory());
   const [showMyRooms, setShowMyRooms] = useState(false);
   const [myRooms, setMyRooms] = useState([]);
   const [interviewTitle, setInterviewTitle] = useState("");
@@ -948,15 +956,15 @@ export default function TopBar({
 
   return (
     <div
-      className="panel-shell flex h-14 w-full min-w-0 items-center justify-between gap-3 border-b px-3.5 sm:gap-4 sm:px-5"
+      className="panel-shell relative z-40 flex min-h-14 w-full min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-2 overflow-visible border-b px-3.5 py-3 sm:gap-x-4 sm:px-5"
       style={{ borderColor: "var(--border)" }}
     >
       <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
         <BrandMark />
       </div>
 
-      <div className="flex min-w-0 shrink-0 flex-wrap items-center justify-end gap-2 sm:gap-2.5">
-        <div className="flex items-center gap-1.5 sm:gap-2">
+      <div className="flex w-full min-w-0 flex-wrap items-center gap-2 border-t pt-2 sm:gap-2.5">
+        <div className="flex min-w-0 flex-wrap items-center gap-1.5 sm:gap-2">
           <LanguageDropdown
             language={language}
             onLanguageChange={onLanguageChange}
@@ -1044,12 +1052,7 @@ export default function TopBar({
           )}
         </div>
 
-        <Divider />
-
-        <OnlineUsers wsProvider={wsProvider} />
-        <Divider />
-
-        <div className="flex max-w-[100vw] flex-wrap items-center gap-1.5 sm:gap-2">
+        <div className="order-2 flex w-full min-w-0 flex-wrap items-center gap-1.5 border-t pt-2 sm:gap-2">
           <div className="relative">
             <Btn
               onClick={() => {
@@ -1747,9 +1750,7 @@ export default function TopBar({
           </div>
         </div>
 
-        <Divider />
-
-        <div className="flex items-center gap-1.5 sm:gap-2">
+        <div className="order-1 ml-auto flex items-center gap-1.5 sm:gap-2">
           {user && (
             <div className="relative">
               <Btn
@@ -1862,7 +1863,7 @@ export default function TopBar({
           )}
 
           {user && (
-            <div className="relative flex max-w-[11rem] items-center gap-1.5 sm:max-w-[13rem]">
+            <div className="relative flex max-w-[8.5rem] items-center gap-1.5 sm:max-w-[10rem]">
               {user.avatar && (
                 <img
                   src={user.avatar}
@@ -1998,9 +1999,7 @@ export default function TopBar({
           </div>
         </div>
 
-        <Divider />
-
-        <div className="flex min-w-0 items-center -space-x-2">
+        <div className="order-1 flex min-w-0 items-center -space-x-2">
           {users.map((u) => (
             <button
               type="button"

@@ -115,6 +115,7 @@ export default function App() {
   const [packages, setPackages] = useState("");
   const [envVars, setEnvVars] = useState("");
   const [settings, setSettings] = useState(loadSettings);
+  const [clockTick, setClockTick] = useState(0);
   const [editorReady, setEditorReady] = useState(false);
   const [diffTargetFile, setDiffTargetFile] = useState(null);
   const [roomRole, setRoomRole] = useState("member");
@@ -125,6 +126,12 @@ export default function App() {
     broadcast: "",
     teacherName: "",
   });
+  const [roomNodeVersion, setRoomNodeVersion] = useState("20");
+  const [workspaceSearchOpen, setWorkspaceSearchOpen] = useState(false);
+  const [confirmDlg, setConfirmDlg] = useState(null);
+  const [showOnboarding, setShowOnboarding] = useState(
+    () => !hasCompletedOnboarding(),
+  );
   const editorRef = useRef(null);
   /** După Vite demo, următorul Preview trebuie să oprească containerul vechi (ex. monorepo concurrently). */
   const previewForceAfterViteDemoRef = useRef(false);
@@ -230,6 +237,7 @@ export default function App() {
   const [previewBusy, setPreviewBusy] = useState(false);
   const [previewError, setPreviewError] = useState(null);
   const [previewNotice, setPreviewNotice] = useState(null);
+  const [previewSyncInfo, setPreviewSyncInfo] = useState(null);
   const [previewFocus, setPreviewFocus] = useState(0);
 
   // Mount editor only after BOTH IDB and WS initial sync complete.
@@ -909,6 +917,10 @@ export default function App() {
         onPreview={viewOnly ? null : handlePreviewStart}
         previewBusy={previewBusy}
         onViteDemo={viewOnly ? null : handleViteDemo}
+        onFullstackDemo={viewOnly ? null : handleFullstackDemo}
+        onOpenWorkspaceSearch={() => setWorkspaceSearchOpen(true)}
+        roomNodeVersion={roomNodeVersion}
+        onRoomNodeVersionChange={(e) => setRoomNodeVersion(e.target.value)}
         roomRole={roomRole}
         onRoleChange={handleRoleChange}
         teacherBroadcast={teacherBroadcast}
