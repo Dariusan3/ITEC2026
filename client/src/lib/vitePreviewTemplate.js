@@ -33,6 +33,9 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [react()],
+  server: {
+    watch: { usePolling: true, interval: 300 },
+  },
 })
 `,
 
@@ -69,7 +72,10 @@ export default function App() {
   return (
     <div style={{ fontFamily: 'system-ui', padding: '2rem', color: '#111' }}>
       <h1>iTECify live preview</h1>
-      <p>Edit <code>src/App.jsx</code> and click Preview again to rebuild.</p>
+      <p>
+        Editează <code>src/App.jsx</code> — cu Preview activ, fișierele se sincronizează spre container (HMR).
+        Altfel apasă din nou Preview.
+      </p>
       <button type="button" onClick={() => setN((x) => x + 1)}>
         Count: {n}
       </button>
@@ -80,6 +86,17 @@ export default function App() {
 
   "src/index.css": `body { margin: 0; background: #f4f4f5; }
 button { margin-top: 1rem; padding: 0.5rem 1rem; cursor: pointer; }
+`,
+
+  "README.md": `# Proiect Vite + React (iTECify)
+
+## Comenzi
+- \`npm run dev\` — dev server (în Preview Docker: pornit automat)
+- \`npm run build\` — build producție
+- \`npm run preview\` — servește build-ul
+
+## În editor
+Folosește **Preview** cu Docker; ține **Shift+Preview** după schimbări în dependencies sau \`package.json\`.
 `,
 };
 
@@ -108,7 +125,8 @@ export function mergeVitePreviewTemplate(yFiles, getYText) {
       if (fname.endsWith(".json")) return { language: "json" };
       if (fname.endsWith(".css")) return { language: "css" };
       if (fname.endsWith(".html")) return { language: "html" };
-      if (fname.endsWith(".jsx")) return { language: "javascript" };
+      if (fname.endsWith(".md")) return { language: "markdown" };
+      if (fname.endsWith(".jsx")) return { language: "react-jsx" };
       return { language: "javascript" };
     };
     for (const [fname, content] of Object.entries(

@@ -155,7 +155,7 @@ export default function LandingPage() {
             )}
             {user && (
               <div className="flex items-center gap-2">
-                {user.avatar && <img src={user.avatar} alt="" className="h-7 w-7 rounded-full border object-cover" style={{ borderColor: 'var(--border)' }} />}
+                {user.avatar && <img src={user.avatar} alt="" className="h-7 w-7 rounded-none border object-cover" style={{ borderColor: 'var(--border)' }} />}
                 <span className="hidden sm:inline text-xs" style={{ color: 'var(--text-secondary)' }}>{user.name || user.login}</span>
                 <button type="button" onClick={handleLogout}
                   className="border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide hover:brightness-110 transition-all"
@@ -178,9 +178,9 @@ export default function LandingPage() {
           }}
         >
           {/* Ambient glows */}
-          <div className="pointer-events-none absolute -top-40 -left-40 w-125 h-125 rounded-full"
+          <div className="pointer-events-none absolute -top-40 -left-40 w-125 h-125 rounded-none"
             style={{ background: 'radial-gradient(circle, rgba(203,166,247,0.10) 0%, transparent 65%)' }} />
-          <div className="pointer-events-none absolute bottom-0 right-0 w-80 h-80 rounded-full"
+          <div className="pointer-events-none absolute bottom-0 right-0 w-80 h-80 rounded-none"
             style={{ background: 'radial-gradient(circle, rgba(137,180,250,0.07) 0%, transparent 65%)' }} />
 
           <div className="relative w-full max-w-7xl mx-auto grid lg:grid-cols-[55%_45%] gap-12 xl:gap-16 items-center py-16 lg:py-24">
@@ -484,9 +484,9 @@ function CodeMockup() {
         className="flex items-center gap-2 px-4 py-2.5 border-b"
         style={{ background: '#11111b', borderColor: 'rgba(203,166,247,0.1)' }}
       >
-        <span className="w-3 h-3 rounded-full" style={{ background: '#f38ba8' }} />
-        <span className="w-3 h-3 rounded-full" style={{ background: '#f9e2af' }} />
-        <span className="w-3 h-3 rounded-full" style={{ background: '#a6e3a1' }} />
+        <span className="w-3 h-3 rounded-none" style={{ background: '#f38ba8' }} />
+        <span className="w-3 h-3 rounded-none" style={{ background: '#f9e2af' }} />
+        <span className="w-3 h-3 rounded-none" style={{ background: '#a6e3a1' }} />
         <span className="ml-3 text-[11px]" style={{ color: 'rgba(205,214,244,0.4)' }}>
           collaborate.js
         </span>
@@ -494,7 +494,7 @@ function CodeMockup() {
           {[['YO', '#cba6f7'], ['AL', '#89b4fa'], ['SA', '#a6e3a1']].map(([init, bg]) => (
             <div
               key={init}
-              className="w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-black border"
+              className="w-5 h-5 rounded-none flex items-center justify-center text-[8px] font-black border"
               style={{ background: bg, color: '#1e1e2e', borderColor: '#11111b' }}
               title={init}
             >

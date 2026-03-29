@@ -3,6 +3,11 @@ import * as monaco from "monaco-editor";
 import { yAiBlocks, getYText, yFiles, wsProvider } from "../lib/yjs";
 import { SERVER_URL } from "../lib/config";
 import Chat from "./Chat";
+import ProjectDocs from "./ProjectDocs";
+import {
+  applyImportToWorkspace,
+  guessLanguageFromPath,
+} from "../lib/importProject";
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -12,6 +17,25 @@ function getCursorLine(editorRef) {
 }
 
 /** Extrage un număr de linie din ieșirea compilatorului / runtime (pentru Fix AI). */
+/** Primul fișier util de deschis după scaffold. */
+function pickScaffoldEntryPath(fileKeys) {
+  const keys = [...fileKeys];
+  const prefer = [
+    "index.html",
+    "src/App.jsx",
+    "App.jsx",
+    "src/main.jsx",
+    "main.jsx",
+    "main.js",
+    "package.json",
+  ];
+  for (const p of prefer) {
+    if (keys.includes(p)) return p;
+  }
+  keys.sort((a, b) => a.localeCompare(b));
+  return keys[0] || null;
+}
+
 function extractErrorLineHint(text) {
   if (!text) return null;
   const patterns = [
@@ -61,74 +85,6 @@ function parseSegments(text) {
   return parts;
 }
 
-function buildOutline(code, language) {
-  if (!code?.trim()) return [];
-
-  const patternsByLanguage = {
-    javascript: [
-      /^\s*(?:export\s+)?(?:async\s+)?function\s+([A-Za-z0-9_$]+)/,
-      /^\s*(?:export\s+)?const\s+([A-Za-z0-9_$]+)\s*=\s*(?:async\s*)?\(/,
-      /^\s*(?:export\s+)?class\s+([A-Za-z0-9_$]+)/,
-    ],
-    typescript: [
-      /^\s*(?:export\s+)?(?:async\s+)?function\s+([A-Za-z0-9_$]+)/,
-      /^\s*(?:export\s+)?const\s+([A-Za-z0-9_$]+)\s*=\s*(?:async\s*)?\(/,
-      /^\s*(?:export\s+)?class\s+([A-Za-z0-9_$]+)/,
-      /^\s*(?:export\s+)?interface\s+([A-Za-z0-9_$]+)/,
-      /^\s*(?:export\s+)?type\s+([A-Za-z0-9_$]+)/,
-    ],
-    python: [
-      /^\s*def\s+([A-Za-z0-9_]+)/,
-      /^\s*class\s+([A-Za-z0-9_]+)/,
-    ],
-    go: [
-      /^\s*func\s+([A-Za-z0-9_]+)/,
-      /^\s*type\s+([A-Za-z0-9_]+)/,
-    ],
-    java: [
-      /^\s*(?:public|private|protected)?\s*(?:static\s+)?(?:class|interface|enum)\s+([A-Za-z0-9_]+)/,
-      /^\s*(?:public|private|protected)?\s*(?:static\s+)?[\w<>\[\]]+\s+([A-Za-z0-9_]+)\s*\(/,
-    ],
-    c: [
-      /^\s*[A-Za-z_][\w\s\*]*\s+([A-Za-z_]\w*)\s*\([^;]*\)\s*\{/,
-      /^\s*struct\s+([A-Za-z_]\w*)/,
-    ],
-    rust: [
-      /^\s*fn\s+([A-Za-z0-9_]+)/,
-      /^\s*struct\s+([A-Za-z0-9_]+)/,
-      /^\s*enum\s+([A-Za-z0-9_]+)/,
-      /^\s*impl\s+([A-Za-z0-9_]+)/,
-    ],
-    html: [
-      /^\s*<([a-zA-Z][\w-]*)\b/,
-    ],
-    css: [
-      /^\s*([.#]?[A-Za-z0-9_-][^{]*)\s*\{/,
-    ],
-  };
-
-  const patterns = patternsByLanguage[language] || patternsByLanguage.javascript;
-
-  return code
-    .split("\n")
-    .map((lineText, index) => {
-      for (const pattern of patterns) {
-        const match = lineText.match(pattern);
-        if (match?.[1]) {
-          return {
-            id: `${index + 1}-${match[1]}`,
-            name: match[1].trim(),
-            line: index + 1,
-            preview: lineText.trim(),
-          };
-        }
-      }
-      return null;
-    })
-    .filter(Boolean)
-    .slice(0, 80);
-}
-
 const ROLE_META = {
   user: { label: "You", accent: "var(--blue)", bubble: true },
   ai: { label: "AI", accent: "var(--accent)", bubble: false, aiIcon: true },
@@ -170,7 +126,7 @@ function MsgActionBtn({ onClick, title, variant, children }) {
       type="button"
       onClick={onClick}
       title={title}
-      className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border transition-all duration-150 hover:brightness-110 active:scale-[0.92] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent)] focus-visible:ring-offset-1 focus-visible:ring-offset-[var(--bg-secondary)]"
+      className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-none border transition-all duration-150 hover:brightness-110 active:scale-[0.92] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent)] focus-visible:ring-offset-1 focus-visible:ring-offset-[var(--bg-secondary)]"
       style={{
         background: isDanger
           ? "color-mix(in srgb, var(--red) 6%, var(--bg-tertiary))"
@@ -264,12 +220,11 @@ function AiMessage({ msg, onDelete }) {
       <div className="group/msg flex flex-col items-end gap-1">
         <div className="flex max-w-full flex-row-reverse items-start gap-2">
           <div
-            className="soft-card max-w-[82%] rounded-2xl rounded-tr-md px-3 py-2.5"
+            className="soft-card max-w-[82%] rounded-none px-3 py-2.5"
             style={{
               background:
                 "linear-gradient(180deg, color-mix(in srgb, var(--blue) 16%, var(--bg-tertiary)) 0%, color-mix(in srgb, var(--blue) 10%, var(--bg-secondary)) 100%)",
-              borderColor:
-                "color-mix(in srgb, var(--blue) 28%, var(--border))",
+              borderColor: "color-mix(in srgb, var(--blue) 28%, var(--border))",
               boxShadow: "0 14px 26px rgba(0,0,0,0.14)",
             }}
           >
@@ -308,7 +263,7 @@ function AiMessage({ msg, onDelete }) {
       {/* Label + time + actions */}
       <div className="mb-2 flex items-center gap-2">
         <span
-          className="inline-flex h-[24px] items-center gap-1 rounded-xl border pl-1 pr-2 text-[9px] font-bold uppercase tracking-[0.16em] shadow-[0_10px_20px_rgba(0,0,0,0.08)]"
+          className="inline-flex h-[24px] items-center gap-1 rounded-none border pl-1 pr-2 text-[9px] font-bold uppercase tracking-[0.16em] shadow-[0_10px_20px_rgba(0,0,0,0.08)]"
           style={{
             background: `color-mix(in srgb, ${meta.accent} 14%, var(--bg-tertiary))`,
             borderColor: `color-mix(in srgb, ${meta.accent} 22%, var(--border))`,
@@ -317,7 +272,7 @@ function AiMessage({ msg, onDelete }) {
         >
           {meta.aiIcon ? (
             <span
-              className="flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-lg"
+              className="flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-none"
               style={{
                 background: `color-mix(in srgb, ${meta.accent} 20%, var(--bg-primary))`,
                 color: meta.accent,
@@ -354,10 +309,11 @@ function AiMessage({ msg, onDelete }) {
 
       {/* Content */}
       <div
-        className="soft-card rounded-2xl px-3.5 py-3 text-[11px] leading-relaxed"
+        className="soft-card rounded-none px-3.5 py-3 text-[11px] leading-relaxed"
         style={{
           color: "var(--text-primary)",
-          background: "linear-gradient(180deg, color-mix(in srgb, var(--bg-tertiary) 94%, white 6%) 0%, var(--bg-tertiary) 100%)",
+          background:
+            "linear-gradient(180deg, color-mix(in srgb, var(--bg-tertiary) 94%, white 6%) 0%, var(--bg-tertiary) 100%)",
         }}
       >
         {segments.map((seg, i) =>
@@ -368,7 +324,7 @@ function AiMessage({ msg, onDelete }) {
           ) : (
             <div
               key={i}
-              className="my-2 overflow-hidden rounded-xl"
+              className="my-2 overflow-hidden rounded-none"
               style={{
                 background: "var(--bg-primary)",
                 border: "1px solid var(--border)",
@@ -397,7 +353,7 @@ function AiMessage({ msg, onDelete }) {
 
       {msg.blockId && (
         <div
-          className="mt-2 inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-[9px] opacity-80"
+          className="mt-2 inline-flex items-center gap-1.5 rounded-none px-2 py-1 text-[9px] opacity-80"
           style={{ color: "var(--accent)" }}
         >
           <span>↗</span>
@@ -420,7 +376,7 @@ function ThinkingDots() {
         {[0, 1, 2].map((i) => (
           <span
             key={i}
-            className="block h-2 w-2 rounded-full animate-bounce"
+            className="block h-2 w-2 rounded-none animate-bounce"
             style={{
               background: "var(--accent)",
               animationDelay: `${i * 0.15}s`,
@@ -430,7 +386,10 @@ function ThinkingDots() {
         ))}
       </div>
       <div className="min-w-0">
-        <p className="text-[11px] font-semibold" style={{ color: "var(--text-primary)" }}>
+        <p
+          className="text-[11px] font-semibold"
+          style={{ color: "var(--text-primary)" }}
+        >
           AI is thinking
         </p>
         <p className="text-[10px]" style={{ color: "var(--text-secondary)" }}>
@@ -448,9 +407,10 @@ function EmptyState({ eyebrow, title, description, children }) {
       style={{ background: "var(--bg-tertiary)" }}
     >
       <div
-        className="flex h-10 w-10 items-center justify-center rounded-2xl"
+        className="flex h-10 w-10 items-center justify-center rounded-none"
         style={{
-          background: "color-mix(in srgb, var(--accent) 14%, var(--bg-secondary))",
+          background:
+            "color-mix(in srgb, var(--accent) 14%, var(--bg-secondary))",
           color: "var(--accent)",
         }}
       >
@@ -464,7 +424,10 @@ function EmptyState({ eyebrow, title, description, children }) {
           {eyebrow}
         </span>
       )}
-      <p className="text-[12px] font-semibold" style={{ color: "var(--text-primary)" }}>
+      <p
+        className="text-[12px] font-semibold"
+        style={{ color: "var(--text-primary)" }}
+      >
         {title}
       </p>
       <p
@@ -490,9 +453,22 @@ const QUICK_ACTIONS = [
   { key: "fix", icon: "⚡", label: "Fix", title: "Fix errors from last run" },
   { key: "tests", icon: "⬡", label: "Tests", title: "Generate test file" },
   { key: "review", icon: "◌", label: "Review", title: "Review current file" },
+  {
+    key: "scaffold",
+    icon: "▤",
+    label: "Build",
+    title:
+      "Generează mai multe fișiere din textul din casetă (ex: landing page, mini-proiect)",
+  },
 ];
 
-export default function Sidebar({ editorRef, activeFile, language, output, onFileSelect }) {
+export default function Sidebar({
+  editorRef,
+  activeFile,
+  language,
+  output,
+  onOpenWorkspaceFile,
+}) {
   const [tab, setTab] = useState("ai");
   const [prompt, setPrompt] = useState("");
   const [messages, setMessages] = useState([]);
@@ -500,10 +476,6 @@ export default function Sidebar({ editorRef, activeFile, language, output, onFil
   const [users, setUsers] = useState([]);
   const scrollRef = useRef(null);
   const textareaRef = useRef(null);
-  const outline = buildOutline(
-    activeFile ? getYText(activeFile).toString() : "",
-    language,
-  );
 
   // Auto-scroll on new messages
   useEffect(() => {
@@ -555,12 +527,29 @@ export default function Sidebar({ editorRef, activeFile, language, output, onFil
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed");
       addMsg({ role: "ai", content: data.explanation, blockId: data.id });
+
+      const ed = editorRef?.current?.getEditor?.();
+      const sel = ed?.getSelection?.();
+      const hasRange =
+        sel &&
+        (sel.startLineNumber !== sel.endLineNumber ||
+          sel.startColumn !== sel.endColumn);
+      const replaceRange = hasRange
+        ? {
+            startLineNumber: sel.startLineNumber,
+            startColumn: sel.startColumn,
+            endLineNumber: sel.endLineNumber,
+            endColumn: sel.endColumn,
+          }
+        : null;
+
       yAiBlocks.set(data.id, {
         id: data.id,
         suggestion: data.suggestion,
         explanation: data.explanation,
         status: "pending",
         line: getCursorLine(editorRef),
+        replaceRange,
       });
     } catch (err) {
       addMsg({ role: "error", content: err.message });
@@ -701,6 +690,53 @@ export default function Sidebar({ editorRef, activeFile, language, output, onFil
             : "No obvious issues found in the current file.";
 
           addMsg({ role: "review", content: summary });
+        } else if (action === "scaffold") {
+          const userMsg = prompt.trim();
+          if (!userMsg) {
+            throw new Error(
+              "Scrie în casetă ce vrei să construiască AI-ul (ex: landing page React cu Vite), apoi apasă Build.",
+            );
+          }
+          setPrompt("");
+          const res = await fetch(`${SERVER_URL}/api/ai/scaffold`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              prompt: userMsg,
+              language: language || "javascript",
+              workspacePaths: [...yFiles.keys()].slice(0, 120),
+            }),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || "Scaffold failed");
+          const files = data.files;
+          if (!files || typeof files !== "object") {
+            throw new Error("Răspuns invalid.");
+          }
+          const keys = Object.keys(files);
+          if (
+            !window.confirm(
+              `AI va crea sau actualiza ${keys.length} fișier(e) în cameră pentru toți colaboratorii. Continuă?`,
+            )
+          ) {
+            return;
+          }
+          const result = applyImportToWorkspace(
+            yFiles,
+            getYText,
+            files,
+            guessLanguageFromPath,
+          );
+          if (!result.ok) throw new Error(result.error);
+          const list = keys.join(", ");
+          addMsg({
+            role: "ai",
+            content: `**${data.explanation || "Gata."}**\n\nFișiere: ${list}`,
+          });
+          const openPath = pickScaffoldEntryPath(keys);
+          if (openPath && onOpenWorkspaceFile) {
+            onOpenWorkspaceFile(openPath, guessLanguageFromPath(openPath));
+          }
         }
       } catch (err) {
         addMsg({ role: "error", content: err.message });
@@ -708,36 +744,22 @@ export default function Sidebar({ editorRef, activeFile, language, output, onFil
         setLoading(false);
       }
     },
-    [loading, activeFile, language, output, editorRef],
-  );
-
-  const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState(null);
-
-  const runSearch = useCallback(
-    (q) => {
-      if (!q.trim()) { setSearchResults(null); return; }
-      const results = [];
-      yFiles.forEach((meta, filename) => {
-        const content = getYText(filename).toString();
-        const lines = content.split("\n");
-        lines.forEach((lineText, i) => {
-          if (lineText.toLowerCase().includes(q.toLowerCase())) {
-            results.push({ filename, line: i + 1, text: lineText.trim(), lang: meta?.language || "javascript" });
-          }
-        });
-      });
-      setSearchResults(results);
-    },
-    [],
+    [
+      loading,
+      activeFile,
+      language,
+      output,
+      editorRef,
+      prompt,
+      onOpenWorkspaceFile,
+    ],
   );
 
   const TABS = [
     { id: "ai", label: "AI" },
-    { id: "search", label: "Search" },
-    { id: "outline", label: "Outline" },
     { id: "presence", label: "Who's Here" },
     { id: "chat", label: "Chat" },
+    { id: "docs", label: "Ghid" },
   ];
 
   return (
@@ -755,7 +777,7 @@ export default function Sidebar({ editorRef, activeFile, language, output, onFil
             key={t.id}
             type="button"
             onClick={() => setTab(t.id)}
-            className="liquid-surface flex min-h-[2.9rem] flex-1 items-center justify-center rounded-2xl border px-2 py-3 text-[11px] font-semibold uppercase tracking-[0.16em] shadow-[0_12px_24px_rgba(0,0,0,0.14)] transition-all duration-150 hover:-translate-y-px hover:brightness-110 active:scale-[0.95] sm:min-h-12 sm:text-xs"
+            className="liquid-surface flex min-h-[2.9rem] min-w-0 flex-1 items-center justify-center rounded-none border px-1.5 py-3 text-[10px] font-semibold uppercase tracking-[0.12em] shadow-[0_12px_24px_rgba(0,0,0,0.14)] transition-all duration-150 hover:-translate-y-px hover:brightness-110 active:scale-[0.95] sm:min-h-[3rem] sm:px-2 sm:text-[11px]"
             style={{
               background: tab === t.id ? "var(--accent)" : "var(--bg-tertiary)",
               color:
@@ -784,7 +806,7 @@ export default function Sidebar({ editorRef, activeFile, language, output, onFil
                 AI Assistant
               </span>
               <span
-                className="shrink-0 rounded-xl border px-2.5 py-1 font-mono text-[10px] shadow-[0_10px_18px_rgba(0,0,0,0.1)] sm:text-[11px]"
+                className="shrink-0 rounded-none border px-2.5 py-1 font-mono text-[10px] shadow-[0_10px_18px_rgba(0,0,0,0.1)] sm:text-[11px]"
                 style={{
                   background: "var(--bg-tertiary)",
                   borderColor: "var(--border)",
@@ -797,7 +819,7 @@ export default function Sidebar({ editorRef, activeFile, language, output, onFil
             {messages.length > 0 && (
               <button
                 onClick={() => setMessages([])}
-                className="liquid-surface shrink-0 rounded-xl border px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide shadow-[0_10px_18px_rgba(0,0,0,0.1)] transition-all duration-150 hover:-translate-y-px hover:brightness-110 active:scale-[0.93] sm:text-[11px]"
+                className="liquid-surface shrink-0 rounded-none border px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide shadow-[0_10px_18px_rgba(0,0,0,0.1)] transition-all duration-150 hover:-translate-y-px hover:brightness-110 active:scale-[0.93] sm:text-[11px]"
                 style={{
                   background: "var(--bg-tertiary)",
                   color: "var(--text-secondary)",
@@ -831,7 +853,7 @@ export default function Sidebar({ editorRef, activeFile, language, output, onFil
                         setPrompt(hint);
                         textareaRef.current?.focus();
                       }}
-                      className="liquid-surface w-full rounded-xl px-3 py-2.5 text-left text-[11px] font-medium shadow-[0_10px_18px_rgba(0,0,0,0.08)] transition-all duration-150 hover:-translate-y-px hover:brightness-110 active:scale-[0.98]"
+                      className="liquid-surface w-full rounded-none px-3 py-2.5 text-left text-[11px] font-medium shadow-[0_10px_18px_rgba(0,0,0,0.08)] transition-all duration-150 hover:-translate-y-px hover:brightness-110 active:scale-[0.98]"
                       style={{
                         background: "var(--bg-tertiary)",
                         color: "var(--text-secondary)",
@@ -867,7 +889,7 @@ export default function Sidebar({ editorRef, activeFile, language, output, onFil
                   onClick={() => handleQuick(a.key)}
                   disabled={loading}
                   title={a.title}
-                  className="liquid-surface flex min-h-[4.1rem] flex-col items-center justify-center gap-1.5 rounded-[1.15rem] px-2 py-3.5 text-[10px] font-semibold uppercase tracking-[0.14em] shadow-[0_10px_18px_rgba(0,0,0,0.08)] transition-all duration-150 hover:-translate-y-px hover:brightness-110 active:scale-[0.93] disabled:pointer-events-none disabled:opacity-45"
+                  className="liquid-surface flex min-h-[4.1rem] flex-col items-center justify-center gap-1.5 rounded-none px-2 py-3.5 text-[10px] font-semibold uppercase tracking-[0.14em] shadow-[0_10px_18px_rgba(0,0,0,0.08)] transition-all duration-150 hover:-translate-y-px hover:brightness-110 active:scale-[0.93] disabled:pointer-events-none disabled:opacity-45"
                   style={{
                     background: "var(--bg-tertiary)",
                     color: "var(--text-secondary)",
@@ -881,7 +903,7 @@ export default function Sidebar({ editorRef, activeFile, language, output, onFil
             </div>
 
             <div
-              className="soft-card relative overflow-visible rounded-[1.25rem]"
+              className="soft-card relative overflow-visible rounded-none"
               style={{
                 background:
                   "linear-gradient(180deg, color-mix(in srgb, var(--bg-tertiary) 92%, white 8%) 0%, color-mix(in srgb, var(--bg-primary) 72%, var(--bg-tertiary)) 100%)",
@@ -904,9 +926,10 @@ export default function Sidebar({ editorRef, activeFile, language, output, onFil
               />
               <div className="absolute bottom-3 left-3.5 flex items-center gap-2">
                 <span
-                  className="rounded-full px-2 py-1 text-[9px] uppercase tracking-[0.14em]"
+                  className="rounded-none px-2 py-1 text-[9px] uppercase tracking-[0.14em]"
                   style={{
-                    background: "color-mix(in srgb, var(--bg-primary) 72%, var(--border))",
+                    background:
+                      "color-mix(in srgb, var(--bg-primary) 72%, var(--border))",
                     color: "var(--text-secondary)",
                   }}
                 >
@@ -915,9 +938,10 @@ export default function Sidebar({ editorRef, activeFile, language, output, onFil
               </div>
               <div className="absolute bottom-3 right-3 flex items-center gap-2.5">
                 <span
-                  className="rounded-full px-2 py-1 text-[9px] uppercase tracking-[0.14em]"
+                  className="rounded-none px-2 py-1 text-[9px] uppercase tracking-[0.14em]"
                   style={{
-                    background: "color-mix(in srgb, var(--bg-primary) 72%, var(--border))",
+                    background:
+                      "color-mix(in srgb, var(--bg-primary) 72%, var(--border))",
                     color: "var(--text-secondary)",
                   }}
                 >
@@ -927,7 +951,7 @@ export default function Sidebar({ editorRef, activeFile, language, output, onFil
                   type="button"
                   onClick={handleAsk}
                   disabled={loading || !prompt.trim()}
-                  className="liquid-surface rounded-2xl border px-4 py-2.5 text-[10px] font-bold uppercase tracking-[0.16em] shadow-[0_12px_20px_rgba(0,0,0,0.12)] transition-all duration-150 hover:-translate-y-px hover:brightness-110 active:scale-[0.93] disabled:pointer-events-none disabled:opacity-45"
+                  className="liquid-surface rounded-none border px-4 py-2.5 text-[10px] font-bold uppercase tracking-[0.16em] shadow-[0_12px_20px_rgba(0,0,0,0.12)] transition-all duration-150 hover:-translate-y-px hover:brightness-110 active:scale-[0.93] disabled:pointer-events-none disabled:opacity-45"
                   style={{
                     background:
                       prompt.trim() && !loading
@@ -951,176 +975,8 @@ export default function Sidebar({ editorRef, activeFile, language, output, onFil
         </>
       )}
 
-      {/* ── Search tab ── */}
-      {tab === "search" && (
-        <div className="flex min-h-0 flex-1 flex-col">
-          <div
-            className="flex shrink-0 flex-col gap-2 border-b px-3 py-2.5"
-            style={{ borderColor: "var(--border)" }}
-          >
-            <span
-              className="text-[11px] font-bold uppercase tracking-wider"
-              style={{ color: "var(--accent)" }}
-            >
-              Find across files
-            </span>
-            <div className="flex gap-2">
-              <input
-                autoFocus
-                value={searchQuery}
-                onChange={(e) => {
-                  setSearchQuery(e.target.value);
-                  runSearch(e.target.value);
-                }}
-                onKeyDown={(e) => e.key === "Escape" && setSearchQuery("")}
-                placeholder="Search all files…"
-                className="flex-1 rounded-xl border px-3 py-2 text-[11px] font-mono outline-none"
-                style={{
-                  background: "var(--bg-tertiary)",
-                  borderColor: "var(--border)",
-                  color: "var(--text-primary)",
-                }}
-              />
-              {searchQuery && (
-                <button
-                  type="button"
-                  onClick={() => { setSearchQuery(""); setSearchResults(null); }}
-                  className="shrink-0 rounded-xl border px-2.5 text-[11px]"
-                  style={{ background: "var(--bg-tertiary)", borderColor: "var(--border)", color: "var(--text-secondary)" }}
-                >
-                  ✕
-                </button>
-              )}
-            </div>
-            {searchResults !== null && (
-              <p className="text-[9px] uppercase tracking-[0.16em]" style={{ color: "var(--text-secondary)" }}>
-                {searchResults.length} match{searchResults.length !== 1 ? "es" : ""}{searchQuery ? ` for "${searchQuery}"` : ""}
-              </p>
-            )}
-          </div>
-
-          <div className="flex-1 overflow-y-auto p-2 space-y-0.5">
-            {searchResults === null ? (
-              <EmptyState
-                title="Search your workspace"
-                description="Type above to find text across all open files. Results show file, line number and matching content."
-              />
-            ) : searchResults.length === 0 ? (
-              <EmptyState title="No matches" description={`"${searchQuery}" was not found in any file.`} />
-            ) : (
-              searchResults.map((r, i) => (
-                <button
-                  key={i}
-                  type="button"
-                  onClick={() => onFileSelect?.(r.filename, r.lang, { line: r.line })}
-                  className="w-full rounded-xl border px-3 py-2 text-left transition-all duration-150 hover:brightness-110"
-                  style={{ background: "var(--bg-tertiary)", borderColor: "var(--border)" }}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="truncate text-[10px] font-semibold" style={{ color: "var(--accent)" }}>
-                      {r.filename.includes("/") ? r.filename.split("/").pop() : r.filename}
-                    </span>
-                    <span className="shrink-0 text-[9px] tabular-nums" style={{ color: "var(--text-secondary)" }}>
-                      L{r.line}
-                    </span>
-                  </div>
-                  <p className="mt-0.5 truncate font-mono text-[10px]" style={{ color: "var(--text-secondary)" }}>
-                    {r.text.slice(0, 80)}
-                  </p>
-                </button>
-              ))
-            )}
-          </div>
-        </div>
-      )}
-
       {/* ── Chat tab ── */}
       {tab === "chat" && <Chat />}
-
-      {/* ── Outline tab ── */}
-      {tab === "outline" && (
-        <div className="flex min-h-0 flex-1 flex-col">
-          <div
-            className="flex min-h-12 shrink-0 flex-wrap items-center gap-2 border-b px-3 py-2.5 sm:gap-2.5"
-            style={{ borderColor: "var(--border)" }}
-          >
-            <span
-              className="text-[11px] font-bold uppercase tracking-wider sm:text-xs"
-              style={{ color: "var(--accent)" }}
-            >
-              Outline
-            </span>
-            <span
-              className="shrink-0 rounded-none border px-2 py-1 font-mono text-[10px] sm:text-[11px]"
-              style={{
-                background: "var(--bg-tertiary)",
-                borderColor: "var(--border)",
-                color: "var(--text-secondary)",
-              }}
-            >
-              {activeFile || "No file"}
-            </span>
-          </div>
-
-          <div className="flex-1 overflow-y-auto p-3">
-            {outline.length === 0 ? (
-              <p
-                className="text-[11px] leading-relaxed"
-                style={{ color: "var(--text-secondary)" }}
-              >
-                No outline symbols detected for this file yet.
-              </p>
-            ) : (
-              <div className="space-y-1.5">
-                {outline.map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => {
-                      const editor = editorRef?.current?.getEditor?.();
-                      const model = editor?.getModel?.();
-                      if (!editor || !model) return;
-                      const line = Math.max(
-                        1,
-                        Math.min(item.line, model.getLineCount()),
-                      );
-                      editor.revealLineInCenter(line);
-                      editor.setPosition({ lineNumber: line, column: 1 });
-                      editor.focus();
-                    }}
-                    className="w-full rounded-none border px-2.5 py-2 text-left transition-all hover:brightness-110"
-                    style={{
-                      background: "var(--bg-tertiary)",
-                      borderColor: "var(--border)",
-                    }}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span
-                        className="truncate text-[11px] font-semibold"
-                        style={{ color: "var(--text-primary)" }}
-                      >
-                        {item.name}
-                      </span>
-                      <span
-                        className="shrink-0 text-[9px] uppercase tracking-wide"
-                        style={{ color: "var(--accent)" }}
-                      >
-                        L{item.line}
-                      </span>
-                    </div>
-                    <p
-                      className="truncate pt-0.5 text-[10px]"
-                      style={{ color: "var(--text-secondary)" }}
-                    >
-                      {item.preview}
-                    </p>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
 
       {/* ── Who's Here tab ── */}
       {tab === "presence" && (
@@ -1136,7 +992,7 @@ export default function Sidebar({ editorRef, activeFile, language, output, onFil
               Who&apos;s Here
             </span>
             <span
-              className="shrink-0 rounded-xl border px-2.5 py-1 font-mono text-[10px] shadow-[0_10px_18px_rgba(0,0,0,0.1)] sm:text-[11px]"
+              className="shrink-0 rounded-none border px-2.5 py-1 font-mono text-[10px] shadow-[0_10px_18px_rgba(0,0,0,0.1)] sm:text-[11px]"
               style={{
                 background: "var(--bg-tertiary)",
                 borderColor: "var(--border)",
@@ -1158,14 +1014,15 @@ export default function Sidebar({ editorRef, activeFile, language, output, onFil
               {users.map((u) => (
                 <div
                   key={u.clientId}
-                  className="soft-card flex items-center gap-2.5 rounded-2xl px-3 py-2.5"
+                  className="soft-card flex items-center gap-2.5 rounded-none px-3 py-2.5"
                   style={{
                     background: "var(--bg-tertiary)",
-                    borderColor: "color-mix(in srgb, var(--border) 92%, transparent)",
+                    borderColor:
+                      "color-mix(in srgb, var(--border) 92%, transparent)",
                   }}
                 >
                   <div
-                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold"
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-none text-xs font-bold"
                     style={{ background: u.color, color: "#050806" }}
                   >
                     {u.name?.[0]?.toUpperCase()}
@@ -1185,13 +1042,25 @@ export default function Sidebar({ editorRef, activeFile, language, output, onFil
                     </p>
                   </div>
                   <div
-                    className="h-2.5 w-2.5 shrink-0 rounded-full shadow-[0_0_0_4px_rgba(143,247,167,0.12)]"
+                    className="h-2.5 w-2.5 shrink-0 rounded-none shadow-[0_0_0_4px_rgba(143,247,167,0.12)]"
                     style={{ background: "var(--green)" }}
                   />
                 </div>
               ))}
             </div>
           </div>
+        </div>
+      )}
+
+      {tab === "docs" && (
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          <ProjectDocs
+            onOpenInEditor={
+              onOpenWorkspaceFile
+                ? (path, lang) => onOpenWorkspaceFile(path, lang ?? "markdown")
+                : undefined
+            }
+          />
         </div>
       )}
     </div>

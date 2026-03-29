@@ -73,19 +73,27 @@ export default function Chat() {
       style={{ background: "var(--bg-tertiary)" }}
     >
       <div
-        className="flex h-10 w-10 items-center justify-center rounded-2xl text-sm font-bold"
+        className="flex h-10 w-10 items-center justify-center rounded-none text-sm font-bold"
         style={{
-          background: "color-mix(in srgb, var(--accent) 14%, var(--bg-secondary))",
+          background:
+            "color-mix(in srgb, var(--accent) 14%, var(--bg-secondary))",
           color: "var(--accent)",
         }}
       >
         C
       </div>
-      <p className="text-[12px] font-semibold" style={{ color: "var(--text-primary)" }}>
+      <p
+        className="text-[12px] font-semibold"
+        style={{ color: "var(--text-primary)" }}
+      >
         Start the conversation
       </p>
-      <p className="max-w-[18rem] text-[10px] leading-relaxed" style={{ color: "var(--text-secondary)" }}>
-        Messages here are shared live with everyone in the room through Yjs sync.
+      <p
+        className="max-w-[18rem] text-[10px] leading-relaxed"
+        style={{ color: "var(--text-secondary)" }}
+      >
+        Messages here are shared live with everyone in the room through Yjs
+        sync.
       </p>
     </div>
   );
@@ -104,7 +112,7 @@ export default function Chat() {
           Room Chat
         </span>
         <span
-          className="shrink-0 rounded-xl border px-2.5 py-1 font-mono text-[10px] shadow-[0_10px_18px_rgba(0,0,0,0.1)] sm:text-[11px]"
+          className="shrink-0 rounded-none border px-2.5 py-1 font-mono text-[10px] shadow-[0_10px_18px_rgba(0,0,0,0.1)] sm:text-[11px]"
           style={{
             background: "var(--bg-tertiary)",
             borderColor: "var(--border)",
@@ -117,9 +125,7 @@ export default function Chat() {
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto px-3 py-2">
-        {messages.length === 0 && (
-          <EmptyChatState />
-        )}
+        {messages.length === 0 && <EmptyChatState />}
 
         <div className="space-y-3">
           {messages.map((msg) => (
@@ -127,7 +133,7 @@ export default function Chat() {
               {/* Name · Time */}
               <div className="mb-1.5 flex items-center gap-2 pl-0.5">
                 <span
-                  className="inline-block h-2.5 w-2.5 rounded-full"
+                  className="inline-block h-2.5 w-2.5 rounded-none"
                   style={{ background: msg.color }}
                 />
                 <span
@@ -152,13 +158,16 @@ export default function Chat() {
 
               {/* Bubble */}
               <div
-                className="soft-card rounded-2xl px-3.5 py-3 text-[12px] leading-relaxed transition-colors sm:text-[13px]"
+                className="soft-card rounded-none px-3.5 py-3 text-[12px] leading-relaxed transition-colors sm:text-[13px]"
                 style={{
-                  background: "linear-gradient(180deg, color-mix(in srgb, var(--bg-tertiary) 94%, white 6%) 0%, var(--bg-tertiary) 100%)",
-                  borderColor: "color-mix(in srgb, var(--border) 82%, white 18%)",
+                  background:
+                    "linear-gradient(180deg, color-mix(in srgb, var(--bg-tertiary) 94%, white 6%) 0%, var(--bg-tertiary) 100%)",
+                  borderColor:
+                    "color-mix(in srgb, var(--border) 82%, white 18%)",
                   borderLeftWidth: "3px",
                   borderLeftColor: msg.color,
                   color: "var(--text-primary)",
+                  paddingLeft: "0.75rem",
                 }}
               >
                 <p className="whitespace-pre-wrap break-words">{msg.text}</p>
@@ -168,17 +177,20 @@ export default function Chat() {
         </div>
         {typers.length > 0 && (
           <div
-            className="mx-0.5 mt-2 inline-flex items-center gap-2 rounded-full px-2.5 py-1.5 text-[10px]"
+            className="mx-0.5 mt-2 inline-flex items-center gap-2 rounded-none px-2.5 py-1.5 text-[10px]"
             style={{
-              background: "color-mix(in srgb, var(--accent) 10%, var(--bg-tertiary))",
+              background:
+                "color-mix(in srgb, var(--accent) 10%, var(--bg-tertiary))",
               color: "var(--text-secondary)",
             }}
           >
             <span
-              className="block h-2 w-2 rounded-full animate-bounce"
+              className="block h-2 w-2 rounded-none animate-bounce"
               style={{ background: "var(--accent)" }}
             />
-            <span>{typers.join(", ")} {typers.length === 1 ? "is" : "are"} typing...</span>
+            <span>
+              {typers.join(", ")} {typers.length === 1 ? "is" : "are"} typing...
+            </span>
           </div>
         )}
         <div ref={endRef} />
@@ -194,7 +206,7 @@ export default function Chat() {
           onChange={handleInput}
           onKeyDown={(e) => e.key === "Enter" && send()}
           placeholder="Message..."
-          className="soft-card h-full flex-1 rounded-2xl px-3 py-2 text-xs outline-none"
+          className="soft-card h-full flex-1 rounded-none px-3 py-2 text-xs outline-none"
           style={{
             background: "var(--bg-tertiary)",
             color: "var(--text-primary)",
@@ -204,7 +216,7 @@ export default function Chat() {
         <button
           onClick={send}
           disabled={!input.trim()}
-          className="liquid-surface h-full rounded-2xl border px-3.5 py-2 text-[10px] font-bold uppercase tracking-wide shadow-[0_10px_18px_rgba(0,0,0,0.08)] transition-all duration-150 hover:-translate-y-px hover:brightness-110 active:scale-[0.93] disabled:pointer-events-none disabled:opacity-45"
+          className="liquid-surface h-full rounded-none border px-3.5 py-2 text-[10px] font-bold uppercase tracking-wide shadow-[0_10px_18px_rgba(0,0,0,0.08)] transition-all duration-150 hover:-translate-y-px hover:brightness-110 active:scale-[0.93] disabled:pointer-events-none disabled:opacity-45"
           style={{
             background: "var(--accent)",
             borderColor: "var(--accent)",

@@ -12,9 +12,9 @@ const PREVIEW_READY_MS = Math.max(
   parseInt(process.env.PREVIEW_READY_TIMEOUT_MS || "540000", 10) || 540000,
 );
 
-/** npm mai rapid, mai puțin zgomot */
+/** npm mai rapid, mai puțin zgomot — include=dev evită omit devDependencies în medii ciudate */
 const NPM_INSTALL =
-  "npm install --no-audit --no-fund --loglevel warn";
+  "npm install --include=dev --no-audit --no-fund --loglevel warn";
 
 const PROTECTED_SEGMENTS = new Set([
   "node_modules",
@@ -71,6 +71,11 @@ function removeNodeModulesPathConflicts(workspaceDir) {
   }
 }
 
+function sanitizeNodeTag(v) {
+  const s = String(v ?? "20").replace(/[^0-9]/g, "");
+  return { "18": "18", "20": "20", "22": "22" }[s] || "20";
+}
+
 function inferDevSetup(packageJsonText) {
   let p;
   try {
@@ -78,7 +83,9 @@ function inferDevSetup(packageJsonText) {
   } catch {
     throw new Error("Invalid package.json");
   }
-  const dev = String(p.scripts?.dev || "");
+  const scripts = p.scripts || {};
+  const dev = String(scripts.dev || "");
+  const devVite = String(scripts["dev:vite"] || "");
   const preNpm = "rm -rf node_modules";
   if (/next\s/.test(dev)) {
     return {
@@ -86,10 +93,13 @@ function inferDevSetup(packageJsonText) {
       shellCmd: `set -e; cd /workspace && ${preNpm} && ${NPM_INSTALL} && npx next dev -H 0.0.0.0 -p 3000`,
     };
   }
-  if (/vite/.test(dev)) {
+  const hasDevVite = /vite/.test(devVite);
+  if (/vite/.test(dev) || hasDevVite) {
+    /** `npx vite` folosește binarul din node_modules/.bin (evită „vite: not found” din scripturi shell). --yes = non-interactive în Docker. */
+    const runDev = `npx --yes vite --host 0.0.0.0 --port 5173`;
     return {
       internalPort: 5173,
-      shellCmd: `set -e; cd /workspace && ${preNpm} && ${NPM_INSTALL} && npm run dev -- --host 0.0.0.0 --port 5173`,
+      shellCmd: `set -e; cd /workspace && ${preNpm} && ${NPM_INSTALL} && ${runDev}`,
     };
   }
   if (/webpack|vue-cli-service/.test(dev)) {
@@ -366,10 +376,12 @@ async function ensureImage(docker, image, platformSpec) {
 }
 
 /**
- * @param {{ force?: boolean }} [options] force — repornire completă (npm install din nou)
+ * @param {{ force?: boolean, nodeVersion?: string }} [options] force — repornire completă (npm install din nou)
  */
 async function startPreview(roomId, files, docker, platformSpec, options = {}) {
   const force = !!options.force;
+  const nodeTag = sanitizeNodeTag(options.nodeVersion);
+  const nodeImage = `node:${nodeTag}-slim`;
   const safe = sanitizeRoomId(roomId);
   if (!safe) throw new Error("Invalid roomId");
 
@@ -381,11 +393,11 @@ async function startPreview(roomId, files, docker, platformSpec, options = {}) {
   try {
     const meta = JSON.parse(pkg);
     console.log(
-      `[Preview] ${safe}: ${Object.keys(files).length} paths, package.name=${meta.name ?? "?"}`,
+      `[Preview] ${safe}: ${Object.keys(files).length} paths, package.name=${meta.name ?? "?"}, image=${nodeImage}`,
     );
   } catch {
     console.log(
-      `[Preview] ${safe}: ${Object.keys(files).length} paths (package.json invalid?)`,
+      `[Preview] ${safe}: ${Object.keys(files).length} paths (package.json invalid?) image=${nodeImage}`,
     );
   }
 
@@ -396,7 +408,8 @@ async function startPreview(roomId, files, docker, platformSpec, options = {}) {
     const running = await containerIsRunning(docker, existing.containerId);
     const sameProject =
       existing.packageJsonSnapshot === pkg &&
-      existing.internalPort === internalPort;
+      existing.internalPort === internalPort &&
+      (existing.nodeImageTag || "20") === nodeTag;
     if (running && sameProject) {
       removeNodeModulesPathConflicts(existing.workspaceDir);
       const written = writeWorkspaceFiles(existing.workspaceDir, files);
@@ -428,11 +441,11 @@ async function startPreview(roomId, files, docker, platformSpec, options = {}) {
   if (written === 0) throw new Error("No valid files to write");
   removeNodeModulesPathConflicts(workspaceDir);
 
-  await ensureImage(docker, "node:20-slim", platformSpec);
+  await ensureImage(docker, nodeImage, platformSpec);
 
   const containerPortStr = String(internalPort);
   const container = await docker.createContainer({
-    Image: "node:20-slim",
+    Image: nodeImage,
     Platform: platformSpec || undefined,
     WorkingDir: "/workspace",
     Cmd: ["sh", "-c", shellCmd],
@@ -487,6 +500,7 @@ async function startPreview(roomId, files, docker, platformSpec, options = {}) {
     startedAt: Date.now(),
     packageJsonSnapshot: pkg,
     fileKeysSnapshot,
+    nodeImageTag: nodeTag,
   });
 
   try {

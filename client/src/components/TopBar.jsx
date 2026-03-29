@@ -3,18 +3,21 @@ import JSZip from "jszip";
 import { wsProvider, roomId, getYText, yFiles } from "../lib/yjs";
 import { useAuth } from "../lib/auth";
 import { SERVER_URL } from "../lib/config";
+import {
+  loadLocalHistory,
+  setRoomLabel,
+  setRoomStarred,
+} from "../lib/localRoomHistory";
 import SettingsPanel from "./SettingsPanel";
 import {
   ArchiveIcon,
   ChevronDownIcon,
-  EyeIcon,
   ForkIcon,
   LockIcon,
   LoginIcon,
   PlayIcon,
   SettingsIcon,
   ShareIcon,
-  SparkIcon,
   CloseIcon,
 } from "./ui/Icons";
 
@@ -22,6 +25,7 @@ import {
 const LANGUAGES = [
   // ── Web
   { id: "javascript",  label: "JavaScript",  abbr: "JS",  color: "#f9e2af" },
+  { id: "react-jsx",   label: "React (JSX)", abbr: "RC",  color: "#94e2d5" },
   { id: "typescript",  label: "TypeScript",  abbr: "TS",  color: "#89b4fa" },
   { id: "html",        label: "HTML",        abbr: "HT",  color: "#f38ba8" },
   { id: "css",         label: "CSS",         abbr: "CS",  color: "#89dceb" },
@@ -69,7 +73,7 @@ function BrandMark() {
   return (
     <div className="flex shrink-0 items-center gap-3 select-none">
       <div
-        className="flex h-10 w-10 items-center justify-center rounded-2xl border shadow-[0_14px_28px_rgba(0,0,0,0.24)] sm:h-11 sm:w-11"
+        className="flex h-10 w-10 items-center justify-center rounded-none border shadow-[0_14px_28px_rgba(0,0,0,0.24)] sm:h-11 sm:w-11"
         style={{
           background:
             "linear-gradient(135deg, color-mix(in srgb, var(--accent) 88%, white 12%) 0%, color-mix(in srgb, var(--accent) 68%, var(--blue) 32%) 100%)",
@@ -124,7 +128,7 @@ function Btn({
       disabled={disabled}
       title={title}
       className={`inline-flex h-9 shrink-0 select-none items-center justify-center gap-1
-        liquid-surface rounded-xl border px-3 text-[11px] font-semibold uppercase tracking-wide
+        liquid-surface rounded-none border px-3 text-[11px] font-semibold uppercase tracking-wide
         shadow-[0_10px_22px_rgba(0,0,0,0.16)]
         transition-all duration-150 ease-out
         hover:-translate-y-px hover:brightness-110
@@ -145,7 +149,7 @@ function Btn({
 }
 
 const LANG_GROUPS = [
-  { label: "Web",        ids: ["javascript","typescript","html","css","json","yaml","xml","markdown"] },
+  { label: "Web",        ids: ["javascript","react-jsx","typescript","html","css","json","yaml","xml","markdown"] },
   { label: "Systems",    ids: ["c","cpp","rust","go"] },
   { label: "JVM",        ids: ["java","kotlin","scala"] },
   { label: "Scripting",  ids: ["python","ruby","php","lua","shell"] },
@@ -296,7 +300,7 @@ function OnlineUsers({ wsProvider }) {
         <div
           key={u.id}
           title={u.name}
-          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[9px] font-bold"
+          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-none text-[9px] font-bold"
           style={{
             background: u.color,
             color: "#1e1e2e",
@@ -358,7 +362,6 @@ export default function TopBar({
   const [activeInvites, setActiveInvites] = useState([]);
   const [inviteManageAction, setInviteManageAction] = useState("");
   const [copied, setCopied] = useState(false);
-  const [gistState, setGistState] = useState("idle");
   const [showSettings, setShowSettings] = useState(false);
   const [showDiffMenu, setShowDiffMenu] = useState(false);
   const [showInterview, setShowInterview] = useState(false);
@@ -456,27 +459,6 @@ export default function TopBar({
     update();
     return () => awareness.off("change", update);
   }, []);
-
-  const handleGist = async () => {
-    if (gistState === "saving") return;
-    setGistState("saving");
-    try {
-      const content = getYText(filename).toString();
-      const res = await fetch(`${SERVER_URL}/api/gist`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ filename, content }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-      setGistState("done");
-      window.open(data.url, "_blank", "noopener");
-      setTimeout(() => setGistState("idle"), 3000);
-    } catch {
-      setGistState("error");
-      setTimeout(() => setGistState("idle"), 3000);
-    }
-  };
 
   const handleShare = useCallback(() => {
     const url = `${window.location.origin}${window.location.pathname}#${roomId}`;
@@ -982,7 +964,7 @@ export default function TopBar({
 
           {viewOnly && (
             <span
-              className="liquid-surface inline-flex h-10 shrink-0 items-center rounded-xl border px-3 text-[10px] font-semibold uppercase tracking-[0.16em] shadow-[0_10px_22px_rgba(0,0,0,0.14)] sm:px-3.5 sm:text-[11px]"
+              className="liquid-surface inline-flex h-10 shrink-0 items-center rounded-none border px-3 text-[10px] font-semibold uppercase tracking-[0.16em] shadow-[0_10px_22px_rgba(0,0,0,0.14)] sm:px-3.5 sm:text-[11px]"
               style={{
                 background: "var(--bg-tertiary)",
                 color: "var(--text-secondary)",
@@ -1033,6 +1015,33 @@ export default function TopBar({
               Vite demo
             </Btn>
           )}
+          {!viewOnly && onFullstackDemo && (
+            <Btn
+              onClick={onFullstackDemo}
+              title="Vite + React + Express (API pe :3001, proxy /api în Vite). Necesită Docker Preview."
+              style={{
+                background: "var(--bg-tertiary)",
+                color: "var(--text-primary)",
+                borderColor: "var(--border)",
+              }}
+            >
+              API demo
+            </Btn>
+          )}
+          {!viewOnly && onOpenWorkspaceSearch && (
+            <Btn
+              onClick={onOpenWorkspaceSearch}
+              title="Căutare în tot workspace-ul"
+              className="!min-w-[4rem]"
+              style={{
+                background: "var(--bg-tertiary)",
+                color: "var(--text-secondary)",
+                borderColor: "var(--border)",
+              }}
+            >
+              Find
+            </Btn>
+          )}
         </div>
 
         <Divider />
@@ -1041,6 +1050,100 @@ export default function TopBar({
         <Divider />
 
         <div className="flex max-w-[100vw] flex-wrap items-center gap-1.5 sm:gap-2">
+          <div className="relative">
+            <Btn
+              onClick={() => {
+                setLocalRooms(loadLocalHistory());
+                setShowLocalRooms((v) => !v);
+              }}
+              title="Cameră recentă și favorite (local)"
+              style={{
+                background: showLocalRooms ? "var(--accent)" : "var(--bg-tertiary)",
+                borderColor: showLocalRooms ? "var(--accent)" : "var(--border)",
+                color: showLocalRooms ? "var(--bg-primary)" : "var(--text-secondary)",
+              }}
+            >
+              Recent
+            </Btn>
+            {showLocalRooms && (
+              <div
+                className="floating-panel absolute right-0 top-[calc(100%+8px)] z-50 max-h-72 w-64 overflow-hidden"
+                style={{ borderColor: "var(--border)" }}
+              >
+                <div
+                  className="flex items-center justify-between border-b px-2 py-1.5 text-[10px] uppercase"
+                  style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}
+                >
+                  <span>Istoric local</span>
+                  <button
+                    type="button"
+                    className="opacity-60 hover:opacity-100"
+                    onClick={() => setShowLocalRooms(false)}
+                  >
+                    <CloseIcon className="h-3 w-3" />
+                  </button>
+                </div>
+                <div className="max-h-56 overflow-y-auto">
+                  {localRooms.length === 0 ? (
+                    <p className="p-3 text-[11px]" style={{ color: "var(--text-secondary)" }}>
+                      Nicio cameră salvată încă.
+                    </p>
+                  ) : (
+                    localRooms.map((h) => (
+                      <div
+                        key={h.id}
+                        className="flex items-center gap-1 border-b px-2 py-1.5 text-[11px]"
+                        style={{ borderColor: "var(--border)" }}
+                      >
+                        <button
+                          type="button"
+                          className="shrink-0 text-[12px] leading-none"
+                          title="Favorite"
+                          style={{ color: h.star ? "var(--accent)" : "var(--text-secondary)" }}
+                          onClick={() => {
+                            setRoomStarred(h.id, !h.star);
+                            setLocalRooms(loadLocalHistory());
+                          }}
+                        >
+                          {h.star ? "★" : "☆"}
+                        </button>
+                        <a
+                          href={`${window.location.origin}${window.location.pathname}#${h.id}`}
+                          className="min-w-0 flex-1 truncate font-mono hover:underline"
+                          style={{ color: "var(--accent)" }}
+                          onClick={() => setShowLocalRooms(false)}
+                        >
+                          {h.label ? `${h.label} · ` : ""}#{h.id}
+                        </a>
+                      </div>
+                    ))
+                  )}
+                </div>
+                {roomId && (
+                  <div className="border-t px-2 py-2 text-[10px]" style={{ borderColor: "var(--border)" }}>
+                    <input
+                      type="text"
+                      placeholder={`Alias cameră #${roomId}…`}
+                      className="w-full rounded-none border px-2 py-1 font-mono text-[10px] outline-none"
+                      style={{
+                        borderColor: "var(--border)",
+                        background: "var(--bg-tertiary)",
+                        color: "var(--text-primary)",
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key !== "Enter") return;
+                        const v = e.currentTarget.value;
+                        setRoomLabel(roomId, v);
+                        e.currentTarget.value = "";
+                        setLocalRooms(loadLocalHistory());
+                      }}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
           <Btn
             onClick={handleShare}
             style={{
@@ -1642,38 +1745,6 @@ export default function TopBar({
               </div>
             )}
           </div>
-
-          <Btn
-            onClick={handleGist}
-            disabled={gistState === "saving"}
-            style={{
-              background:
-                gistState === "done"
-                  ? "var(--green)"
-                  : gistState === "error"
-                    ? "var(--red)"
-                    : "var(--bg-tertiary)",
-              borderColor:
-                gistState === "done"
-                  ? "var(--green)"
-                  : gistState === "error"
-                    ? "var(--red)"
-                    : "var(--border)",
-              color:
-                gistState === "done" || gistState === "error"
-                  ? "var(--bg-primary)"
-                  : "var(--text-secondary)",
-            }}
-          >
-            <SparkIcon className="h-3.5 w-3.5" />
-            {gistState === "saving"
-              ? "…"
-              : gistState === "done"
-                ? "Gist ✓"
-                : gistState === "error"
-                  ? "Err"
-                  : "Gist"}
-          </Btn>
         </div>
 
         <Divider />
@@ -1796,7 +1867,7 @@ export default function TopBar({
                 <img
                   src={user.avatar}
                   alt=""
-                  className="h-7 w-7 shrink-0 cursor-pointer rounded-full border object-cover"
+                  className="h-7 w-7 shrink-0 cursor-pointer rounded-none border object-cover"
                   style={{ borderColor: "var(--border)" }}
                   title="My rooms"
                   onClick={() => {
@@ -1920,6 +1991,8 @@ export default function TopBar({
                 settings={settings}
                 onChange={onSettingsChange}
                 onClose={() => setShowSettings(false)}
+                roomNodeVersion={roomNodeVersion}
+                onRoomNodeVersionChange={onRoomNodeVersionChange}
               />
             )}
           </div>
@@ -1933,7 +2006,7 @@ export default function TopBar({
               type="button"
               key={u.clientId}
               onClick={() => onFollowUser?.(u)}
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 text-xs font-bold transition-transform hover:scale-110 sm:h-9 sm:w-9 sm:text-sm"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-none border-2 text-xs font-bold transition-transform hover:scale-110 sm:h-9 sm:w-9 sm:text-sm"
               style={{
                 background: u.color,
                 borderColor: "var(--bg-secondary)",

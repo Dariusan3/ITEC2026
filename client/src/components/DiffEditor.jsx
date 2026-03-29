@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import * as monaco from "monaco-editor";
+import { monacoLanguageFromMeta } from "../lib/editorLanguage";
 
 export default function DiffEditor({
   originalLabel,
@@ -30,12 +31,12 @@ export default function DiffEditor({
 
     const originalModel = monaco.editor.createModel(
       originalValue,
-      language,
+      monacoLanguageFromMeta(language, originalLabel || ""),
       monaco.Uri.parse(`file:///diff/original/${encodeURIComponent(originalLabel)}`),
     );
     const modifiedModel = monaco.editor.createModel(
       modifiedValue,
-      language,
+      monacoLanguageFromMeta(language, modifiedLabel || ""),
       monaco.Uri.parse(`file:///diff/modified/${encodeURIComponent(modifiedLabel)}`),
     );
 
@@ -53,6 +54,7 @@ export default function DiffEditor({
       originalModel.dispose();
       modifiedModel.dispose();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- editor o singură dată; limbă din efect dedicat
   }, []);
 
   useEffect(() => {
@@ -62,12 +64,18 @@ export default function DiffEditor({
 
   useEffect(() => {
     if (originalModelRef.current) {
-      monaco.editor.setModelLanguage(originalModelRef.current, language);
+      monaco.editor.setModelLanguage(
+        originalModelRef.current,
+        monacoLanguageFromMeta(language, originalLabel || ""),
+      );
     }
     if (modifiedModelRef.current) {
-      monaco.editor.setModelLanguage(modifiedModelRef.current, language);
+      monaco.editor.setModelLanguage(
+        modifiedModelRef.current,
+        monacoLanguageFromMeta(language, modifiedLabel || ""),
+      );
     }
-  }, [language]);
+  }, [language, originalLabel, modifiedLabel]);
 
   return (
     <div className="flex h-full min-h-0 flex-col">

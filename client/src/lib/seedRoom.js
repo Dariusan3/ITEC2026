@@ -1,0 +1,20 @@
+import { yRoomMeta } from "./yjs";
+
+/**
+ * Seed inițial pentru cameră goală — evită import circular yjs → seed la încărcare.
+ * @param {import('yjs').Map<string, unknown>} yFiles
+ * @param {(name: string) => import('yjs').Text} getYText
+ */
+export async function applyDefaultRoomSeed(yFiles, getYText) {
+  const { featureFlags } = await import("./featureFlags");
+  const { mergeVitePreviewTemplate } = await import("./vitePreviewTemplate");
+
+  if (featureFlags.defaultVitePreset) {
+    mergeVitePreviewTemplate(yFiles, getYText);
+  } else {
+    yFiles.set("main.js", { language: "javascript" });
+  }
+  if (yRoomMeta.get("nodeVersion") == null) {
+    yRoomMeta.set("nodeVersion", "20");
+  }
+}

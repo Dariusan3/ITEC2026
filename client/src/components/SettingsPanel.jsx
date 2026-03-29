@@ -14,7 +14,19 @@ const KEYMAPS = [
   { id: "emacs", label: "Emacs" },
 ];
 
-export default function SettingsPanel({ settings, onChange, onClose }) {
+const NODE_VERSIONS = [
+  { id: "18", label: "18" },
+  { id: "20", label: "20" },
+  { id: "22", label: "22" },
+];
+
+export default function SettingsPanel({
+  settings,
+  onChange,
+  onClose,
+  roomNodeVersion = "20",
+  onRoomNodeVersionChange,
+}) {
   const ref = useRef(null);
 
   useEffect(() => {
@@ -45,7 +57,7 @@ export default function SettingsPanel({ settings, onChange, onClose }) {
         </span>
         <button
           onClick={onClose}
-          className="liquid-surface rounded-xl border px-2 py-1 text-[10px] transition-all duration-150 hover:-translate-y-px hover:brightness-110 active:scale-[0.93]"
+          className="liquid-surface rounded-none border px-2 py-1 text-[10px] transition-all duration-150 hover:-translate-y-px hover:brightness-110 active:scale-[0.93]"
           style={{
             borderColor: "var(--border)",
             background: "var(--bg-tertiary)",
@@ -118,6 +130,37 @@ export default function SettingsPanel({ settings, onChange, onClose }) {
           onChange={(v) => set("lineNumbers", v)}
         />
       </Row>
+
+      <Row label="Format on Ctrl+S">
+        <Toggle
+          value={settings.formatOnSave}
+          onChange={(v) => set("formatOnSave", v)}
+        />
+      </Row>
+
+      <Row label="Tema auto (noapte)">
+        <Toggle
+          value={settings.themeAutoClock}
+          onChange={(v) => set("themeAutoClock", v)}
+        />
+      </Row>
+
+      <Row label="Sunet la join">
+        <Toggle
+          value={settings.eventSounds}
+          onChange={(v) => set("eventSounds", v)}
+        />
+      </Row>
+
+      {onRoomNodeVersionChange && (
+        <Row label="Preview Node">
+          <InlineSelect
+            options={NODE_VERSIONS}
+            value={roomNodeVersion}
+            onChange={onRoomNodeVersionChange}
+          />
+        </Row>
+      )}
     </div>
   );
 }
@@ -149,7 +192,7 @@ function InlineSelect({ options, value, onChange }) {
             key={opt.id}
             type="button"
             onClick={() => onChange(opt.id)}
-            className="liquid-surface flex-1 rounded-xl px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wide transition-all duration-150 active:scale-[0.93] sm:text-[11px]"
+            className="liquid-surface flex-1 rounded-none px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wide transition-all duration-150 active:scale-[0.93] sm:text-[11px]"
             style={{
               background: selected ? "var(--accent)" : "transparent",
               color: selected ? "var(--bg-primary)" : "var(--text-secondary)",
@@ -167,14 +210,14 @@ function Toggle({ value, onChange }) {
   return (
     <button
       onClick={() => onChange(!value)}
-      className="relative h-5 w-10 shrink-0 float-right flex-shrink-0 rounded-full transition-colors duration-150"
+      className="relative h-5 w-10 shrink-0 float-right flex-shrink-0 rounded-none transition-colors duration-150"
       style={{
         background: value ? "var(--accent)" : "var(--bg-tertiary)",
         border: "1px solid var(--border)",
       }}
     >
       <span
-        className="absolute top-0.5 h-4 w-4 rounded-full transition-all duration-150"
+        className="absolute top-0.5 h-4 w-4 rounded-none transition-all duration-150"
         style={{
           background: value ? "var(--bg-primary)" : "var(--text-secondary)",
           left: value ? "22px" : "2px",

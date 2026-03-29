@@ -9,6 +9,7 @@ const crypto = require("crypto");
 const Y = require("yjs");
 const { WebSocketServer, WebSocket } = require("ws");
 const { encoding, decoding } = require("lib0");
+const path = require("path");
 
 const PORT = process.env.PORT || 3001;
 const IS_PROD = process.env.NODE_ENV === 'production';
@@ -40,7 +41,10 @@ if (process.env.DATABASE_URL) {
 
 const allowedOrigin = process.env.CLIENT_ORIGIN || "http://localhost:5173";
 app.use(cors({ origin: IS_PROD ? allowedOrigin : true, credentials: true }));
-app.use(express.json({ limit: "8mb" }));
+app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || "12mb" }));
+
+const { logStructured } = require("./logger");
+const { assertWorkspaceWithinLimit } = require("./workspaceLimits");
 const sessionMiddleware = session({
   store: sessionStore,
   secret: process.env.SESSION_SECRET || "itecify-dev-secret",
@@ -360,7 +364,6 @@ Focus on correctness, bugs, risky behavior, or missing edge-case handling. Retur
 // --- Code execution engine (Docker only; always resource-capped) ---
 const Docker = require("dockerode");
 const fs = require("fs");
-const path = require("path");
 const os = require("os");
 
 const docker = new Docker();
@@ -792,14 +795,19 @@ async function runPackageInstallInDocker(config, installCmd, onData, pkgDir) {
   }
 }
 
-// X5: Rate limit — 20 runs/min per IP
-const rateLimit = require("express-rate-limit");
+// X5: Rate limit — 20 runs/min per IP (ipKeyGenerator: IPv6-safe, see ERR_ERL_KEY_GEN_IPV6)
+const { rateLimit, ipKeyGenerator } = require("express-rate-limit");
 const runLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 20,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: "Too many runs — max 20 per minute. Please wait." },
+  keyGenerator: (req) => {
+    const login = req.session?.user?.login;
+    if (login) return `user:${login}`;
+    return ipKeyGenerator(req.ip ?? "");
+  },
 });
 
 app.post("/api/run", runLimiter, async (req, res) => {
@@ -850,6 +858,11 @@ app.post("/api/run", runLimiter, async (req, res) => {
   send("done", "");
   res.end();
 
+  logStructured("run", "end", {
+    roomId: String(roomId || "").slice(0, 32),
+    language,
+  });
+
   // Persist run history (fire-and-forget)
   if (roomId) {
     db.insertRunHistory({
@@ -870,10 +883,15 @@ const previewLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: "Too many preview requests — try again later." },
+  keyGenerator: (req) => {
+    const login = req.session?.user?.login;
+    if (login) return `user:${login}`;
+    return ipKeyGenerator(req.ip ?? "");
+  },
 });
 
 app.post("/api/preview/start", previewLimiter, async (req, res) => {
-  const { roomId, files, force } = req.body;
+  const { roomId, files, force, nodeVersion } = req.body;
   if (!files || typeof files !== "object")
     return res.status(400).json({ error: "files (path → content) required" });
 
@@ -886,13 +904,34 @@ app.post("/api/preview/start", previewLimiter, async (req, res) => {
   }
 
   try {
+    try {
+      assertWorkspaceWithinLimit(files, "Preview");
+    } catch (sizeErr) {
+      const code = sizeErr.status || 413;
+      logStructured("preview", "reject_size", {
+        roomId: String(roomId || "").slice(0, 32),
+      });
+      return res.status(code).json({ error: sizeErr.message });
+    }
+
+    logStructured("preview", "start", {
+      roomId: String(roomId || "").slice(0, 32),
+      force: !!force,
+      nodeVersion: String(nodeVersion || "").slice(0, 8),
+    });
+
     const result = await preview.startPreview(
       roomId,
       files,
       docker,
       DOCKER_PLATFORM_SPEC,
-      { force: !!force },
+      { force: !!force, nodeVersion },
     );
+    logStructured("preview", "ready", {
+      roomId: String(roomId || "").slice(0, 32),
+      mode: result.mode,
+      hostPort: result.hostPort,
+    });
     res.json({
       ok: true,
       proxyPath: `/api/preview/proxy/${result.safeRoomId}`,
@@ -901,6 +940,10 @@ app.post("/api/preview/start", previewLimiter, async (req, res) => {
     });
   } catch (err) {
     console.error("[Preview start]", err.message);
+    logStructured("preview", "error", {
+      roomId: String(roomId || "").slice(0, 32),
+      message: err.message,
+    });
     res.status(500).json({ error: err.message || "Preview failed" });
   }
 });
@@ -1849,6 +1892,19 @@ app.get("/api/interview/:sessionId", async (req, res) => {
 const apiServer = http.createServer(app);
 apiServer.on("upgrade", (req, socket, head) => {
   if (preview.handlePreviewUpgrade(req, socket, head)) return;
+});
+apiServer.on("error", (err) => {
+  if (err.code === "EADDRINUSE") {
+    console.error(
+      `[iTECify] Port ${PORT} is already in use (another process or a previous server instance).`,
+    );
+    console.error(
+      `  Windows: netstat -ano | findstr :${PORT}  then  taskkill /PID <pid> /F`,
+    );
+    console.error(`  Or set a different PORT in .env and restart (match Vite proxy in client).`);
+    process.exit(1);
+  }
+  throw err;
 });
 apiServer.listen(PORT, () => {
   console.log(`[iTECify] Server running on http://localhost:${PORT}`);

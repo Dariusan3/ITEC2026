@@ -1,10 +1,14 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import * as Y from "yjs";
 import { getYText, ydoc, roomId } from "../lib/yjs";
+import { SERVER_URL } from "../lib/config";
 import { ArchiveIcon } from "./ui/Icons";
 
-const timeButtonClass =
-  "liquid-surface inline-flex items-center justify-center rounded-2xl border text-[11px] font-semibold transition-all duration-150 disabled:cursor-not-allowed disabled:opacity-35 sm:text-xs";
+/** Doar pentru butoanele − / + (pas în istoric). */
+const timeStepButtonClass =
+  "liquid-surface keep-round-lg inline-flex items-center justify-center border text-[11px] font-semibold transition-all duration-150 disabled:cursor-not-allowed disabled:opacity-35 sm:text-xs";
+const timeActionButtonClass =
+  "liquid-surface inline-flex items-center justify-center border text-[11px] font-semibold transition-all duration-150 disabled:cursor-not-allowed disabled:opacity-35 sm:text-xs";
 
 export default function TimeTravel({ editorRef, activeFile }) {
   const [snapshots, setSnapshots] = useState([]);
@@ -69,7 +73,9 @@ export default function TimeTravel({ editorRef, activeFile }) {
 
       try {
         const sq = new URLSearchParams({ room: roomId });
-        const res = await fetch(`${SERVER_URL}/api/snapshots/${snapshot.timestamp}?${sq}`);
+        const res = await fetch(
+          `${SERVER_URL}/api/snapshots/${snapshot.timestamp}?${sq}`,
+        );
         const data = await res.json();
         if (data.snapshot) {
           const update = Uint8Array.from(atob(data.snapshot), (c) =>
@@ -141,29 +147,34 @@ export default function TimeTravel({ editorRef, activeFile }) {
 
   if (snapshots.length === 0) {
     return (
-      <div
-        className={barShellClass}
-        style={barStyle}
-      >
+      <div className={barShellClass} style={barStyle}>
         <div
           className="soft-card flex w-full items-center gap-3 px-4 py-3"
           style={{ background: "var(--bg-tertiary)" }}
         >
           <div
-            className="flex h-10 w-10 items-center justify-center rounded-2xl"
+            className="flex h-10 w-10 items-center justify-center"
             style={{
-              background: "color-mix(in srgb, var(--accent) 14%, var(--bg-secondary))",
+              background:
+                "color-mix(in srgb, var(--accent) 14%, var(--bg-secondary))",
               color: "var(--accent)",
             }}
           >
             <ArchiveIcon className="h-4 w-4" />
           </div>
           <div className="min-w-0">
-            <p className="text-[12px] font-semibold" style={{ color: "var(--text-primary)" }}>
+            <p
+              className="text-[12px] font-semibold"
+              style={{ color: "var(--text-primary)" }}
+            >
               No snapshots yet
             </p>
-            <p className="text-[10px]" style={{ color: "var(--text-secondary)" }}>
-              Automatic snapshots appear here every 10 seconds while the room is active.
+            <p
+              className="text-[10px]"
+              style={{ color: "var(--text-secondary)" }}
+            >
+              Automatic snapshots appear here every 10 seconds while the room is
+              active.
             </p>
           </div>
         </div>
@@ -175,7 +186,7 @@ export default function TimeTravel({ editorRef, activeFile }) {
     <div className={`${barShellClass} flex-wrap gap-3`} style={barStyle}>
       <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3 sm:gap-4">
         <div
-          className="soft-card flex items-center gap-3 rounded-2xl px-3 py-2"
+          className="soft-card flex items-center gap-3 px-3 py-2"
           style={{
             background: replaying
               ? "color-mix(in srgb, var(--yellow) 10%, var(--bg-tertiary))"
@@ -186,7 +197,7 @@ export default function TimeTravel({ editorRef, activeFile }) {
           }}
         >
           <div
-            className="flex h-10 w-10 items-center justify-center rounded-2xl"
+            className="flex h-10 w-10 items-center justify-center"
             style={{
               background: replaying
                 ? "color-mix(in srgb, var(--yellow) 18%, var(--bg-secondary))"
@@ -221,7 +232,7 @@ export default function TimeTravel({ editorRef, activeFile }) {
           aria-label="Pas înapoi în istoric"
           disabled={!canStepBack}
           onClick={handleMinus}
-          className={`${timeButtonClass} h-10 w-10 shrink-0 text-lg leading-none`}
+          className={`${timeStepButtonClass} h-10 w-10 shrink-0 text-lg leading-none`}
           style={{
             borderColor: "var(--border)",
             background: "var(--bg-tertiary)",
@@ -248,7 +259,7 @@ export default function TimeTravel({ editorRef, activeFile }) {
           aria-label="Pas înainte spre Live"
           disabled={!canStepForward}
           onClick={handlePlus}
-          className={`${timeButtonClass} h-10 w-10 shrink-0 text-lg leading-none`}
+          className={`${timeStepButtonClass} h-10 w-10 shrink-0 text-lg leading-none`}
           style={{
             borderColor: "var(--border)",
             background: "var(--bg-tertiary)",
@@ -257,7 +268,6 @@ export default function TimeTravel({ editorRef, activeFile }) {
         >
           +
         </button>
-
       </div>
 
       <div className="flex shrink-0 flex-wrap items-center gap-2">
@@ -270,7 +280,7 @@ export default function TimeTravel({ editorRef, activeFile }) {
               ? "Folosește această versiune ca document live (colaborativ)"
               : "Disponibil doar în modul replay"
           }
-          className={`${timeButtonClass} px-4 py-2`}
+          className={`${timeActionButtonClass} px-4 py-2`}
           style={{
             background: replaying ? "var(--blue)" : "var(--bg-tertiary)",
             color: replaying ? "var(--bg-primary)" : "var(--text-secondary)",
@@ -278,6 +288,7 @@ export default function TimeTravel({ editorRef, activeFile }) {
             borderColor: replaying
               ? "color-mix(in srgb, var(--blue) 45%, var(--border))"
               : "var(--border)",
+            minHeight: "2.5rem",
           }}
         >
           Save
@@ -292,7 +303,7 @@ export default function TimeTravel({ editorRef, activeFile }) {
               ? "Revino la documentul live dinainte de replay"
               : "Ești deja pe Live"
           }
-          className={`${timeButtonClass} px-4 py-2`}
+          className={`${timeActionButtonClass} px-4 py-2`}
           style={{
             background: replaying ? "var(--green)" : "var(--bg-tertiary)",
             color: replaying ? "var(--bg-primary)" : "var(--text-secondary)",
@@ -300,6 +311,8 @@ export default function TimeTravel({ editorRef, activeFile }) {
             borderColor: replaying
               ? "color-mix(in srgb, var(--green) 45%, var(--border))"
               : "var(--border)",
+            minHeight: "2.5rem",
+            marginRight: "0.5rem",
           }}
         >
           Back to Live

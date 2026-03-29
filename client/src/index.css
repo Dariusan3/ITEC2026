@@ -100,14 +100,19 @@ html, body, #root {
 
 .soft-card {
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: 0;
   background: linear-gradient(180deg, color-mix(in srgb, var(--bg-tertiary) 92%, white 8%) 0%, var(--bg-tertiary) 100%);
   box-shadow: 0 12px 26px rgba(0,0,0,0.16);
 }
 
+/** Colțuri rotunjite doar unde e cerut explicit (Explorer: + fișier/folder; Time Travel: − / +). */
+.keep-round-lg {
+  border-radius: 1rem;
+}
+
 .floating-panel {
   border: 1px solid var(--border);
-  border-radius: 16px;
+  border-radius: 0;
   background: linear-gradient(180deg, color-mix(in srgb, var(--bg-secondary) 94%, white 6%) 0%, var(--bg-tertiary) 100%);
   box-shadow: 0 18px 40px rgba(0,0,0,0.34), inset 0 1px 0 rgba(255,255,255,0.03);
   animation: panel-in 160ms ease-out;
@@ -134,7 +139,7 @@ html, body, #root {
 
 .panel-input {
   width: 100%;
-  border-radius: 14px;
+  border-radius: 0;
   border: 1px solid var(--border);
   background: linear-gradient(180deg, color-mix(in srgb, var(--bg-primary) 92%, white 8%) 0%, var(--bg-tertiary) 100%);
   color: var(--text-primary);
@@ -219,7 +224,7 @@ html, body, #root {
 .ai-block-widget {
   background: #050806;
   border: 1.5px dashed #8ff7a7;
-  border-radius: 8px;
+  border-radius: 0;
   padding: 10px 14px;
   margin: 4px 0;
   max-width: 600px;
@@ -231,6 +236,7 @@ html, body, #root {
   align-items: center;
   gap: 8px;
   margin-bottom: 8px;
+  user-select: none;
 }
 .ai-block-label {
   font-size: 11px;
@@ -244,7 +250,7 @@ html, body, #root {
 .ai-block-code {
   background: #0a0f0b;
   border: 1px solid #233227;
-  border-radius: 6px;
+  border-radius: 0;
   padding: 8px 10px;
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
   font-size: 12px;
@@ -263,7 +269,7 @@ html, body, #root {
   font-size: 11px;
   font-weight: 600;
   padding: 3px 14px;
-  border-radius: 4px;
+  border-radius: 0;
   border: none;
   cursor: pointer;
   transition: opacity 0.15s;
