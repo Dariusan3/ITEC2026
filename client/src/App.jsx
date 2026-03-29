@@ -130,6 +130,8 @@ export default function App() {
   /** După Vite demo, următorul Preview trebuie să oprească containerul vechi (ex. monorepo concurrently). */
   const previewForceAfterViteDemoRef = useRef(false);
   const previewLastPkgRef = useRef(null);
+  /** Ultima reîncărcare iframe (auto-sync); evită reload la fiecare 720ms. */
+  const previewIframeReloadAtRef = useRef(0);
   const previewBusyRef = useRef(false);
   const handlePreviewStartRef = useRef(async () => {});
   const presenceCountRef = useRef(0);
@@ -477,16 +479,30 @@ export default function App() {
         });
         // IMPORTANT: nu folosi /api/preview/proxy ca src al iframe-ului. HTML-ul Vite are <script src="/src/main.jsx">;
         // pe același origin cu editorul (localhost:5173) acel URL încarcă main.jsx-ul iTECify (LandingPage), nu Docker.
-        // Iframe pe host:port Docker (același hostname ca pagina) — Vite rezolvă căile absolute pe dev serverul din container.
+        // Iframe pe host:port Docker — Vite servește din container.
+        // ?itecify_rev= — URL mereu diferit față de ultimul setState → React reîncarcă iframe-ul. Fără asta, același
+        // string nu remontează iframe-ul; pe Docker Desktop (volum host→container) Vite deseori nu vede HMR.
         const port = Number(data.hostPort);
+        const rev = Date.now();
+        const host = window.location.hostname || "localhost";
+        let nextSrc = null;
         if (Number.isFinite(port) && port > 0) {
-          const host = window.location.hostname || "localhost";
-          setPreviewIframeSrc(`http://${host}:${port}/`);
+          nextSrc = `http://${host}:${port}/?itecify_rev=${rev}`;
         } else if (data.proxyPath && typeof data.proxyPath === "string") {
           const base = data.proxyPath.replace(/\/$/, "");
-          setPreviewIframeSrc(`${base}/`);
+          nextSrc = `${base}/?itecify_rev=${rev}`;
         } else {
           throw new Error("Preview: răspuns invalid de la server");
+        }
+        if (!opts.silent) {
+          setPreviewIframeSrc(nextSrc);
+          previewIframeReloadAtRef.current = rev;
+        } else {
+          const minMs = 2800;
+          if (rev - previewIframeReloadAtRef.current >= minMs) {
+            setPreviewIframeSrc(nextSrc);
+            previewIframeReloadAtRef.current = rev;
+          }
         }
         if (!opts.silent) {
           if (forceAfterDemo) {
@@ -583,6 +599,7 @@ export default function App() {
     setPreviewNotice(null);
     setPreviewSyncInfo(null);
     previewLastPkgRef.current = null;
+    previewIframeReloadAtRef.current = 0;
   }, [roomId]);
 
   const applyViteDemo = useCallback(() => {
