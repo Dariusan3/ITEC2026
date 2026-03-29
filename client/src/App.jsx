@@ -118,7 +118,13 @@ function parsePackageJsonSafe(text) {
 function detectWorkspaceProject(files) {
   const paths = Object.keys(files || {}).sort((a, b) => a.localeCompare(b));
   const packagePaths = paths.filter((p) => /(^|\/)package\.json$/.test(p));
-  const preferredLeafDirs = new Set(["client", "app", "frontend", "web", "site"]);
+  const preferredLeafDirs = new Set([
+    "client",
+    "app",
+    "frontend",
+    "web",
+    "site",
+  ]);
 
   packagePaths.sort((a, b) => {
     const aDir = a.includes("/") ? a.slice(0, a.lastIndexOf("/")) : "";
@@ -165,7 +171,9 @@ function detectWorkspaceProject(files) {
     withinRoot[0] ||
     "";
   const entryFile = entryRelative ? `${prefix}${entryRelative}` : "";
-  const pkg = packageJsonPath ? parsePackageJsonSafe(files[packageJsonPath]) : null;
+  const pkg = packageJsonPath
+    ? parsePackageJsonSafe(files[packageJsonPath])
+    : null;
   const deps = new Set([
     ...Object.keys(pkg?.dependencies || {}),
     ...Object.keys(pkg?.devDependencies || {}),
@@ -205,12 +213,16 @@ function getFirstWorkspaceFile() {
   const first = [...yFiles.keys()][0] || null;
   return {
     file: first,
-    language: first ? yFiles.get(first)?.language || "javascript" : "javascript",
+    language: first
+      ? yFiles.get(first)?.language || "javascript"
+      : "javascript",
   };
 }
 
 export default function App() {
-  const [activeFile, setActiveFile] = useState(() => getFirstWorkspaceFile().file);
+  const [activeFile, setActiveFile] = useState(
+    () => getFirstWorkspaceFile().file,
+  );
   const [language, setLanguage] = useState(
     () => getFirstWorkspaceFile().language,
   );
@@ -224,7 +236,6 @@ export default function App() {
   const [packages, setPackages] = useState("");
   const [envVars, setEnvVars] = useState("");
   const [settings, setSettings] = useState(loadSettings);
-  const [clockTick, setClockTick] = useState(0);
   const [editorReady, setEditorReady] = useState(false);
   const [diffTargetFile, setDiffTargetFile] = useState(null);
   const [roomRole, setRoomRole] = useState("member");
@@ -254,19 +265,11 @@ export default function App() {
   const handlePreviewStartRef = useRef(async () => {});
   const presenceCountRef = useRef(0);
 
-  const effectiveSettings = useMemo(() => {
-    if (!settings.themeAutoClock) return settings;
-    const h = new Date().getHours();
-    const night = h >= 22 || h < 7;
-    return {
-      ...settings,
-      theme: night ? "itecify-midnight-mint" : "vs",
-    };
-  }, [settings, clockTick]);
-
   useEffect(() => {
     if (!settings.themeAutoClock) return undefined;
-    const id = setInterval(() => setClockTick((n) => n + 1), 60_000);
+    const id = setInterval(() => {
+      // Trigger re-render for theme auto-clock updates
+    }, 60_000);
     return () => clearInterval(id);
   }, [settings.themeAutoClock]);
 
@@ -499,48 +502,56 @@ export default function App() {
     localStorage.setItem("itecify:settings", JSON.stringify(next));
   }, []);
 
-  const handleRoleChange = useCallback(async (nextRole) => {
-    const previousRole = roomRole;
-    setRoomRole(nextRole);
-    try {
-      const res = await fetch(`${SERVER_URL}/api/room/${roomId}/role`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ role: nextRole }),
-      });
-      if (!res.ok) {
+  const handleRoleChange = useCallback(
+    async (nextRole) => {
+      const previousRole = roomRole;
+      setRoomRole(nextRole);
+      try {
+        const res = await fetch(`${SERVER_URL}/api/room/${roomId}/role`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ role: nextRole }),
+        });
+        if (!res.ok) {
+          setRoomRole(previousRole);
+        }
+      } catch {
         setRoomRole(previousRole);
       }
-    } catch {
-      setRoomRole(previousRole);
-    }
-  }, [roomRole, roomId]);
+    },
+    [roomRole, roomId],
+  );
 
   // Keep language in sync with active file's metadata
   const handleFileSelect = useCallback(
     (filename, lang, location) => {
       setActiveFile(filename);
       setLanguage(lang || "javascript");
-      setOpenTabs((prev) => prev.includes(filename) ? prev : [...prev, filename]);
+      setOpenTabs((prev) =>
+        prev.includes(filename) ? prev : [...prev, filename],
+      );
       if (location?.line) revealEditorLocation(location.line, location.column);
     },
     [revealEditorLocation],
   );
 
-  const handleTabClose = useCallback((filename) => {
-    setOpenTabs((prev) => {
-      const next = prev.filter((f) => f !== filename);
-      if (filename === activeFile && next.length > 0) {
-        const idx = prev.indexOf(filename);
-        const fallback = next[Math.min(idx, next.length - 1)];
-        const lang = yFiles.get(fallback)?.language || "javascript";
-        setActiveFile(fallback);
-        setLanguage(lang);
-      }
-      return next;
-    });
-  }, [activeFile]);
+  const handleTabClose = useCallback(
+    (filename) => {
+      setOpenTabs((prev) => {
+        const next = prev.filter((f) => f !== filename);
+        if (filename === activeFile && next.length > 0) {
+          const idx = prev.indexOf(filename);
+          const fallback = next[Math.min(idx, next.length - 1)];
+          const lang = yFiles.get(fallback)?.language || "javascript";
+          setActiveFile(fallback);
+          setLanguage(lang);
+        }
+        return next;
+      });
+    },
+    [activeFile],
+  );
 
   const handleTabReorder = useCallback((fromIdx, toIdx) => {
     setOpenTabs((prev) => {
@@ -558,29 +569,35 @@ export default function App() {
     setLanguage(lang);
   }, []);
 
-  const handleCloseToRight = useCallback((filename) => {
-    setOpenTabs((prev) => {
-      const idx = prev.indexOf(filename);
-      const next = prev.slice(0, idx + 1);
-      if (!next.includes(activeFile)) {
-        setActiveFile(filename);
-        setLanguage(yFiles.get(filename)?.language || "javascript");
-      }
-      return next;
-    });
-  }, [activeFile]);
+  const handleCloseToRight = useCallback(
+    (filename) => {
+      setOpenTabs((prev) => {
+        const idx = prev.indexOf(filename);
+        const next = prev.slice(0, idx + 1);
+        if (!next.includes(activeFile)) {
+          setActiveFile(filename);
+          setLanguage(yFiles.get(filename)?.language || "javascript");
+        }
+        return next;
+      });
+    },
+    [activeFile],
+  );
 
-  const handleCloseToLeft = useCallback((filename) => {
-    setOpenTabs((prev) => {
-      const idx = prev.indexOf(filename);
-      const next = prev.slice(idx);
-      if (!next.includes(activeFile)) {
-        setActiveFile(filename);
-        setLanguage(yFiles.get(filename)?.language || "javascript");
-      }
-      return next;
-    });
-  }, [activeFile]);
+  const handleCloseToLeft = useCallback(
+    (filename) => {
+      setOpenTabs((prev) => {
+        const idx = prev.indexOf(filename);
+        const next = prev.slice(idx);
+        if (!next.includes(activeFile)) {
+          setActiveFile(filename);
+          setLanguage(yFiles.get(filename)?.language || "javascript");
+        }
+        return next;
+      });
+    },
+    [activeFile],
+  );
 
   const handleCloseAll = useCallback(() => {
     setOpenTabs([]);
@@ -673,6 +690,7 @@ export default function App() {
     async (opts = {}) => {
       setPreviewError(null);
       setPreviewNotice(null);
+      if (!opts.silent) setPreviewIframeSrc(null);
       setPreviewBusy(true);
       const t0 = performance.now();
       try {
@@ -692,7 +710,9 @@ export default function App() {
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || "Preview failed");
         if (forceAfterDemo) previewForceAfterViteDemoRef.current = false;
-        previewLastPkgRef.current = files["package.json"] ?? null;
+        previewLastPkgRef.current = previewProjectInfo?.packageJsonPath
+          ? (files[previewProjectInfo.packageJsonPath] ?? null)
+          : null;
         const roundTripMs = Math.round(performance.now() - t0);
         setPreviewSyncInfo({
           at: Date.now(),
@@ -729,7 +749,7 @@ export default function App() {
         if (!opts.silent) {
           if (forceAfterDemo) {
             setPreviewNotice(
-              "Preview fully restarted after Vite demo — new Docker container, minimal project only (\"iTECify live preview\" page).",
+              'Preview fully restarted after Vite demo — new Docker container, minimal project only ("iTECify live preview" page).',
             );
           } else if (data.mode === "sync") {
             setPreviewNotice(
@@ -745,12 +765,13 @@ export default function App() {
       } catch (e) {
         setPreviewSyncInfo(null);
         setPreviewError(e.message || String(e));
+        if (!opts.silent) setPreviewIframeSrc(null);
         if (!opts.silent) setPreviewFocus((n) => n + 1);
       } finally {
         setPreviewBusy(false);
       }
     },
-    [collectWorkspaceFiles, roomId],
+    [collectWorkspaceFiles, previewProjectInfo, roomId],
   );
 
   useEffect(() => {
@@ -770,7 +791,9 @@ export default function App() {
         const files = collectWorkspaceFiles();
         const wv = validateWorkspaceSize(files);
         if (!wv.ok) return;
-        const pkg = files["package.json"];
+        const pkg = previewProjectInfo?.packageJsonPath
+          ? files[previewProjectInfo.packageJsonPath]
+          : null;
         const force =
           previewLastPkgRef.current != null &&
           previewLastPkgRef.current !== pkg;
@@ -782,7 +805,7 @@ export default function App() {
       ydoc.off("afterTransaction", schedule);
       clearTimeout(timer);
     };
-  }, [previewIframeSrc, collectWorkspaceFiles, viewOnly]);
+  }, [previewIframeSrc, collectWorkspaceFiles, previewProjectInfo, viewOnly]);
 
   useEffect(() => {
     const key = `itecify:stdin:${roomId}:${activeFile}`;
@@ -966,7 +989,12 @@ export default function App() {
               setOutput((prev) => {
                 const hasError = prev.some((l) => l.type === "stderr");
                 if (!hasError) {
-                  confetti({ particleCount: 80, spread: 60, origin: { y: 0.6 }, zIndex: 9999 });
+                  confetti({
+                    particleCount: 80,
+                    spread: 60,
+                    origin: { y: 0.6 },
+                    zIndex: 9999,
+                  });
                 }
                 return prev;
               });
@@ -1076,14 +1104,18 @@ export default function App() {
         filename={activeFile}
         language={language}
         onLanguageChange={handleLanguageChange}
-        onRun={(viewOnly || effectiveClassLock) ? null : handleRun}
+        onRun={viewOnly || effectiveClassLock ? null : handleRun}
         running={running}
-        onPreview={(viewOnly || effectiveClassLock) ? null : handlePreviewStart}
+        onPreview={viewOnly || effectiveClassLock ? null : handlePreviewStart}
         previewBusy={previewBusy}
-        onViteDemo={(viewOnly || effectiveClassLock) ? null : handleViteDemo}
-        onFullstackDemo={(viewOnly || effectiveClassLock) ? null : handleFullstackDemo}
+        onViteDemo={viewOnly || effectiveClassLock ? null : handleViteDemo}
+        onFullstackDemo={
+          viewOnly || effectiveClassLock ? null : handleFullstackDemo
+        }
         onOpenWorkspaceSearch={() => setWorkspaceSearchOpen(true)}
-        onOpenWorkspaceFile={(path, lang) => handleFileSelect(path, lang || "javascript")}
+        onOpenWorkspaceFile={(path, lang) =>
+          handleFileSelect(path, lang || "javascript")
+        }
         roomNodeVersion={roomNodeVersion}
         onRoomNodeVersionChange={(e) => setRoomNodeVersion(e.target.value)}
         roomRole={roomRole}
@@ -1115,18 +1147,29 @@ export default function App() {
               className="border-b px-4 py-2 text-[11px]"
               style={{
                 borderColor: "var(--border)",
-                background: "color-mix(in srgb, var(--accent) 10%, var(--bg-secondary))",
+                background:
+                  "color-mix(in srgb, var(--accent) 10%, var(--bg-secondary))",
                 color: "var(--text-primary)",
               }}
             >
               {classState.broadcast && (
-                <span>{classState.teacherName ? `${classState.teacherName}: ` : ""}{classState.broadcast}</span>
+                <span>
+                  {classState.teacherName ? `${classState.teacherName}: ` : ""}
+                  {classState.broadcast}
+                </span>
               )}
               {effectiveClassLock && (
-                <span className={classState.broadcast ? "ml-3" : ""} style={{ color: "var(--accent)" }}>
+                <span
+                  className={classState.broadcast ? "ml-3" : ""}
+                  style={{ color: "var(--accent)" }}
+                >
                   Room locked
-                  {classState.teacherName ? ` by ${classState.teacherName}` : ""}
-                  {classState.lockedAt ? ` · ${formatLockTime(classState.lockedAt)}` : ""}
+                  {classState.teacherName
+                    ? ` by ${classState.teacherName}`
+                    : ""}
+                  {classState.lockedAt
+                    ? ` · ${formatLockTime(classState.lockedAt)}`
+                    : ""}
                 </span>
               )}
             </div>
@@ -1197,7 +1240,9 @@ export default function App() {
             previewBusy={previewBusy}
             focusPreviewSignal={previewFocus}
             onPreviewStop={viewOnly ? undefined : handlePreviewStop}
-            onPreviewRestart={viewOnly ? undefined : () => handlePreviewStart({ force: true })}
+            onPreviewRestart={
+              viewOnly ? undefined : () => handlePreviewStart({ force: true })
+            }
             previewProjectInfo={previewProjectInfo}
             previewDisabled={viewOnly}
           />

@@ -84,6 +84,85 @@ function sanitizeNodeTag(v) {
   return { "18": "18", "20": "20", "22": "22" }[s] || "20";
 }
 
+function parsePackageJsonSafe(text) {
+  try {
+    return JSON.parse(String(text || ""));
+  } catch {
+    return null;
+  }
+}
+
+function pickPreviewPackage(files) {
+  const paths = Object.keys(files || {}).filter((p) => /(^|\/)package\.json$/.test(p));
+  if (paths.length === 0) {
+    return { pkgPath: null, pkg: null, pkgSubdir: null };
+  }
+
+  const preferredLeafDirs = new Set(["frontend", "client", "web", "app", "ui", "site"]);
+  const entryCandidates = new Set([
+    "index.html",
+    "src/main.tsx",
+    "src/main.jsx",
+    "src/main.ts",
+    "src/main.js",
+    "src/App.tsx",
+    "src/App.jsx",
+    "src/App.ts",
+    "src/App.js",
+    "app/page.tsx",
+    "app/page.jsx",
+  ]);
+
+  const scored = paths.map((pkgPath) => {
+    const pkg = String(files[pkgPath] || "");
+    const meta = parsePackageJsonSafe(pkg);
+    const dir = pkgPath.includes("/") ? pkgPath.slice(0, pkgPath.lastIndexOf("/")) : "";
+    const prefix = dir ? `${dir}/` : "";
+    const relPaths = Object.keys(files)
+      .filter((filePath) => !prefix || filePath.startsWith(prefix))
+      .map((filePath) => (prefix ? filePath.slice(prefix.length) : filePath));
+    const deps = new Set([
+      ...Object.keys(meta?.dependencies || {}),
+      ...Object.keys(meta?.devDependencies || {}),
+    ]);
+    const leaf = dir.split("/").pop() || "";
+    const hasDevScript = Boolean(meta?.scripts?.dev || meta?.scripts?.["dev:vite"]);
+    const hasFrontendDeps =
+      deps.has("next") ||
+      deps.has("vite") ||
+      deps.has("react") ||
+      deps.has("react-dom") ||
+      deps.has("vue") ||
+      deps.has("@angular/core") ||
+      deps.has("svelte");
+    const hasFrontendEntry = relPaths.some((candidate) => entryCandidates.has(candidate));
+    const hasBackendDeps =
+      deps.has("express") ||
+      deps.has("koa") ||
+      deps.has("fastify") ||
+      deps.has("@nestjs/core");
+    const depth = dir ? dir.split("/").length : 0;
+
+    let score = 0;
+    if (hasFrontendDeps) score += 200;
+    if (hasFrontendEntry) score += 120;
+    if (hasDevScript) score += 70;
+    if (preferredLeafDirs.has(leaf)) score += 45;
+    if (hasBackendDeps && !hasFrontendDeps && !hasFrontendEntry) score -= 80;
+    score -= depth * 2;
+
+    return {
+      pkgPath,
+      pkg,
+      pkgSubdir: dir || null,
+      score,
+    };
+  });
+
+  scored.sort((a, b) => b.score - a.score || a.pkgPath.localeCompare(b.pkgPath));
+  return scored[0];
+}
+
 function inferDevSetup(packageJsonText) {
   let p;
   try {
@@ -393,31 +472,20 @@ async function startPreview(roomId, files, docker, platformSpec, options = {}) {
   const safe = sanitizeRoomId(roomId);
   if (!safe) throw new Error("Invalid roomId");
 
-  // Look for package.json at root first, then in common frontend subdirectories
-  const FRONTEND_SUBDIRS = ["frontend", "client", "web", "app", "ui", "src"];
-  let pkg = files["package.json"];
-  let pkgSubdir = null;
-  if (!pkg || typeof pkg !== "string") {
-    for (const sub of FRONTEND_SUBDIRS) {
-      const candidate = files[`${sub}/package.json`];
-      if (candidate && typeof candidate === "string") {
-        pkg = candidate;
-        pkgSubdir = sub;
-        break;
-      }
-    }
-  }
+  const previewTarget = pickPreviewPackage(files);
+  const pkg = previewTarget.pkg;
+  const pkgPath = previewTarget.pkgPath;
+  const pkgSubdir = previewTarget.pkgSubdir;
   if (!pkg || typeof pkg !== "string") {
     throw new Error(
-      "package.json not found at root or in frontend/client/web subdirectory. " +
-      "Use 'Vite demo' to start fresh, or make sure the repo has a package.json."
+      "No previewable package.json was found. Use 'Vite demo' to start fresh, or import a repo with a frontend app."
     );
   }
 
   try {
     const meta = JSON.parse(pkg);
     console.log(
-      `[Preview] ${safe}: ${Object.keys(files).length} paths, package.name=${meta.name ?? "?"}, image=${nodeImage}${pkgSubdir ? `, subdir=${pkgSubdir}` : ""}`,
+      `[Preview] ${safe}: ${Object.keys(files).length} paths, package.name=${meta.name ?? "?"}, image=${nodeImage}${pkgSubdir ? `, subdir=${pkgSubdir}` : ""}${pkgPath ? `, package=${pkgPath}` : ""}`,
     );
   } catch {
     console.log(
@@ -436,6 +504,7 @@ async function startPreview(roomId, files, docker, platformSpec, options = {}) {
     const running = await containerIsRunning(docker, existing.containerId);
     const sameProject =
       existing.packageJsonSnapshot === pkg &&
+      existing.packageJsonPathSnapshot === pkgPath &&
       existing.internalPort === internalPort &&
       (existing.nodeImageTag || "20") === nodeTag;
     if (running && sameProject) {
@@ -527,6 +596,7 @@ async function startPreview(roomId, files, docker, platformSpec, options = {}) {
     internalPort,
     startedAt: Date.now(),
     packageJsonSnapshot: pkg,
+    packageJsonPathSnapshot: pkgPath,
     fileKeysSnapshot,
     nodeImageTag: nodeTag,
   });

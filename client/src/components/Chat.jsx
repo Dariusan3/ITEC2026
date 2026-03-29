@@ -9,11 +9,19 @@ export default function Chat() {
   const typingTimer = useRef(null);
   const yMessages = useRef(ydoc.getArray("chat"));
 
+  const schedule = (fn) => {
+    queueMicrotask(fn);
+  };
+
   useEffect(() => {
-    const update = () => setMessages(yMessages.current.toArray());
+    const update = () => {
+      schedule(() => setMessages(yMessages.current.toArray()));
+    };
     yMessages.current.observe(update);
     update();
-    return () => yMessages.current.unobserve(update);
+    return () => {
+      yMessages.current.unobserve(update);
+    };
   }, []);
 
   useEffect(() => {
@@ -31,11 +39,19 @@ export default function Chat() {
           typing.push(state.user.name);
         }
       });
-      setTypers(typing);
+      schedule(() => setTypers(typing));
     };
     awareness.on("change", update);
+    update();
     return () => awareness.off("change", update);
   }, []);
+
+  useEffect(
+    () => () => {
+      clearTimeout(typingTimer.current);
+    },
+    [],
+  );
 
   const setTyping = (isTyping) => {
     wsProvider.awareness.setLocalStateField("typing", isTyping);
