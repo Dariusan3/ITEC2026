@@ -277,6 +277,55 @@ async function touchRoomMember(roomId, userId) {
   );
 }
 
+async function ensureRoomOwnership(roomId, userId) {
+  if (!enabled || !roomId || !userId) return { claimed: false, ownerUserId: null };
+
+  await touchRoom(roomId);
+
+  const { data: room, error: roomError } = await supabase
+    .from("rooms")
+    .select("owner_user_id")
+    .eq("id", roomId)
+    .maybeSingle();
+
+  if (roomError) {
+    console.error("[DB] ensureRoomOwnership read error:", roomError.message);
+    return { claimed: false, ownerUserId: null };
+  }
+
+  if (room?.owner_user_id) {
+    return { claimed: false, ownerUserId: room.owner_user_id };
+  }
+
+  const { data: updated, error: updateError } = await supabase
+    .from("rooms")
+    .update({ owner_user_id: userId, last_active: new Date().toISOString() })
+    .eq("id", roomId)
+    .is("owner_user_id", null)
+    .select("owner_user_id")
+    .maybeSingle();
+
+  if (updateError) {
+    console.error("[DB] ensureRoomOwnership update error:", updateError.message);
+    return { claimed: false, ownerUserId: null };
+  }
+
+  if (updated?.owner_user_id === userId) {
+    await supabase.from("room_members").upsert(
+      {
+        room_id: roomId,
+        user_id: userId,
+        is_admin: true,
+        last_seen: new Date().toISOString(),
+      },
+      { onConflict: "room_id,user_id" }
+    );
+    return { claimed: true, ownerUserId: userId };
+  }
+
+  return { claimed: false, ownerUserId: updated?.owner_user_id ?? null };
+}
+
 async function getUserRooms(userId) {
   if (!enabled) return [];
   const { data, error } = await supabase
@@ -287,6 +336,264 @@ async function getUserRooms(userId) {
     .limit(20);
   if (error) { console.error("[DB] getUserRooms error:", error.message); return []; }
   return data ?? [];
+}
+
+async function getRoomMemberRole(roomId, userId) {
+  if (!enabled || !userId) return "member";
+  const { data, error } = await supabase
+    .from("room_members")
+    .select("role")
+    .eq("room_id", roomId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error) {
+    console.error("[DB] getRoomMemberRole error:", error.message);
+    return "member";
+  }
+  return data?.role || "member";
+}
+
+async function setRoomMemberRole(roomId, userId, role) {
+  if (!enabled || !userId) return false;
+  const { error } = await supabase.from("room_members").upsert(
+    {
+      room_id: roomId,
+      user_id: userId,
+      role,
+      last_seen: new Date().toISOString(),
+    },
+    { onConflict: "room_id,user_id" },
+  );
+  if (error) {
+    console.error("[DB] setRoomMemberRole error:", error.message);
+    return false;
+  }
+  return true;
+}
+
+async function listRoomMembers(roomId) {
+  if (!enabled) return [];
+  const { data: room } = await supabase
+    .from("rooms")
+    .select("owner_user_id")
+    .eq("id", roomId)
+    .maybeSingle();
+  const { data, error } = await supabase
+    .from("room_members")
+    .select("user_id, role, is_admin, last_seen, users(id, login, name, avatar_url)")
+    .eq("room_id", roomId)
+    .order("last_seen", { ascending: false })
+    .limit(100);
+  if (error) {
+    console.error("[DB] listRoomMembers error:", error.message);
+    return [];
+  }
+  return (data ?? []).map((row) => ({
+    user_id: row.user_id,
+    role: row.role || "member",
+    is_admin: !!row.is_admin,
+    is_owner: Number(room?.owner_user_id || 0) === Number(row.user_id),
+    last_seen: row.last_seen,
+    user: Array.isArray(row.users) ? row.users[0] : row.users,
+  }));
+}
+
+async function roomHasTeacher(roomId) {
+  if (!enabled) return false;
+  const { count, error } = await supabase
+    .from("room_members")
+    .select("*", { count: "exact", head: true })
+    .eq("room_id", roomId)
+    .eq("role", "teacher");
+  if (error) {
+    console.error("[DB] roomHasTeacher error:", error.message);
+    return false;
+  }
+  return Number(count || 0) > 0;
+}
+
+async function getRoomAdminState(roomId, userId) {
+  if (!enabled || !userId) {
+    return { isOwner: false, isAdmin: false, ownerUserId: null };
+  }
+  const [{ data: room }, { data: member }] = await Promise.all([
+    supabase.from("rooms").select("owner_user_id").eq("id", roomId).maybeSingle(),
+    supabase
+      .from("room_members")
+      .select("is_admin")
+      .eq("room_id", roomId)
+      .eq("user_id", userId)
+      .maybeSingle(),
+  ]);
+
+  const ownerUserId = room?.owner_user_id ?? null;
+  const isOwner = Number(ownerUserId || 0) === Number(userId);
+  const isAdmin = isOwner || !!member?.is_admin;
+  return { isOwner, isAdmin, ownerUserId };
+}
+
+async function setRoomMemberAdmin(roomId, userId, isAdmin) {
+  if (!enabled || !userId) return false;
+  const { error } = await supabase.from("room_members").upsert(
+    {
+      room_id: roomId,
+      user_id: userId,
+      is_admin: !!isAdmin,
+      last_seen: new Date().toISOString(),
+    },
+    { onConflict: "room_id,user_id" },
+  );
+  if (error) {
+    console.error("[DB] setRoomMemberAdmin error:", error.message);
+    return false;
+  }
+  return true;
+}
+
+async function transferRoomOwnership(roomId, nextOwnerUserId) {
+  if (!enabled || !roomId || !nextOwnerUserId) return false;
+  const now = new Date().toISOString();
+  const { error: roomError } = await supabase
+    .from("rooms")
+    .update({ owner_user_id: nextOwnerUserId, last_active: now })
+    .eq("id", roomId);
+  if (roomError) {
+    console.error("[DB] transferRoomOwnership room error:", roomError.message);
+    return false;
+  }
+
+  const { error: memberError } = await supabase.from("room_members").upsert(
+    {
+      room_id: roomId,
+      user_id: nextOwnerUserId,
+      is_admin: true,
+      last_seen: now,
+    },
+    { onConflict: "room_id,user_id" },
+  );
+  if (memberError) {
+    console.error("[DB] transferRoomOwnership member error:", memberError.message);
+    return false;
+  }
+  return true;
+}
+
+async function createRoomInvite({
+  roomId,
+  token,
+  createdByUserId = null,
+  role = "member",
+  grantAdmin = false,
+  expiresAt = null,
+  maxUses = 1,
+}) {
+  if (!enabled) return null;
+  const { data, error } = await supabase
+    .from("room_invites")
+    .insert({
+      room_id: roomId,
+      token,
+      created_by_user_id: createdByUserId,
+      role,
+      grant_admin: !!grantAdmin,
+      expires_at: expiresAt,
+      max_uses: maxUses ?? 1,
+    })
+    .select("id, token, role, grant_admin, expires_at, created_at, max_uses, use_count, revoked_at")
+    .single();
+  if (error) {
+    console.error("[DB] createRoomInvite error:", error.message);
+    return null;
+  }
+  return data ?? null;
+}
+
+async function getRoomInviteByToken(token) {
+  if (!enabled || !token) return null;
+  const { data, error } = await supabase
+    .from("room_invites")
+    .select("*")
+    .eq("token", token)
+    .maybeSingle();
+  if (error) {
+    console.error("[DB] getRoomInviteByToken error:", error.message);
+    return null;
+  }
+  return data ?? null;
+}
+
+async function acceptRoomInvite(token, userId) {
+  if (!enabled || !token || !userId) return null;
+  const invite = await getRoomInviteByToken(token);
+  if (!invite) return null;
+  const now = new Date().toISOString();
+  const isExpired = invite.expires_at && new Date(invite.expires_at).getTime() < Date.now();
+  const isRevoked = !!invite.revoked_at;
+  const maxUses = Number(invite.max_uses ?? 1);
+  const useCount = Number(invite.use_count ?? 0);
+  if (isExpired || isRevoked || useCount >= maxUses) return null;
+
+  const { data, error } = await supabase
+    .from("room_invites")
+    .update({
+      accepted_by_user_id: userId,
+      accepted_at: now,
+      use_count: useCount + 1,
+    })
+    .eq("token", token)
+    .is("revoked_at", null)
+    .select("*")
+    .maybeSingle();
+  if (error) {
+    console.error("[DB] acceptRoomInvite error:", error.message);
+    return null;
+  }
+  return data ?? null;
+}
+
+async function listRoomInvites(roomId, { includeUsed = false, limit = 30 } = {}) {
+  if (!enabled || !roomId) return [];
+  let query = supabase
+    .from("room_invites")
+    .select("id, token, role, grant_admin, expires_at, accepted_at, accepted_by_user_id, created_at, max_uses, use_count, revoked_at")
+    .eq("room_id", roomId)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (!includeUsed) {
+    query = query.is("revoked_at", null);
+  }
+  const { data, error } = await query;
+  if (error) {
+    console.error("[DB] listRoomInvites error:", error.message);
+    return [];
+  }
+  const now = Date.now();
+  return (data ?? []).filter((invite) => {
+    if (includeUsed) return true;
+    const expired =
+      invite.expires_at && new Date(invite.expires_at).getTime() < now;
+    const exhausted =
+      Number(invite.use_count ?? 0) >= Number(invite.max_uses ?? 1);
+    return !expired && !exhausted;
+  });
+}
+
+async function revokeRoomInvite(roomId, inviteId, actorUserId = null) {
+  if (!enabled || !roomId || !inviteId) return false;
+  const { error } = await supabase
+    .from("room_invites")
+    .update({
+      revoked_at: new Date().toISOString(),
+      revoked_by_user_id: actorUserId,
+    })
+    .eq("room_id", roomId)
+    .eq("id", inviteId)
+    .is("revoked_at", null);
+  if (error) {
+    console.error("[DB] revokeRoomInvite error:", error.message);
+    return false;
+  }
+  return true;
 }
 
 // ─── Room password ────────────────────────────────────────────────────────────
@@ -314,6 +621,99 @@ async function setRoomPassword(roomId, hash) {
   return true;
 }
 
+// ─── Interview sessions ───────────────────────────────────────────────────────
+
+async function createInterviewSession(roomId, title, startedBy) {
+  if (!enabled) return null;
+  const { data, error } = await supabase
+    .from("interview_sessions")
+    .insert({ room_id: roomId, title: title || null, started_by: startedBy || null })
+    .select("id, room_id, title, started_by, started_at")
+    .single();
+  if (error) { console.error("[DB] createInterviewSession error:", error.message); return null; }
+  return data ?? null;
+}
+
+async function stopInterviewSession(sessionId, { participants, notes, yjsSnapshot, replayTimeline } = {}) {
+  if (!enabled) return false;
+  const { error } = await supabase
+    .from("interview_sessions")
+    .update({
+      ended_at: new Date().toISOString(),
+      participants: participants || [],
+      notes: notes || null,
+      yjs_snapshot: yjsSnapshot || null,
+      replay_timeline: replayTimeline || [],
+    })
+    .eq("id", sessionId);
+  if (error) { console.error("[DB] stopInterviewSession error:", error.message); return false; }
+  return true;
+}
+
+async function getInterviewSession(sessionId) {
+  if (!enabled) return null;
+  const { data, error } = await supabase
+    .from("interview_sessions")
+    .select("*")
+    .eq("id", sessionId)
+    .single();
+  if (error) return null;
+  return data;
+}
+
+async function listRoomInterviewSessions(roomId) {
+  if (!enabled) return [];
+  const { data, error } = await supabase
+    .from("interview_sessions")
+    .select("id, title, started_by, started_at, ended_at, participants")
+    .eq("room_id", roomId)
+    .order("started_at", { ascending: false })
+    .limit(20);
+  if (error) { console.error("[DB] listRoomInterviewSessions error:", error.message); return []; }
+  return data ?? [];
+}
+
+// ─── Room audit log ──────────────────────────────────────────────────────────
+
+async function insertRoomAuditLog({
+  roomId,
+  actorUserId = null,
+  actorLogin = null,
+  action,
+  targetUserId = null,
+  metadata = {},
+}) {
+  if (!enabled || !roomId || !action) return false;
+  const { error } = await supabase.from("room_audit_log").insert({
+    room_id: roomId,
+    actor_user_id: actorUserId,
+    actor_login: actorLogin,
+    action,
+    target_user_id: targetUserId,
+    metadata,
+  });
+  if (error) {
+    console.error("[DB] insertRoomAuditLog error:", error.message);
+    return false;
+  }
+  return true;
+}
+
+async function listRoomAuditLog(roomId, limit = 30) {
+  if (!enabled) return [];
+  const { data, error } = await supabase
+    .from("room_audit_log")
+    .select("id, action, actor_user_id, actor_login, target_user_id, metadata, created_at")
+    .eq("room_id", roomId)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) {
+    console.error("[DB] listRoomAuditLog error:", error.message);
+    return [];
+  }
+  return data ?? [];
+}
+
 // ─── Status ───────────────────────────────────────────────────────────────────
 
 async function ping() {
@@ -330,11 +730,30 @@ module.exports = {
   saveRoom,
   upsertUser,
   touchRoomMember,
+  ensureRoomOwnership,
   getUserRooms,
+  getRoomMemberRole,
+  setRoomMemberRole,
+  listRoomMembers,
+  roomHasTeacher,
+  getRoomAdminState,
+  setRoomMemberAdmin,
+  transferRoomOwnership,
+  createRoomInvite,
+  getRoomInviteByToken,
+  acceptRoomInvite,
+  listRoomInvites,
+  revokeRoomInvite,
   insertChatMessage,
   insertRunHistory,
   saveRoomFiles,
   getRoomMeta,
   setRoomPassword,
+  createInterviewSession,
+  stopInterviewSession,
+  getInterviewSession,
+  listRoomInterviewSessions,
+  insertRoomAuditLog,
+  listRoomAuditLog,
   ping,
 };
