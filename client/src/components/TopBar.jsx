@@ -12,14 +12,12 @@ import SettingsPanel from "./SettingsPanel";
 import {
   ArchiveIcon,
   ChevronDownIcon,
-  EyeIcon,
   ForkIcon,
   LockIcon,
   LoginIcon,
   PlayIcon,
   SettingsIcon,
   ShareIcon,
-  SparkIcon,
   CloseIcon,
 } from "./ui/Icons";
 
@@ -345,7 +343,6 @@ export default function TopBar({
   const [users, setUsers] = useState([]);
   const [files, setFiles] = useState([]);
   const [copied, setCopied] = useState(false);
-  const [gistState, setGistState] = useState("idle");
   const [showSettings, setShowSettings] = useState(false);
   const [showDiffMenu, setShowDiffMenu] = useState(false);
   const [showLogin, setShowLogin] = useState(false);
@@ -412,27 +409,6 @@ export default function TopBar({
     return () => awareness.off("change", update);
   }, []);
 
-  const handleGist = async () => {
-    if (gistState === "saving") return;
-    setGistState("saving");
-    try {
-      const content = getYText(filename).toString();
-      const res = await fetch(`${SERVER_URL}/api/gist`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ filename, content }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-      setGistState("done");
-      window.open(data.url, "_blank", "noopener");
-      setTimeout(() => setGistState("idle"), 3000);
-    } catch {
-      setGistState("error");
-      setTimeout(() => setGistState("idle"), 3000);
-    }
-  };
-
   const handleShare = useCallback(() => {
     const url = `${window.location.origin}${window.location.pathname}#${roomId}`;
     navigator.clipboard.writeText(url).then(() => {
@@ -440,14 +416,6 @@ export default function TopBar({
       setTimeout(() => setCopied(false), 2000);
     });
   }, []);
-
-  const handleShareReadOnly = () => {
-    const url = `${window.location.origin}${window.location.pathname}?view=1#${roomId}`;
-    navigator.clipboard.writeText(url).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
-  };
 
   const handleFork = () => {
     const newRoom = Math.random().toString(36).slice(2, 10);
@@ -786,11 +754,6 @@ export default function TopBar({
             <span>{copied ? "Copied" : "Share"}</span>
           </Btn>
 
-          <Btn onClick={handleShareReadOnly} title="Copy read-only link">
-            <EyeIcon className="h-3.5 w-3.5" />
-            <span>View link</span>
-          </Btn>
-
           <Btn onClick={handleFork} title="Fork this session into a new room">
             <ForkIcon className="h-3.5 w-3.5" />
             <span>Fork</span>
@@ -934,38 +897,6 @@ export default function TopBar({
               </div>
             )}
           </div>
-
-          <Btn
-            onClick={handleGist}
-            disabled={gistState === "saving"}
-            style={{
-              background:
-                gistState === "done"
-                  ? "var(--green)"
-                  : gistState === "error"
-                    ? "var(--red)"
-                    : "var(--bg-tertiary)",
-              borderColor:
-                gistState === "done"
-                  ? "var(--green)"
-                  : gistState === "error"
-                    ? "var(--red)"
-                    : "var(--border)",
-              color:
-                gistState === "done" || gistState === "error"
-                  ? "var(--bg-primary)"
-                  : "var(--text-secondary)",
-            }}
-          >
-            <SparkIcon className="h-3.5 w-3.5" />
-            {gistState === "saving"
-              ? "…"
-              : gistState === "done"
-                ? "Gist ✓"
-                : gistState === "error"
-                  ? "Err"
-                  : "Gist"}
-          </Btn>
         </div>
 
         <Divider />

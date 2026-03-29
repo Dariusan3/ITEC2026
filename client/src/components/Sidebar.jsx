@@ -61,65 +61,6 @@ function parseSegments(text) {
   return parts;
 }
 
-function buildOutline(code, language) {
-  if (!code?.trim()) return [];
-  const langKey = language === "react-jsx" ? "javascript" : language;
-
-  const patternsByLanguage = {
-    javascript: [
-      /^\s*(?:export\s+)?(?:async\s+)?function\s+([A-Za-z0-9_$]+)/,
-      /^\s*(?:export\s+)?const\s+([A-Za-z0-9_$]+)\s*=\s*(?:async\s*)?\(/,
-      /^\s*(?:export\s+)?class\s+([A-Za-z0-9_$]+)/,
-    ],
-    typescript: [
-      /^\s*(?:export\s+)?(?:async\s+)?function\s+([A-Za-z0-9_$]+)/,
-      /^\s*(?:export\s+)?const\s+([A-Za-z0-9_$]+)\s*=\s*(?:async\s*)?\(/,
-      /^\s*(?:export\s+)?class\s+([A-Za-z0-9_$]+)/,
-      /^\s*(?:export\s+)?interface\s+([A-Za-z0-9_$]+)/,
-      /^\s*(?:export\s+)?type\s+([A-Za-z0-9_$]+)/,
-    ],
-    python: [/^\s*def\s+([A-Za-z0-9_]+)/, /^\s*class\s+([A-Za-z0-9_]+)/],
-    go: [/^\s*func\s+([A-Za-z0-9_]+)/, /^\s*type\s+([A-Za-z0-9_]+)/],
-    java: [
-      /^\s*(?:public|private|protected)?\s*(?:static\s+)?(?:class|interface|enum)\s+([A-Za-z0-9_]+)/,
-      /^\s*(?:public|private|protected)?\s*(?:static\s+)?[\w<>\[\]]+\s+([A-Za-z0-9_]+)\s*\(/,
-    ],
-    c: [
-      /^\s*[A-Za-z_][\w\s\*]*\s+([A-Za-z_]\w*)\s*\([^;]*\)\s*\{/,
-      /^\s*struct\s+([A-Za-z_]\w*)/,
-    ],
-    rust: [
-      /^\s*fn\s+([A-Za-z0-9_]+)/,
-      /^\s*struct\s+([A-Za-z0-9_]+)/,
-      /^\s*enum\s+([A-Za-z0-9_]+)/,
-      /^\s*impl\s+([A-Za-z0-9_]+)/,
-    ],
-    html: [/^\s*<([a-zA-Z][\w-]*)\b/],
-    css: [/^\s*([.#]?[A-Za-z0-9_-][^{]*)\s*\{/],
-  };
-
-  const patterns = patternsByLanguage[langKey] || patternsByLanguage.javascript;
-
-  return code
-    .split("\n")
-    .map((lineText, index) => {
-      for (const pattern of patterns) {
-        const match = lineText.match(pattern);
-        if (match?.[1]) {
-          return {
-            id: `${index + 1}-${match[1]}`,
-            name: match[1].trim(),
-            line: index + 1,
-            preview: lineText.trim(),
-          };
-        }
-      }
-      return null;
-    })
-    .filter(Boolean)
-    .slice(0, 80);
-}
-
 const ROLE_META = {
   user: { label: "You", accent: "var(--blue)", bubble: true },
   ai: { label: "AI", accent: "var(--accent)", bubble: false, aiIcon: true },
@@ -490,7 +431,7 @@ const QUICK_ACTIONS = [
   { key: "review", icon: "◌", label: "Review", title: "Review current file" },
 ];
 
-export default function Sidebar({ editorRef, activeFile, language, output, onFileSelect }) {
+export default function Sidebar({ editorRef, activeFile, language, output }) {
   const [tab, setTab] = useState("ai");
   const [prompt, setPrompt] = useState("");
   const [messages, setMessages] = useState([]);
@@ -498,10 +439,6 @@ export default function Sidebar({ editorRef, activeFile, language, output, onFil
   const [users, setUsers] = useState([]);
   const scrollRef = useRef(null);
   const textareaRef = useRef(null);
-  const outline = buildOutline(
-    activeFile ? getYText(activeFile).toString() : "",
-    language,
-  );
 
   // Auto-scroll on new messages
   useEffect(() => {
@@ -709,31 +646,8 @@ export default function Sidebar({ editorRef, activeFile, language, output, onFil
     [loading, activeFile, language, output, editorRef],
   );
 
-  const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState(null);
-
-  const runSearch = useCallback(
-    (q) => {
-      if (!q.trim()) { setSearchResults(null); return; }
-      const results = [];
-      yFiles.forEach((meta, filename) => {
-        const content = getYText(filename).toString();
-        const lines = content.split("\n");
-        lines.forEach((lineText, i) => {
-          if (lineText.toLowerCase().includes(q.toLowerCase())) {
-            results.push({ filename, line: i + 1, text: lineText.trim(), lang: meta?.language || "javascript" });
-          }
-        });
-      });
-      setSearchResults(results);
-    },
-    [],
-  );
-
   const TABS = [
     { id: "ai", label: "AI" },
-    { id: "search", label: "Search" },
-    { id: "outline", label: "Outline" },
     { id: "presence", label: "Who's Here" },
     { id: "chat", label: "Chat" },
   ];
@@ -951,176 +865,8 @@ export default function Sidebar({ editorRef, activeFile, language, output, onFil
         </>
       )}
 
-      {/* ── Search tab ── */}
-      {tab === "search" && (
-        <div className="flex min-h-0 flex-1 flex-col">
-          <div
-            className="flex shrink-0 flex-col gap-2 border-b px-3 py-2.5"
-            style={{ borderColor: "var(--border)" }}
-          >
-            <span
-              className="text-[11px] font-bold uppercase tracking-wider"
-              style={{ color: "var(--accent)" }}
-            >
-              Find across files
-            </span>
-            <div className="flex gap-2">
-              <input
-                autoFocus
-                value={searchQuery}
-                onChange={(e) => {
-                  setSearchQuery(e.target.value);
-                  runSearch(e.target.value);
-                }}
-                onKeyDown={(e) => e.key === "Escape" && setSearchQuery("")}
-                placeholder="Search all files…"
-                className="flex-1 rounded-xl border px-3 py-2 text-[11px] font-mono outline-none"
-                style={{
-                  background: "var(--bg-tertiary)",
-                  borderColor: "var(--border)",
-                  color: "var(--text-primary)",
-                }}
-              />
-              {searchQuery && (
-                <button
-                  type="button"
-                  onClick={() => { setSearchQuery(""); setSearchResults(null); }}
-                  className="shrink-0 rounded-xl border px-2.5 text-[11px]"
-                  style={{ background: "var(--bg-tertiary)", borderColor: "var(--border)", color: "var(--text-secondary)" }}
-                >
-                  ✕
-                </button>
-              )}
-            </div>
-            {searchResults !== null && (
-              <p className="text-[9px] uppercase tracking-[0.16em]" style={{ color: "var(--text-secondary)" }}>
-                {searchResults.length} match{searchResults.length !== 1 ? "es" : ""}{searchQuery ? ` for "${searchQuery}"` : ""}
-              </p>
-            )}
-          </div>
-
-          <div className="flex-1 overflow-y-auto p-2 space-y-0.5">
-            {searchResults === null ? (
-              <EmptyState
-                title="Search your workspace"
-                description="Type above to find text across all open files. Results show file, line number and matching content."
-              />
-            ) : searchResults.length === 0 ? (
-              <EmptyState title="No matches" description={`"${searchQuery}" was not found in any file.`} />
-            ) : (
-              searchResults.map((r, i) => (
-                <button
-                  key={i}
-                  type="button"
-                  onClick={() => onFileSelect?.(r.filename, r.lang, { line: r.line })}
-                  className="w-full rounded-xl border px-3 py-2 text-left transition-all duration-150 hover:brightness-110"
-                  style={{ background: "var(--bg-tertiary)", borderColor: "var(--border)" }}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="truncate text-[10px] font-semibold" style={{ color: "var(--accent)" }}>
-                      {r.filename.includes("/") ? r.filename.split("/").pop() : r.filename}
-                    </span>
-                    <span className="shrink-0 text-[9px] tabular-nums" style={{ color: "var(--text-secondary)" }}>
-                      L{r.line}
-                    </span>
-                  </div>
-                  <p className="mt-0.5 truncate font-mono text-[10px]" style={{ color: "var(--text-secondary)" }}>
-                    {r.text.slice(0, 80)}
-                  </p>
-                </button>
-              ))
-            )}
-          </div>
-        </div>
-      )}
-
       {/* ── Chat tab ── */}
       {tab === "chat" && <Chat />}
-
-      {/* ── Outline tab ── */}
-      {tab === "outline" && (
-        <div className="flex min-h-0 flex-1 flex-col">
-          <div
-            className="flex min-h-12 shrink-0 flex-wrap items-center gap-2 border-b px-3 py-2.5 sm:gap-2.5"
-            style={{ borderColor: "var(--border)" }}
-          >
-            <span
-              className="text-[11px] font-bold uppercase tracking-wider sm:text-xs"
-              style={{ color: "var(--accent)" }}
-            >
-              Outline
-            </span>
-            <span
-              className="shrink-0 rounded-none border px-2 py-1 font-mono text-[10px] sm:text-[11px]"
-              style={{
-                background: "var(--bg-tertiary)",
-                borderColor: "var(--border)",
-                color: "var(--text-secondary)",
-              }}
-            >
-              {activeFile || "No file"}
-            </span>
-          </div>
-
-          <div className="flex-1 overflow-y-auto p-3">
-            {outline.length === 0 ? (
-              <p
-                className="text-[11px] leading-relaxed"
-                style={{ color: "var(--text-secondary)" }}
-              >
-                No outline symbols detected for this file yet.
-              </p>
-            ) : (
-              <div className="space-y-1.5">
-                {outline.map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => {
-                      const editor = editorRef?.current?.getEditor?.();
-                      const model = editor?.getModel?.();
-                      if (!editor || !model) return;
-                      const line = Math.max(
-                        1,
-                        Math.min(item.line, model.getLineCount()),
-                      );
-                      editor.revealLineInCenter(line);
-                      editor.setPosition({ lineNumber: line, column: 1 });
-                      editor.focus();
-                    }}
-                    className="w-full rounded-none border px-2.5 py-2 text-left transition-all hover:brightness-110"
-                    style={{
-                      background: "var(--bg-tertiary)",
-                      borderColor: "var(--border)",
-                    }}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span
-                        className="truncate text-[11px] font-semibold"
-                        style={{ color: "var(--text-primary)" }}
-                      >
-                        {item.name}
-                      </span>
-                      <span
-                        className="shrink-0 text-[9px] uppercase tracking-wide"
-                        style={{ color: "var(--accent)" }}
-                      >
-                        L{item.line}
-                      </span>
-                    </div>
-                    <p
-                      className="truncate pt-0.5 text-[10px]"
-                      style={{ color: "var(--text-secondary)" }}
-                    >
-                      {item.preview}
-                    </p>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
 
       {/* ── Who's Here tab ── */}
       {tab === "presence" && (

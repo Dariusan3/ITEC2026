@@ -713,8 +713,8 @@ async function runDirect(code, language, onData, stdin = "") {
   }
 }
 
-// X5: Rate limit — 20 runs/min per IP
-const rateLimit = require("express-rate-limit");
+// X5: Rate limit — 20 runs/min per IP (ipKeyGenerator: IPv6-safe, see ERR_ERL_KEY_GEN_IPV6)
+const { rateLimit, ipKeyGenerator } = require("express-rate-limit");
 const runLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 20,
@@ -724,7 +724,7 @@ const runLimiter = rateLimit({
   keyGenerator: (req) => {
     const login = req.session?.user?.login;
     if (login) return `user:${login}`;
-    return req.ip || "unknown";
+    return ipKeyGenerator(req.ip ?? "");
   },
 });
 
@@ -829,7 +829,7 @@ const previewLimiter = rateLimit({
   keyGenerator: (req) => {
     const login = req.session?.user?.login;
     if (login) return `user:${login}`;
-    return req.ip || "unknown";
+    return ipKeyGenerator(req.ip ?? "");
   },
 });
 

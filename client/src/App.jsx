@@ -944,7 +944,6 @@ export default function App() {
           activeFile={activeFile}
           language={language}
           output={output}
-          onFileSelect={handleFileSelect}
         />
       </div>
     </div>
