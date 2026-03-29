@@ -1,24 +1,32 @@
-import { useState, useEffect, useMemo, useCallback, createElement } from "react";
+import {
+  useState,
+  useEffect,
+  useMemo,
+  useCallback,
+  createElement,
+} from "react";
 import { yFiles, getYText } from "../lib/yjs";
 import { listWorkspaceMarkdownPaths } from "../lib/workspaceDocPaths";
 
-/** Ca în Sidebar — segmente text / blocuri ```fence``` */
+/** Same as Sidebar — text segments / ```fence``` blocks */
 function parseDocSegments(text) {
   const parts = [];
   const re = /```(\w*)\n?([\s\S]*?)```/g;
   let last = 0;
   let m;
   while ((m = re.exec(text)) !== null) {
-    if (m.index > last) parts.push({ type: "text", content: text.slice(last, m.index) });
+    if (m.index > last)
+      parts.push({ type: "text", content: text.slice(last, m.index) });
     parts.push({ type: "code", lang: m[1] || "", content: m[2] });
     last = m.index + m[0].length;
   }
-  if (last < text.length) parts.push({ type: "text", content: text.slice(last) });
+  if (last < text.length)
+    parts.push({ type: "text", content: text.slice(last) });
   if (parts.length === 0) parts.push({ type: "text", content: text || "" });
   return parts;
 }
 
-/** Randare ușoară pentru Markdown „de citit” (titluri, liste, paragrafe). */
+/** Light rendering for readable Markdown (headings, lists, paragraphs). */
 function RenderTextSegment({ content }) {
   const lines = content.split("\n");
   const blocks = [];
@@ -79,7 +87,14 @@ function RenderTextSegment({ content }) {
     if (hMatch) {
       flushList(false);
       const level = hMatch[1].length;
-      const sizes = ["text-base", "text-sm", "text-xs", "text-xs", "text-[11px]", "text-[10px]"];
+      const sizes = [
+        "text-base",
+        "text-sm",
+        "text-xs",
+        "text-xs",
+        "text-[11px]",
+        "text-[10px]",
+      ];
       const L = Math.min(Math.max(level, 1), 6);
       const tag = `h${L}`;
       blocks.push(
@@ -125,7 +140,11 @@ function RenderTextSegment({ content }) {
     }
 
     const paraLines = [];
-    while (i < lines.length && lines[i].trim() && !/^(#{1,6}\s|[-*]\s|\d+\.\s)/.test(lines[i].trim())) {
+    while (
+      i < lines.length &&
+      lines[i].trim() &&
+      !/^(#{1,6}\s|[-*]\s|\d+\.\s)/.test(lines[i].trim())
+    ) {
       paraLines.push(lines[i]);
       i++;
     }
@@ -224,12 +243,14 @@ function WorkspaceMarkdownBody({ source, revision = 0 }) {
 }
 
 /**
- * Documentația **proiectului din cameră** — fișiere .md / .mdx din Yjs, actualizare live.
+ * Room project documentation — .md / .mdx files from Yjs, live updates.
  * @param {{ onOpenInEditor?: (path: string, language?: string) => void }} props
  */
 export default function ProjectDocs({ onOpenInEditor }) {
   const [paths, setPaths] = useState(() => listWorkspaceMarkdownPaths(yFiles));
-  const [selected, setSelected] = useState(() => listWorkspaceMarkdownPaths(yFiles)[0] ?? null);
+  const [selected, setSelected] = useState(
+    () => listWorkspaceMarkdownPaths(yFiles)[0] ?? null,
+  );
   const [docVersion, setDocVersion] = useState(0);
 
   const refreshPaths = useCallback(() => {
@@ -242,7 +263,6 @@ export default function ProjectDocs({ onOpenInEditor }) {
   }, []);
 
   useEffect(() => {
-    refreshPaths();
     const onFiles = () => refreshPaths();
     yFiles.observe(onFiles);
     return () => yFiles.unobserve(onFiles);
@@ -278,13 +298,13 @@ export default function ProjectDocs({ onOpenInEditor }) {
             className="block text-[11px] font-bold uppercase tracking-wider sm:text-xs"
             style={{ color: "var(--accent)" }}
           >
-            Ghid proiect
+            Guide project
           </span>
           <span
             className="block pt-0.5 text-[9px] uppercase tracking-[0.14em]"
             style={{ color: "var(--text-secondary)" }}
           >
-            Din fișierele camerei (.md)
+            From room files (.md)
           </span>
         </div>
         {selected && onOpenInEditor ? (
@@ -298,7 +318,7 @@ export default function ProjectDocs({ onOpenInEditor }) {
               color: "var(--accent)",
             }}
           >
-            Editează
+            Edit
           </button>
         ) : null}
       </div>
@@ -316,18 +336,31 @@ export default function ProjectDocs({ onOpenInEditor }) {
               className="text-[11px] font-semibold leading-snug"
               style={{ color: "var(--text-primary)" }}
             >
-              Încă nu ai documentație în workspace
+              No documentation in workspace yet
             </p>
-            <p className="text-[10px] leading-relaxed" style={{ color: "var(--text-secondary)" }}>
-              Creează sau importă un <strong style={{ color: "var(--text-primary)" }}>README.md</strong>, sau orice{" "}
-              <code className="font-mono text-[9px]" style={{ color: "var(--accent)" }}>
+            <p
+              className="text-[10px] leading-relaxed"
+              style={{ color: "var(--text-secondary)" }}
+            >
+              Create or import a{" "}
+              <strong style={{ color: "var(--text-primary)" }}>
+                README.md
+              </strong>
+              , or any{" "}
+              <code
+                className="font-mono text-[9px]"
+                style={{ color: "var(--accent)" }}
+              >
                 .md
               </code>{" "}
               /{" "}
-              <code className="font-mono text-[9px]" style={{ color: "var(--accent)" }}>
+              <code
+                className="font-mono text-[9px]"
+                style={{ color: "var(--accent)" }}
+              >
                 .mdx
               </code>{" "}
-              — va apărea aici pentru toți din cameră, actualizat live.
+              — it will appear here for everyone in the room, updated live.
             </p>
           </div>
         </div>
@@ -344,12 +377,14 @@ export default function ProjectDocs({ onOpenInEditor }) {
                 onClick={() => setSelected(p)}
                 className="w-full truncate rounded-none border px-2.5 py-2 text-left text-[10px] font-medium transition-all duration-150 sm:text-[11px]"
                 style={{
-                  borderColor: selected === p ? "var(--accent)" : "var(--border)",
+                  borderColor:
+                    selected === p ? "var(--accent)" : "var(--border)",
                   background:
                     selected === p
                       ? "color-mix(in srgb, var(--accent) 14%, var(--bg-tertiary))"
                       : "var(--bg-secondary)",
-                  color: selected === p ? "var(--accent)" : "var(--text-secondary)",
+                  color:
+                    selected === p ? "var(--accent)" : "var(--text-secondary)",
                 }}
                 title={p}
               >

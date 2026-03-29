@@ -73,7 +73,7 @@ app.get("/api/db/status", async (_req, res) => {
 // --- AI suggestion endpoint ---
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
-/** Când modelul returnează JSON invalid, extragem manual string-ul din "suggestion". */
+/** When the model returns invalid JSON, manually extract the string from "suggestion". */
 function extractJsonStringField(text, field) {
   if (!text || typeof text !== "string") return null;
   const needle = `"${field}"`;
@@ -205,7 +205,7 @@ app.post("/api/ai/explain", async (req, res) => {
   }
 });
 
-/** Prefixează fiecare linie ca modelul să poată ținti exact zona din mesajul de eroare. */
+/** Prefix each line so the model can target the exact area from the error message. */
 function codeWithLineNumbers(src) {
   return src
     .split("\n")
@@ -269,7 +269,7 @@ Rules:
       .trim();
 
     let fixed;
-    let explanation = "Am aplicat corecția sugerată.";
+    let explanation = "Applied the suggested fix.";
     try {
       const parsed = JSON.parse(stripped);
       fixed = parsed.fixed;
@@ -432,7 +432,7 @@ const LANG_CONFIG = {
   c: {
     ext: ".c",
     image: "gcc:latest",
-    /* stdbuf -o0: stdout nebufferizat — prompturi fără \\n se văd înainte de scanf */
+    /* stdbuf -o0: unbuffered stdout — prompts without \n are visible before scanf */
     cmd: [
       "sh",
       "-c",
@@ -1458,6 +1458,16 @@ app.post("/api/invite/:token/accept", async (req, res) => {
     return res.status(400).json({ error: "Invite has expired" });
   }
   if (Number(invite.use_count ?? 0) >= Number(invite.max_uses ?? 1)) {
+    // Idempotent: if this exact user already accepted, return success
+    if (Number(invite.accepted_by_user_id) === Number(actorId)) {
+      return res.json({
+        ok: true,
+        roomId: invite.room_id,
+        role: invite.role || "member",
+        isAdmin: !!invite.grant_admin,
+        alreadyAccepted: true,
+      });
+    }
     return res.status(400).json({ error: "Invite usage limit reached" });
   }
 

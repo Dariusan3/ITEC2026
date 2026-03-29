@@ -1,7 +1,7 @@
 import { yRoomMeta } from "./yjs";
 
 /**
- * Seed inițial pentru cameră goală — evită import circular yjs → seed la încărcare.
+ * Initial seed for empty room — avoids circular import yjs → seed at load time.
  * @param {import('yjs').Map<string, unknown>} yFiles
  * @param {(name: string) => import('yjs').Text} getYText
  */

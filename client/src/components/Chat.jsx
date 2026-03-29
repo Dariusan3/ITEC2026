@@ -100,7 +100,7 @@ export default function Chat() {
 
   return (
     <div className="flex h-full flex-col">
-      {/* Header — același limbaj ca „AI Assistant” + badge în Sidebar */}
+      {/* Header — same visual language as "AI Assistant" + badge in Sidebar */}
       <div
         className="flex min-h-[3rem] shrink-0 items-center gap-2 border-b px-3 py-2.5 sm:gap-2.5"
         style={{ borderColor: "var(--border)" }}

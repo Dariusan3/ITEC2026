@@ -1,6 +1,6 @@
 /**
- * Extrage valoarea unui câmp string din text JSON-like chiar dacă întregul JSON e invalid
- * (ex. modelul uită ghilimelele la cheia "explanation").
+ * Extract the value of a string field from JSON-like text even if the full JSON is invalid
+ * (e.g. the model forgets quotes around the "explanation" key).
  */
 export function extractJsonStringField(text, field) {
   if (!text || typeof text !== "string") return null;

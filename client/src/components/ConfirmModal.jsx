@@ -1,15 +1,15 @@
 import { useEffect, useRef } from "react";
 
 /**
- * Modal confirmare — înlocuiește window.confirm.
+ * Confirmation modal — replaces window.confirm.
  * @param {{ open: boolean, title: string, body: string, confirmLabel?: string, cancelLabel?: string, danger?: boolean, onConfirm: () => void, onCancel: () => void }} props
  */
 export default function ConfirmModal({
   open,
   title,
   body,
-  confirmLabel = "Confirmă",
-  cancelLabel = "Anulează",
+  confirmLabel = "Confirm",
+  cancelLabel = "Cancel",
   danger = false,
   onConfirm,
   onCancel,

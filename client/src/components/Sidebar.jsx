@@ -16,8 +16,8 @@ function getCursorLine(editorRef) {
   return pos ? pos.lineNumber : 1;
 }
 
-/** Extrage un număr de linie din ieșirea compilatorului / runtime (pentru Fix AI). */
-/** Primul fișier util de deschis după scaffold. */
+/** Extract a line number from compiler / runtime output (for Fix AI). */
+/** First useful file to open after scaffold. */
 function pickScaffoldEntryPath(fileKeys) {
   const keys = [...fileKeys];
   const prefer = [
@@ -51,7 +51,7 @@ function extractErrorLineHint(text) {
   return null;
 }
 
-/** Construiește contextul de eroare: stderr + linii stdout care par diagnostice. */
+/** Build error context: stderr + stdout lines that look like diagnostics. */
 function buildFixErrorContext(output) {
   if (!output?.length) return "";
   const lines = [];
@@ -95,7 +95,7 @@ const ROLE_META = {
   error: { label: "Error", accent: "var(--red)", bubble: false },
 };
 
-/** Mic spark / AI glyph — același limbaj vizual ca badge-ul de chat */
+/** Small spark / AI glyph — same visual language as the chat badge */
 function AiGlyph({ className = "", style }) {
   return (
     <svg
@@ -118,7 +118,7 @@ function AiGlyph({ className = "", style }) {
   );
 }
 
-/** Buton icon pentru mesaje — delete / copy */
+/** Icon button for messages — delete / copy */
 function MsgActionBtn({ onClick, title, variant, children }) {
   const isDanger = variant === "danger";
   return (
@@ -214,7 +214,7 @@ function AiMessage({ msg, onDelete }) {
       })
     : null;
 
-  /* ── User message: bulă la dreapta; ștergere în stânga bulei (fără suprapunere pe text) ── */
+  /* ── User message: bubble on the right; delete on the left of the bubble (no text overlap) ── */
   if (isUser) {
     return (
       <div className="group/msg flex flex-col items-end gap-1">
@@ -238,7 +238,7 @@ function AiMessage({ msg, onDelete }) {
           <div className="shrink-0 pt-0.5 opacity-0 transition-opacity group-hover/msg:opacity-100">
             <MsgActionBtn
               onClick={onDelete}
-              title="Șterge mesajul"
+              title="Delete message"
               variant="danger"
             >
               <TrashIcon />
@@ -294,7 +294,7 @@ function AiMessage({ msg, onDelete }) {
           </span>
         )}
         <div className="ml-auto flex items-center gap-1 opacity-0 transition-opacity group-hover/msg:opacity-100">
-          <MsgActionBtn onClick={copy} title="Copiază mesajul">
+          <MsgActionBtn onClick={copy} title="Copy message">
             {copied ? <CheckIcon /> : <CopyIcon />}
           </MsgActionBtn>
           <MsgActionBtn
@@ -458,7 +458,7 @@ const QUICK_ACTIONS = [
     icon: "▤",
     label: "Build",
     title:
-      "Generează mai multe fișiere din textul din casetă (ex: landing page, mini-proiect)",
+      "Generate multiple files from the text in the box (e.g. landing page, mini-project)",
   },
 ];
 
@@ -468,6 +468,12 @@ export default function Sidebar({
   language,
   output,
   onOpenWorkspaceFile,
+  roomRole = "member",
+  teacherBroadcast = "",
+  onTeacherBroadcastChange,
+  teacherLocked = false,
+  onTeacherLockedChange,
+  classState,
 }) {
   const [tab, setTab] = useState("ai");
   const [prompt, setPrompt] = useState("");
@@ -477,6 +483,17 @@ export default function Sidebar({
   const scrollRef = useRef(null);
   const textareaRef = useRef(null);
 
+  // ── Teacher controls (props-driven, wired to App.jsx awareness) ─────────
+  const handleBroadcast = (msg) => {
+    onTeacherBroadcastChange?.(
+      teacherBroadcast ? "" : msg || "Teacher is broadcasting",
+    );
+  };
+
+  const handleLockRoom = () => {
+    onTeacherLockedChange?.(!teacherLocked);
+  };
+
   // Auto-scroll on new messages
   useEffect(() => {
     scrollRef.current?.scrollTo({
@@ -485,13 +502,13 @@ export default function Sidebar({
     });
   }, [messages, loading]);
 
-  // Presence
+  // Presence — merge user + org so role and broadcast are visible in user cards
   useEffect(() => {
     const awareness = wsProvider.awareness;
     const update = () => {
       const s = [];
       awareness.getStates().forEach((state, clientId) => {
-        if (state.user) s.push({ ...state.user, clientId });
+        if (state.user) s.push({ ...state.user, ...state.org, clientId });
       });
       setUsers(s);
     };
@@ -582,7 +599,7 @@ export default function Sidebar({
           const errorBlob = buildFixErrorContext(output);
           if (!errorBlob)
             throw new Error(
-              "Nu am găsit erori în ultimul run. Rulează din nou cu stderr sau mesaj de compilare în panoul Output.",
+              "No errors found in the last run. Run again with stderr or a compiler message in the Output panel.",
             );
           const code = activeFile ? getYText(activeFile).toString() : "";
           const hintLine = extractErrorLineHint(errorBlob);
@@ -694,7 +711,7 @@ export default function Sidebar({
           const userMsg = prompt.trim();
           if (!userMsg) {
             throw new Error(
-              "Scrie în casetă ce vrei să construiască AI-ul (ex: landing page React cu Vite), apoi apasă Build.",
+              "Type what you want the AI to build (e.g. React landing page with Vite), then press Build.",
             );
           }
           setPrompt("");
@@ -711,12 +728,12 @@ export default function Sidebar({
           if (!res.ok) throw new Error(data.error || "Scaffold failed");
           const files = data.files;
           if (!files || typeof files !== "object") {
-            throw new Error("Răspuns invalid.");
+            throw new Error("Invalid response.");
           }
           const keys = Object.keys(files);
           if (
             !window.confirm(
-              `AI va crea sau actualiza ${keys.length} fișier(e) în cameră pentru toți colaboratorii. Continuă?`,
+              `AI will create or update ${keys.length} file(s) in the room for all collaborators. Continue?`,
             )
           ) {
             return;
@@ -731,7 +748,7 @@ export default function Sidebar({
           const list = keys.join(", ");
           addMsg({
             role: "ai",
-            content: `**${data.explanation || "Gata."}**\n\nFișiere: ${list}`,
+            content: `**${data.explanation || "Done."}**\n\nFiles: ${list}`,
           });
           const openPath = pickScaffoldEntryPath(keys);
           if (openPath && onOpenWorkspaceFile) {
@@ -759,7 +776,7 @@ export default function Sidebar({
     { id: "ai", label: "AI" },
     { id: "presence", label: "Who's Here" },
     { id: "chat", label: "Chat" },
-    { id: "docs", label: "Ghid" },
+    { id: "docs", label: "Guide" },
   ];
 
   return (
@@ -767,7 +784,7 @@ export default function Sidebar({
       className="panel-shell flex h-full w-72 flex-col border-l"
       style={{ borderColor: "var(--border)" }}
     >
-      {/* Tab bar — same segment style as TopBar, înălțime generoasă */}
+      {/* Tab bar — same segment style as TopBar, generous height */}
       <div
         className="flex shrink-0 items-stretch gap-2 border-b px-3 py-3"
         style={{ borderColor: "var(--border)" }}
@@ -777,7 +794,7 @@ export default function Sidebar({
             key={t.id}
             type="button"
             onClick={() => setTab(t.id)}
-            className="liquid-surface flex min-h-[2.9rem] min-w-0 flex-1 items-center justify-center rounded-none border px-1.5 py-3 text-[10px] font-semibold uppercase tracking-[0.12em] shadow-[0_12px_24px_rgba(0,0,0,0.14)] transition-all duration-150 hover:-translate-y-px hover:brightness-110 active:scale-[0.95] sm:min-h-[3rem] sm:px-2 sm:text-[11px]"
+            className="liquid-surface flex min-h-[2.9rem] min-w-0 flex-1 items-center justify-center rounded-none border px-1.5 py-3 text-[10px] font-semibold uppercase tracking-[0.12em] shadow-[0_12px_24px_rgba(0,0,0,0.14)] transition-all duration-150 hover:-translate-y-px hover:brightness-110 active:scale-[0.95] sm:min-h-12 sm:px-2 sm:text-[11px]"
             style={{
               background: tab === t.id ? "var(--accent)" : "var(--bg-tertiary)",
               color:
@@ -978,7 +995,7 @@ export default function Sidebar({
       {/* ── Chat tab ── */}
       {tab === "chat" && <Chat />}
 
-      {/* ── Who's Here tab ── */}
+      {/* ── Who’s Here tab ── */}
       {tab === "presence" && (
         <div className="flex min-h-0 flex-1 flex-col">
           <div
@@ -1002,6 +1019,94 @@ export default function Sidebar({
               {users.length} online
             </span>
           </div>
+
+          {/* Role badge + teacher controls */}
+          {(roomRole === "teacher" ||
+            roomRole === "student" ||
+            classState?.locked) && (
+            <div
+              className="shrink-0 border-b px-3 py-2.5"
+              style={{ borderColor: "var(--border)" }}
+            >
+              <div className="mb-2 flex items-center gap-2">
+                <span
+                  className="text-[10px] font-semibold uppercase tracking-[0.14em]"
+                  style={{ color: "var(--text-secondary)" }}
+                >
+                  Your role:
+                </span>
+                <span
+                  className="rounded-none border px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em]"
+                  style={{
+                    background:
+                      roomRole === "teacher"
+                        ? "color-mix(in srgb, var(--accent) 15%, var(--bg-tertiary))"
+                        : "var(--bg-tertiary)",
+                    color:
+                      roomRole === "teacher"
+                        ? "var(--accent)"
+                        : "var(--text-secondary)",
+                    borderColor:
+                      roomRole === "teacher"
+                        ? "var(--accent)"
+                        : "var(--border)",
+                  }}
+                >
+                  {roomRole}
+                </span>
+              </div>
+
+              {roomRole === "teacher" && (
+                <div className="flex flex-col gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleBroadcast()}
+                    className="rounded-none border px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] transition-all hover:brightness-110"
+                    style={{
+                      background: teacherBroadcast
+                        ? "var(--yellow)"
+                        : "var(--bg-tertiary)",
+                      color: teacherBroadcast
+                        ? "var(--bg-primary)"
+                        : "var(--text-secondary)",
+                      borderColor: teacherBroadcast
+                        ? "var(--yellow)"
+                        : "var(--border)",
+                    }}
+                  >
+                    {teacherBroadcast
+                      ? "Stop Broadcasting"
+                      : "Broadcast Message"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleLockRoom}
+                    className="rounded-none border px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] transition-all hover:brightness-110"
+                    style={{
+                      background: teacherLocked
+                        ? "var(--red)"
+                        : "var(--bg-tertiary)",
+                      color: teacherLocked ? "#fff" : "var(--text-secondary)",
+                      borderColor: teacherLocked
+                        ? "var(--red)"
+                        : "var(--border)",
+                    }}
+                  >
+                    {teacherLocked
+                      ? "Unlock Room"
+                      : "Lock Room (students read-only)"}
+                  </button>
+                </div>
+              )}
+
+              {roomRole === "student" && classState?.locked && (
+                <p className="text-[10px]" style={{ color: "var(--red)" }}>
+                  Room is locked — editing disabled by teacher.
+                </p>
+              )}
+            </div>
+          )}
+
           <div className="flex-1 space-y-2 overflow-y-auto p-3">
             {users.length === 0 && (
               <EmptyState
@@ -1033,12 +1138,20 @@ export default function Sidebar({
                       style={{ color: "var(--text-primary)" }}
                     >
                       {u.name}
+                      {u.broadcast && (
+                        <span
+                          className="ml-1.5 text-[9px] font-bold uppercase"
+                          style={{ color: "var(--yellow)" }}
+                        >
+                          ● broadcasting
+                        </span>
+                      )}
                     </p>
                     <p
                       className="text-[10px] uppercase tracking-[0.16em]"
                       style={{ color: "var(--text-secondary)" }}
                     >
-                      editing live
+                      {u.role && u.role !== "member" ? u.role : "editing live"}
                     </p>
                   </div>
                   <div

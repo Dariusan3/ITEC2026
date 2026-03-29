@@ -6,13 +6,13 @@ const httpProxy = require("http-proxy");
 
 const previewSessions = new Map();
 
-/** Primul răspuns HTTP de la Vite/Next poate întârzia (compilare). npm install poate depăși 2 min. */
+/** First HTTP response from Vite/Next may be delayed (compilation). npm install can exceed 2 min. */
 const PREVIEW_READY_MS = Math.max(
   120000,
   parseInt(process.env.PREVIEW_READY_TIMEOUT_MS || "540000", 10) || 540000,
 );
 
-/** npm mai rapid, mai puțin zgomot — include=dev evită omit devDependencies în medii ciudate */
+/** Faster npm, less noise — include=dev avoids omitting devDependencies in unusual environments */
 const NPM_INSTALL =
   "npm install --include=dev --no-audit --no-fund --loglevel warn";
 
@@ -37,7 +37,7 @@ function isSafeRelPath(p) {
   if (p.startsWith("/") || p.includes("..")) return false;
   const norm = path.posix.normalize(p.replace(/\\/g, "/"));
   if (norm.startsWith("..") || norm.includes("../")) return false;
-  /** Case-insensitive: pe Windows + bind mount Docker, „Node_modules” ca fișier blochează npm (ENOTDIR). */
+  /** Case-insensitive: on Windows + Docker bind mount, "Node_modules" as a file blocks npm (ENOTDIR). */
   if (
     norm
       .split("/")
@@ -49,8 +49,8 @@ function isSafeRelPath(p) {
 }
 
 /**
- * Elimină fișierele (sau symlink-urile) numite ca `node_modules` — npm cere un director.
- * Bind mount de pe Windows poate plia „Node_modules” cu „node_modules”.
+ * Remove files (or symlinks) named `node_modules` — npm requires a directory.
+ * Windows bind mount may merge "Node_modules" with "node_modules".
  */
 function removeNodeModulesPathConflicts(workspaceDir) {
   try {
@@ -95,7 +95,7 @@ function inferDevSetup(packageJsonText) {
   }
   const hasDevVite = /vite/.test(devVite);
   if (/vite/.test(dev) || hasDevVite) {
-    /** `npx vite` folosește binarul din node_modules/.bin (evită „vite: not found” din scripturi shell). --yes = non-interactive în Docker. */
+    /** `npx vite` uses the binary from node_modules/.bin (avoids "vite: not found" in shell scripts). --yes = non-interactive in Docker. */
     const runDev = `npx --yes vite --host 0.0.0.0 --port 5173`;
     return {
       internalPort: 5173,
@@ -169,8 +169,8 @@ async function stopPreview(roomId, docker) {
 }
 
 /**
- * Așteaptă până TCP răspunde pe port și HTTP returnează (orice status).
- * Răspunsul la primul request poate fi lent din cauza compilării — timeout mare pe request.
+ * Wait until TCP responds on port and HTTP returns (any status).
+ * First request response may be slow due to compilation — large timeout on request.
  */
 function waitForHttpPort(port, timeoutMs = PREVIEW_READY_MS) {
   const deadline = Date.now() + timeoutMs;
@@ -184,7 +184,7 @@ function waitForHttpPort(port, timeoutMs = PREVIEW_READY_MS) {
         const mins = Math.round(timeoutMs / 60000);
         reject(
           new Error(
-            `Preview: serverul de dev nu a răspuns în ${mins} min (port host ${port}). Adesea npm install sau prima compilare Vite/Next depășeau limita. En PREVIEW_READY_TIMEOUT_MS în .env (ex. 900000). Verifică logurile containerului în consola serverului după acest mesaj.`,
+            `Preview: dev server did not respond within ${mins} min (host port ${port}). Often npm install or first Vite/Next compilation exceeded the limit. Set PREVIEW_READY_TIMEOUT_MS in .env (e.g. 900000). Check container logs in the server console after this message.`,
           ),
         );
         return;
@@ -193,7 +193,7 @@ function waitForHttpPort(port, timeoutMs = PREVIEW_READY_MS) {
       if (now - lastLog > 45000) {
         lastLog = now;
         console.log(
-          `[Preview] Încă aștept răspuns pe 127.0.0.1:${port} (${Math.round((now - started) / 1000)}s / ${Math.round(timeoutMs / 1000)}s)…`,
+          `[Preview] Still waiting for response on 127.0.0.1:${port} (${Math.round((now - started) / 1000)}s / ${Math.round(timeoutMs / 1000)}s)…`,
         );
       }
 
@@ -218,8 +218,8 @@ function waitForHttpPort(port, timeoutMs = PREVIEW_READY_MS) {
 }
 
 /**
- * Așteaptă HTTP pe port SAU respinge imediat dacă containerul moare/dispare
- * (evită „loading” 9 min când npm install / dev server cade pe loc).
+ * Wait for HTTP on port OR reject immediately if the container dies/disappears
+ * (avoids "loading" for 9 min when npm install / dev server crashes immediately).
  */
 async function waitForPreviewHttpOrContainerDeath(
   docker,
@@ -251,7 +251,7 @@ async function waitForPreviewHttpOrContainerDeath(
             : "";
           reject(
             new Error(
-              `Preview: containerul s-a oprit înainte să răspundă serverul de dev (exit ${code ?? "?"}).${snippet}`,
+              `Preview: container stopped before the dev server responded (exit ${code ?? "?"}).${snippet}`,
             ),
           );
           return;
@@ -266,7 +266,7 @@ async function waitForPreviewHttpOrContainerDeath(
           if (intervalId) clearInterval(intervalId);
           reject(
             new Error(
-              "Preview: containerul Docker nu mai există (oprit sau șters). Repornește Docker Desktop și încearcă din nou.",
+              "Preview: Docker container no longer exists (stopped or deleted). Restart Docker Desktop and try again.",
             ),
           );
         }
@@ -287,8 +287,8 @@ async function waitForPreviewHttpOrContainerDeath(
 }
 
 /**
- * Docker Desktop poate întârzia popularea NetworkSettings.Ports după start (0–câteva secunde).
- * Fără polling, apare „Could not read host port” deși containerul e sănătos.
+ * Docker Desktop may delay populating NetworkSettings.Ports after start (0–a few seconds).
+ * Without polling, "Could not read host port" appears even though the container is healthy.
  */
 async function waitForPublishedHostPort(
   docker,
@@ -312,11 +312,11 @@ async function waitForPublishedHostPort(
       await logPreviewContainerTail(
         docker,
         containerId,
-        "container oprit înainte de mapare port",
+        "container stopped before port mapping",
       );
       const code = inspect.State?.ExitCode;
       throw new Error(
-        `Preview: containerul s-a oprit imediat după start (exit ${code ?? "?"}). Vezi logurile de mai sus în consolă.`,
+        `Preview: container stopped immediately after start (exit ${code ?? "?"}). See logs above in console.`,
       );
     }
 
@@ -334,12 +334,12 @@ async function waitForPublishedHostPort(
   await logPreviewContainerTail(
     docker,
     containerId,
-    "mapare port inexistentă după timeout",
+    "port mapping missing after timeout",
   );
   throw new Error(
-    "Preview: Docker nu a publicat portul pe host după ce containerul a pornit. " +
-      "Încearcă: repornește Docker Desktop, asigură-te că „Expose daemon” / WSL2 integration e activ, sau actualizează Docker. " +
-      "Dacă folosești VPN sau firewall, permite traficul către Docker.",
+    "Preview: Docker did not publish the port on the host after the container started. " +
+      "Try: restart Docker Desktop, make sure 'Expose daemon' / WSL2 integration is active, or update Docker. " +
+      "If you use a VPN or firewall, allow traffic to Docker.",
   );
 }
 
@@ -385,15 +385,31 @@ async function startPreview(roomId, files, docker, platformSpec, options = {}) {
   const safe = sanitizeRoomId(roomId);
   if (!safe) throw new Error("Invalid roomId");
 
-  const pkg = files["package.json"];
+  // Look for package.json at root first, then in common frontend subdirectories
+  const FRONTEND_SUBDIRS = ["frontend", "client", "web", "app", "ui", "src"];
+  let pkg = files["package.json"];
+  let pkgSubdir = null;
   if (!pkg || typeof pkg !== "string") {
-    throw new Error("package.json is required for preview");
+    for (const sub of FRONTEND_SUBDIRS) {
+      const candidate = files[`${sub}/package.json`];
+      if (candidate && typeof candidate === "string") {
+        pkg = candidate;
+        pkgSubdir = sub;
+        break;
+      }
+    }
+  }
+  if (!pkg || typeof pkg !== "string") {
+    throw new Error(
+      "package.json not found at root or in frontend/client/web subdirectory. " +
+      "Use 'Vite demo' to start fresh, or make sure the repo has a package.json."
+    );
   }
 
   try {
     const meta = JSON.parse(pkg);
     console.log(
-      `[Preview] ${safe}: ${Object.keys(files).length} paths, package.name=${meta.name ?? "?"}, image=${nodeImage}`,
+      `[Preview] ${safe}: ${Object.keys(files).length} paths, package.name=${meta.name ?? "?"}, image=${nodeImage}${pkgSubdir ? `, subdir=${pkgSubdir}` : ""}`,
     );
   } catch {
     console.log(
@@ -401,7 +417,11 @@ async function startPreview(roomId, files, docker, platformSpec, options = {}) {
     );
   }
 
-  const { internalPort, shellCmd } = inferDevSetup(pkg);
+  const { internalPort, shellCmd: rawShellCmd } = inferDevSetup(pkg);
+  // If package.json is in a subdirectory, run from that subfolder
+  const shellCmd = (pkgSubdir && typeof rawShellCmd === "string")
+    ? rawShellCmd.replace(/cd \/workspace\b/, `cd /workspace/${pkgSubdir}`)
+    : rawShellCmd;
   const existing = previewSessions.get(safe);
 
   if (existing && !force) {

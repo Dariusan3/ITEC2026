@@ -9,7 +9,8 @@ import TimeTravel from "./components/TimeTravel";
 import ConnectionBanner from "./components/ConnectionBanner";
 import WorkspaceSearch from "./components/WorkspaceSearch";
 import ConfirmModal from "./components/ConfirmModal";
-import OnboardingTour, { hasCompletedOnboarding } from "./components/OnboardingTour";
+import OnboardingTour from "./components/OnboardingTour";
+import { hasCompletedOnboarding } from "./components/onboarding.utils";
 import TabBar from "./components/TabBar";
 import {
   yFiles,
@@ -41,7 +42,7 @@ import { loadLocalHistory, saveLocalHistory } from "./lib/localRoomHistory";
 // C2: Read-only mode — ?view=1 in URL
 const viewOnly = new URLSearchParams(window.location.search).has("view");
 
-// P4: Session history — track visited rooms (păstrează star/label din localRoomHistory)
+// P4: Session history — track visited rooms (preserves star/label from localRoomHistory)
 function recordSession(id) {
   try {
     const hist = loadLocalHistory();
@@ -133,10 +134,10 @@ export default function App() {
     () => !hasCompletedOnboarding(),
   );
   const editorRef = useRef(null);
-  /** După Vite demo, următorul Preview trebuie să oprească containerul vechi (ex. monorepo concurrently). */
+  /** After Vite demo, the next Preview must stop the old container (e.g. monorepo concurrently). */
   const previewForceAfterViteDemoRef = useRef(false);
   const previewLastPkgRef = useRef(null);
-  /** Ultima reîncărcare iframe (auto-sync); evită reload la fiecare 720ms. */
+  /** Last iframe reload (auto-sync); avoids reload every 720ms. */
   const previewIframeReloadAtRef = useRef(0);
   const previewBusyRef = useRef(false);
   const handlePreviewStartRef = useRef(async () => {});
@@ -376,7 +377,7 @@ export default function App() {
     } catch {
       setRoomRole(previousRole);
     }
-  }, [roomRole]);
+  }, [roomRole, roomId]);
 
   // Keep language in sync with active file's metadata
   const handleFileSelect = useCallback(
@@ -542,11 +543,11 @@ export default function App() {
           ms: roundTripMs,
           mode: data.mode || "cold",
         });
-        // IMPORTANT: nu folosi /api/preview/proxy ca src al iframe-ului. HTML-ul Vite are <script src="/src/main.jsx">;
-        // pe același origin cu editorul (localhost:5173) acel URL încarcă main.jsx-ul iTECify (LandingPage), nu Docker.
-        // Iframe pe host:port Docker — Vite servește din container.
-        // ?itecify_rev= — URL mereu diferit față de ultimul setState → React reîncarcă iframe-ul. Fără asta, același
-        // string nu remontează iframe-ul; pe Docker Desktop (volum host→container) Vite deseori nu vede HMR.
+        // IMPORTANT: don't use /api/preview/proxy as the iframe src. Vite HTML has <script src="/src/main.jsx">;
+        // on the same origin as the editor (localhost:5173) that URL loads iTECify's main.jsx (LandingPage), not Docker.
+        // Iframe on Docker host:port — Vite serves from container.
+        // ?itecify_rev= — URL always different from last setState → React remounts iframe. Without this, the same
+        // string doesn't remount the iframe; on Docker Desktop (host→container volume) Vite often misses HMR.
         const port = Number(data.hostPort);
         const rev = Date.now();
         const host = window.location.hostname || "localhost";
@@ -557,7 +558,7 @@ export default function App() {
           const base = data.proxyPath.replace(/\/$/, "");
           nextSrc = `${base}/?itecify_rev=${rev}`;
         } else {
-          throw new Error("Preview: răspuns invalid de la server");
+          throw new Error("Preview: invalid response from server");
         }
         if (!opts.silent) {
           setPreviewIframeSrc(nextSrc);
@@ -572,15 +573,15 @@ export default function App() {
         if (!opts.silent) {
           if (forceAfterDemo) {
             setPreviewNotice(
-              "Preview repornit complet după Vite demo — container Docker nou, doar proiectul minimal (pagina „iTECify live preview”).",
+              "Preview fully restarted after Vite demo — new Docker container, minimal project only (\"iTECify live preview\" page).",
             );
           } else if (data.mode === "sync") {
             setPreviewNotice(
-              "Sincronizat în container — Vite/HMR reîncarcă de obicei automat. Ține Shift+Preview pentru repornire completă (ex. după schimbări în dependencies).",
+              "Synced to container — Vite/HMR usually reloads automatically. Hold Shift+Preview for a full restart (e.g. after dependency changes).",
             );
           } else if (opts.force) {
             setPreviewNotice(
-              "Preview repornit de la zero (npm install + dev server).",
+              "Preview restarted from scratch (npm install + dev server).",
             );
           }
           setPreviewFocus((n) => n + 1);
@@ -726,7 +727,7 @@ export default function App() {
       setOutput([
         {
           type: "stderr",
-          text: "Fișierul activ depășește limita pentru Run. Folosește Preview sau împarte codul.",
+          text: "Active file exceeds the Run size limit. Use Preview or split the code.",
         },
       ]);
       return;
@@ -734,10 +735,10 @@ export default function App() {
 
     if (!SANDBOX_RUN_LANGUAGES.has(language)) {
       setOutput([
-        { type: "info", text: `▶ Run nu se aplică la „${language}”.` },
+        { type: "info", text: `▶ Run does not apply to "${language}".` },
         {
           type: "stderr",
-          text: "Sandbox-ul rulează un singur fișier (JS/TS/Python/Rust/Go/Java/C). Pentru HTML/CSS/JSON sau proiecte Vite/React, folosește butonul Preview (Docker).",
+          text: "Sandbox runs a single file (JS/TS/Python/Rust/Go/Java/C). For HTML/CSS/JSON or Vite/React projects, use the Preview button (Docker).",
         },
       ]);
       return;
@@ -912,12 +913,12 @@ export default function App() {
         filename={activeFile}
         language={language}
         onLanguageChange={handleLanguageChange}
-        onRun={viewOnly ? null : handleRun}
+        onRun={(viewOnly || effectiveClassLock) ? null : handleRun}
         running={running}
-        onPreview={viewOnly ? null : handlePreviewStart}
+        onPreview={(viewOnly || effectiveClassLock) ? null : handlePreviewStart}
         previewBusy={previewBusy}
-        onViteDemo={viewOnly ? null : handleViteDemo}
-        onFullstackDemo={viewOnly ? null : handleFullstackDemo}
+        onViteDemo={(viewOnly || effectiveClassLock) ? null : handleViteDemo}
+        onFullstackDemo={(viewOnly || effectiveClassLock) ? null : handleFullstackDemo}
         onOpenWorkspaceSearch={() => setWorkspaceSearchOpen(true)}
         roomNodeVersion={roomNodeVersion}
         onRoomNodeVersionChange={(e) => setRoomNodeVersion(e.target.value)}
@@ -1040,6 +1041,12 @@ export default function App() {
           onOpenWorkspaceFile={(path, lang) =>
             handleFileSelect(path, lang || "markdown")
           }
+          roomRole={roomRole}
+          teacherBroadcast={teacherBroadcast}
+          onTeacherBroadcastChange={setTeacherBroadcast}
+          teacherLocked={teacherLocked}
+          onTeacherLockedChange={setTeacherLocked}
+          classState={classState}
         />
       </div>
     </div>

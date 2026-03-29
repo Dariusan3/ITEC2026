@@ -1,11 +1,11 @@
-/** Limită workspace trimis la preview (client + server). Aliniat cu body limit Express. */
+/** Workspace size limit sent to preview (client + server). Aligned with Express body limit. */
 export const MAX_WORKSPACE_BYTES = Number(
   import.meta.env.VITE_MAX_WORKSPACE_MB || 7,
 ) *
   1024 *
   1024;
 
-/** Dimensiune maximă cod trimis la Run (un singur fișier) */
+/** Maximum code size sent to Run (single file) */
 export const MAX_RUN_SOURCE_BYTES =
   Number(import.meta.env.VITE_MAX_RUN_SOURCE_MB || 2) * 1024 * 1024;
 
@@ -35,6 +35,6 @@ export function validateWorkspaceSize(files, maxBytes = MAX_WORKSPACE_BYTES) {
   const maxMb = (maxBytes / (1024 * 1024)).toFixed(0);
   return {
     ok: false,
-    error: `Workspace prea mare (~${mb} MB). Limita este ${maxMb} MB (Preview/Run). Micșorează fișierele sau exclude build-uri.`,
+    error: `Workspace too large (~${mb} MB). Limit is ${maxMb} MB (Preview/Run). Reduce file sizes or exclude build artifacts.`,
   };
 }

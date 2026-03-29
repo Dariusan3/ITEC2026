@@ -254,8 +254,8 @@ export default function OutputPanel({
               color: "var(--text-primary)",
             }}
             onClick={() => setCollapsed(true)}
-            aria-label="Restrânge panoul"
-            title="Restrânge"
+            aria-label="Collapse panel"
+            title="Collapse"
           >
             ▾
           </button>
@@ -283,11 +283,11 @@ export default function OutputPanel({
               className="mt-1.5 text-[10px] leading-relaxed"
               style={{ color: "var(--text-secondary)" }}
             >
-              La Run, <strong>tot</strong> textul de mai sus e trimis odată în program — nu se poate tasta „după fiecare
-              prompt” ca în consolă. Pune aici, în ordine, toate valorile (câte o linie per{" "}
-              <code className="rounded-none bg-[var(--bg-primary)] px-0.5">scanf</code>). Numerele din mesaje (ex. „numărul
-              0…9”) vin din <code className="rounded-none bg-[var(--bg-primary)] px-0.5">printf</code> / variabilele tale,
-              nu sunt introduse automat de sandbox.
+              On Run, <strong>all</strong> text above is sent at once to the program — you cannot type "after each
+              prompt" like in a terminal. Put all values here in order (one line per{" "}
+              <code className="rounded-none bg-[var(--bg-primary)] px-0.5">scanf</code>). Numbers in prompts (e.g. "enter
+              0…9") come from your <code className="rounded-none bg-[var(--bg-primary)] px-0.5">printf</code> / variables,
+              not injected automatically by the sandbox.
             </p>
           </div>
           <div>
@@ -403,11 +403,11 @@ export default function OutputPanel({
                 className="p-3 text-xs leading-relaxed"
                 style={{ color: "var(--text-secondary)" }}
               >
-                Pornește <strong>Preview</strong> din bara de sus (lângă Run). Necesită{" "}
-                <strong>Docker</strong> și un proiect cu <code className="text-[10px]">package.json</code>{" "}
-                (ex. Vite sau Next). Poți folosi <strong>Vite demo</strong> ca să încarci un exemplu React.
-                Previzualizarea se deschide pe un port local al containerului (nu prin același URL ca
-                editorul), ca scripturile Vite să nu încarce greșit aplicația iTECify.
+                Start <strong>Preview</strong> from the top bar (next to Run). Requires{" "}
+                <strong>Docker</strong> and a project with <code className="text-[10px]">package.json</code>{" "}
+                (e.g. Vite or Next). Use <strong>Vite demo</strong> to load a React example.
+                The preview opens on a local container port (not the same URL as the editor)
+                so Vite scripts don't accidentally load the iTECify app.
               </p>
             ) : (
               <iframe

@@ -839,8 +839,17 @@ export default function TopBar({
     })
       .then((res) => res.json().then((data) => ({ ok: res.ok, data })))
       .then(({ ok, data }) => {
+        // Always clean up the invite param so we don't retry on reload
+        const url = new URL(window.location.href);
+        url.searchParams.delete("invite");
+        window.history.replaceState({}, "", url);
         if (!ok) {
           setClassroomMessage(data.error || "Could not accept invite.");
+          return;
+        }
+        if (data.alreadyAccepted) {
+          // Silently skip — already accepted by this user
+          loadAdminState().catch(() => {});
           return;
         }
         setClassroomMessage(
@@ -848,9 +857,6 @@ export default function TopBar({
             ? "Invite accepted. You now have admin access."
             : `Invite accepted. Your role is ${data.role}.`,
         );
-        const url = new URL(window.location.href);
-        url.searchParams.delete("invite");
-        window.history.replaceState({}, "", url);
         loadAdminState().catch(() => {});
         loadRoomMembers().catch(() => {});
         loadAuditEntries().catch(() => {});
@@ -1003,7 +1009,7 @@ export default function TopBar({
             <Btn
               onClick={(e) => onPreview({ force: e.shiftKey })}
               disabled={previewBusy || running}
-              title="Preview: sincronizează fișierele cu containerul (HMR). Shift+click = repornire completă după schimbări în package.json / dependencies."
+              title="Preview: sync files with container (HMR). Shift+click = full restart after package.json / dependency changes."
               style={{
                 background: "var(--blue)",
                 color: "var(--bg-primary)",
@@ -1018,7 +1024,7 @@ export default function TopBar({
           {!viewOnly && onViteDemo && (
             <Btn
               onClick={onViteDemo}
-              title="Înlocuiește toate fișierele din cameră cu exemplul Vite minimal (mockup Preview). Necesar dacă ai monorepo iTECify în cameră."
+              title="Replace all room files with the minimal Vite example (Preview mockup). Required if you have the iTECify monorepo in the room."
             >
               Vite demo
             </Btn>
@@ -1026,7 +1032,7 @@ export default function TopBar({
           {!viewOnly && onFullstackDemo && (
             <Btn
               onClick={onFullstackDemo}
-              title="Vite + React + Express (API pe :3001, proxy /api în Vite). Necesită Docker Preview."
+              title="Vite + React + Express (API on :3001, /api proxy in Vite). Requires Docker Preview."
               style={{
                 background: "var(--bg-tertiary)",
                 color: "var(--text-primary)",
@@ -1039,7 +1045,7 @@ export default function TopBar({
           {!viewOnly && onOpenWorkspaceSearch && (
             <Btn
               onClick={onOpenWorkspaceSearch}
-              title="Căutare în tot workspace-ul"
+              title="Search across the entire workspace"
               className="!min-w-[4rem]"
               style={{
                 background: "var(--bg-tertiary)",
@@ -1059,7 +1065,7 @@ export default function TopBar({
                 setLocalRooms(loadLocalHistory());
                 setShowLocalRooms((v) => !v);
               }}
-              title="Cameră recentă și favorite (local)"
+              title="Recent rooms and favorites (local)"
               style={{
                 background: showLocalRooms ? "var(--accent)" : "var(--bg-tertiary)",
                 borderColor: showLocalRooms ? "var(--accent)" : "var(--border)",
@@ -1071,13 +1077,13 @@ export default function TopBar({
             {showLocalRooms && (
               <div
                 className="floating-panel absolute right-0 top-[calc(100%+8px)] z-50 max-h-72 w-64 overflow-hidden"
-                style={{ borderColor: "var(--border)" }}
+                style={{ borderColor: "var(--border)", background: "var(--bg-secondary)", color: "var(--text-primary)" }}
               >
                 <div
                   className="flex items-center justify-between border-b px-2 py-1.5 text-[10px] uppercase"
                   style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}
                 >
-                  <span>Istoric local</span>
+                  <span>Local history</span>
                   <button
                     type="button"
                     className="opacity-60 hover:opacity-100"
@@ -1089,7 +1095,7 @@ export default function TopBar({
                 <div className="max-h-56 overflow-y-auto">
                   {localRooms.length === 0 ? (
                     <p className="p-3 text-[11px]" style={{ color: "var(--text-secondary)" }}>
-                      Nicio cameră salvată încă.
+                      No room saved yet.
                     </p>
                   ) : (
                     localRooms.map((h) => (
@@ -1126,7 +1132,7 @@ export default function TopBar({
                   <div className="border-t px-2 py-2 text-[10px]" style={{ borderColor: "var(--border)" }}>
                     <input
                       type="text"
-                      placeholder={`Alias cameră #${roomId}…`}
+                      placeholder={`Room alias #${roomId}…`}
                       className="w-full rounded-none border px-2 py-1 font-mono text-[10px] outline-none"
                       style={{
                         borderColor: "var(--border)",

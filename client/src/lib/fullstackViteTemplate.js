@@ -1,6 +1,6 @@
 /**
- * Vite + React + Express API minimal (proxy /api → :3001 în același container).
- * Un singur `npm run dev` pornește Vite (5173) și API-ul; preview Docker expune 5173.
+ * Minimal Vite + React + Express API (proxy /api → :3001 in the same container).
+ * A single `npm run dev` starts Vite (5173) and the API; Docker preview exposes 5173.
  */
 import { ydoc } from "./yjs";
 
@@ -82,12 +82,12 @@ export default function App() {
     fetch('/api/hello')
       .then((r) => r.json())
       .then(setApi)
-      .catch(() => setApi({ error: 'API indisponibil' }))
+      .catch(() => setApi({ error: 'API unavailable' }))
   }, [])
   return (
     <div style={{ fontFamily: 'system-ui', padding: '2rem' }}>
       <h1>Fullstack demo</h1>
-      <p>Vite (frontend) + Express pe portul 3001; în browser apelezi <code>/api/…</code> prin proxy.</p>
+      <p>Vite (frontend) + Express on port 3001; in the browser you call <code>/api/…</code> via proxy.</p>
       <pre style={{ background: '#111', color: '#8f8', padding: '1rem', borderRadius: 8 }}>
         {JSON.stringify(api, null, 2)}
       </pre>

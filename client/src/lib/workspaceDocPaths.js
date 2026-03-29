@@ -1,5 +1,5 @@
 /**
- * Detectează fișiere de documentație din map-ul Yjs `files`.
+ * Detect documentation files from the Yjs `files` map.
  * @param {import('yjs').Map<string, unknown>} yFiles
  * @returns {string[]}
  */
@@ -13,7 +13,7 @@ export function listWorkspaceMarkdownPaths(yFiles) {
   return sortWorkspaceDocPaths(paths);
 }
 
-/** README rădăcină și docs/ primele, apoi alfabetic. */
+/** Root README and docs/ first, then alphabetical. */
 function sortWorkspaceDocPaths(paths) {
   const priority = (p) => {
     const pl = p.toLowerCase();

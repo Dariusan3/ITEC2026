@@ -8,8 +8,8 @@ function envBool(name, defaultValue = false) {
 }
 
 export const featureFlags = {
-  /** Sincronizare automată a fișierelor cu preview când iframe-ul e activ */
+  /** Automatic file sync with preview when the iframe is active */
   livePreviewSync: envBool("VITE_LIVE_PREVIEW_SYNC", true),
-  /** La cameră goală: proiect Vite+React implicit (în loc de main.js singur) */
+  /** On empty room: default Vite+React project (instead of a single main.js) */
   defaultVitePreset: envBool("VITE_DEFAULT_VITE_PRESET", true),
 };

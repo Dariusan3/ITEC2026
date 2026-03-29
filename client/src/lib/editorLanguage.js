@@ -1,5 +1,5 @@
 /**
- * Mapare meta „react-jsx” / extensie → limbă Monaco (highlight + TS service).
+ * Map meta "react-jsx" / extension → Monaco language (highlight + TS service).
  * @param {string} lang
  * @param {string} [filename]
  */

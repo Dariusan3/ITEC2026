@@ -446,12 +446,12 @@ export default function FileTree({ activeFile, onFileSelect, readOnly = false })
     (filesRecord) => {
       const n = Object.keys(filesRecord).length;
       if (n === 0) {
-        alert("Nu s-au găsit fișiere text valide de importat (sau toate sunt filtrate).");
+        alert("No valid text files found to import (or all were filtered out).");
         return;
       }
       askConfirm(
-        "Import proiect",
-        `Se vor adăuga sau actualiza ${n} fișier(e) în cameră pentru toți colaboratorii. Continuă?`,
+        "Import project",
+        `This will add or update ${n} file(s) in the room for all collaborators. Continue?`,
         () => commitImport(filesRecord),
         { danger: false },
       );
@@ -467,7 +467,7 @@ export default function FileTree({ activeFile, onFileSelect, readOnly = false })
       const record = await filesFromDirectoryInput(fl);
       promptImport(record);
     } catch (err) {
-      alert(err.message || "Eroare la citirea folderului.");
+      alert(err.message || "Error reading folder.");
     }
   };
 
@@ -479,7 +479,7 @@ export default function FileTree({ activeFile, onFileSelect, readOnly = false })
       const record = await filesFromZipFile(f);
       promptImport(record);
     } catch (err) {
-      alert(err.message || "Eroare la deschiderea arhivei.");
+      alert(err.message || "Error opening archive.");
     }
   };
 
@@ -502,7 +502,7 @@ export default function FileTree({ activeFile, onFileSelect, readOnly = false })
     else createFile();
   };
 
-  /** Mută fișierul într-un folder (targetFolder gol = rădăcină). */
+  /** Move file to a folder (empty targetFolder = root). */
   const moveFile = (fromPath, targetFolder) => {
     if (!fromPath || fromPath.endsWith(".gitkeep")) return;
     const norm = targetFolder ? String(targetFolder).replace(/\/+$/, "") : "";
@@ -510,7 +510,7 @@ export default function FileTree({ activeFile, onFileSelect, readOnly = false })
     const newPath = norm ? `${norm}/${base}` : base;
     if (fromPath === newPath) return;
     if (yFiles.has(newPath)) {
-      alert(`"${newPath}" există deja`);
+      alert(`"${newPath}" already exists`);
       return;
     }
     const meta = yFiles.get(fromPath);
@@ -564,8 +564,8 @@ export default function FileTree({ activeFile, onFileSelect, readOnly = false })
       return;
     }
     askConfirm(
-      `Șterge „${filename}"?`,
-      "Fișierul dispare din cameră pentru toți colaboratorii.",
+      `Delete "${filename}"?`,
+      "The file will be removed from the room for all collaborators.",
       () => {
         yFiles.delete(filename);
         if (activeFile === filename) {
@@ -586,8 +586,8 @@ export default function FileTree({ activeFile, onFileSelect, readOnly = false })
       k.startsWith(folderPath + "/"),
     );
     askConfirm(
-      `Șterge folderul „${folderPath}"?`,
-      `Se vor șterge ${children.length} fișier(e) din cameră.`,
+      `Delete folder "${folderPath}"?`,
+      `This will delete ${children.length} file(s) from the room.`,
       () => {
         children.forEach((k) => yFiles.delete(k));
         if (children.includes(activeFile)) {
@@ -625,7 +625,7 @@ export default function FileTree({ activeFile, onFileSelect, readOnly = false })
     return tree;
   }
 
-  /* Include .gitkeep în arbore ca să apară foldere goale; rândul .gitkeep e ascuns în TreeNode */
+  /* Include .gitkeep in tree so empty folders appear; .gitkeep rows are hidden in TreeNode */
   const tree = buildTreeWithPaths(files);
   const searchResults = searchFiles(files, searchQuery);
   const showingSearch = searchQuery.trim().length > 0;
@@ -965,13 +965,13 @@ export default function FileTree({ activeFile, onFileSelect, readOnly = false })
                 onClick={() => {
                   const f = contextMenu.filename;
                   const suggested = f.includes("/") ? f : `folder/${f}`;
-                  const dest = window.prompt("Cale nouă (folder/fișier.ext):", suggested);
+                  const dest = window.prompt("New path (folder/file.ext):", suggested);
                   setContextMenu(null);
                   if (!dest || !dest.trim()) return;
                   const trimmed = dest.trim().replace(/\\/g, "/");
                   if (trimmed === f) return;
                   if (yFiles.has(trimmed)) {
-                    alert(`"${trimmed}" există deja`);
+                    alert(`"${trimmed}" already exists`);
                     return;
                   }
                   const meta = yFiles.get(f);

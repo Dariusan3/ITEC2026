@@ -1,40 +1,11 @@
 import { useState } from "react";
-
-const STORAGE_KEY = "itecify:onboarding-v1-done";
-
-const STEPS = [
-  {
-    title: "1. Fișiere",
-    body: "Creează sau deschide fișiere din arborele din stânga. Cameră goală pornește cu un proiect Vite + React (preset implicit).",
-  },
-  {
-    title: "2. Preview",
-    body: "Butonul Preview (Docker) pornește Vite în container. Cu sincronizarea automată, modificările ajung la HMR fără click repetat.",
-  },
-  {
-    title: "3. Invită",
-    body: "Share copiază linkul camerei; colaboratorii văd cursorii în timp real. Încearcă și linkul read-only din meniu.",
-  },
-];
-
-export function hasCompletedOnboarding() {
-  try {
-    return localStorage.getItem(STORAGE_KEY) === "1";
-  } catch {
-    return true;
-  }
-}
-
-export function markOnboardingDone() {
-  try {
-    localStorage.setItem(STORAGE_KEY, "1");
-  } catch {
-    /* ignore */
-  }
-}
+import {
+  STEPS,
+  markOnboardingDone,
+} from "./onboarding.utils";
 
 /**
- * Tur scurt prima vizită (3 pași).
+ * Short tour for first visit (3 steps).
  */
 export default function OnboardingTour({ onDismiss }) {
   const [step, setStep] = useState(0);
@@ -55,15 +26,24 @@ export default function OnboardingTour({ onDismiss }) {
           color: "var(--text-primary)",
         }}
       >
-        <p className="text-[10px] font-bold uppercase tracking-[0.2em]" style={{ color: "var(--accent)" }}>
-          Bun venit
+        <p
+          className="text-[10px] font-bold uppercase tracking-[0.2em]"
+          style={{ color: "var(--accent)" }}
+        >
+          Welcome
         </p>
         <h2 className="mt-1 text-lg font-semibold">{s.title}</h2>
-        <p className="mt-3 text-sm leading-relaxed" style={{ color: "var(--text-secondary)" }}>
+        <p
+          className="mt-3 text-sm leading-relaxed"
+          style={{ color: "var(--text-secondary)" }}
+        >
           {s.body}
         </p>
         <div className="mt-5 flex items-center justify-between gap-3">
-          <span className="text-[10px]" style={{ color: "var(--text-secondary)" }}>
+          <span
+            className="text-[10px]"
+            style={{ color: "var(--text-secondary)" }}
+          >
             {step + 1} / {STEPS.length}
           </span>
           <div className="flex gap-2">
@@ -80,7 +60,7 @@ export default function OnboardingTour({ onDismiss }) {
                 onDismiss();
               }}
             >
-              Omite
+              Skip
             </button>
             {step < STEPS.length - 1 ? (
               <button
@@ -93,7 +73,7 @@ export default function OnboardingTour({ onDismiss }) {
                 }}
                 onClick={() => setStep((n) => n + 1)}
               >
-                Înainte
+                Next
               </button>
             ) : (
               <button
@@ -109,7 +89,7 @@ export default function OnboardingTour({ onDismiss }) {
                   onDismiss();
                 }}
               >
-                Gata
+                Done
               </button>
             )}
           </div>

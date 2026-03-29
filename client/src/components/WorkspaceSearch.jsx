@@ -3,7 +3,7 @@ import { yFiles, getYText } from "../lib/yjs";
 import { CloseIcon } from "./ui/Icons";
 
 /**
- * Căutare în tot workspace-ul (conținut + nume fișier).
+ * Search across the entire workspace (content + file name).
  */
 export default function WorkspaceSearch({
   open,
@@ -99,7 +99,7 @@ export default function WorkspaceSearch({
       style={{ background: "rgba(5, 8, 6, 0.72)" }}
       role="dialog"
       aria-modal="true"
-      aria-label="Căutare în workspace"
+      aria-label="Search workspace"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -121,7 +121,7 @@ export default function WorkspaceSearch({
             type="search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Caută în fișiere…"
+            placeholder="Search in files…"
             className="min-w-0 flex-1 border-0 bg-transparent px-2 py-2 text-sm outline-none"
             style={{ color: "var(--text-primary)" }}
             onKeyDown={(e) => {
@@ -133,7 +133,7 @@ export default function WorkspaceSearch({
             onClick={onClose}
             className="rounded-none p-2 opacity-70 hover:opacity-100"
             style={{ color: "var(--text-secondary)" }}
-            aria-label="Închide"
+            aria-label="Close"
           >
             <CloseIcon className="h-4 w-4" />
           </button>
@@ -144,12 +144,12 @@ export default function WorkspaceSearch({
         >
           {results.length === 0 && query.trim().length >= 2 && (
             <li className="px-4 py-6 text-center text-xs" style={{ color: "var(--text-secondary)" }}>
-              Niciun rezultat
+              No results
             </li>
           )}
           {query.trim().length < 2 && (
             <li className="px-4 py-6 text-center text-xs" style={{ color: "var(--text-secondary)" }}>
-              Tastează cel puțin 2 caractere
+              Type at least 2 characters
             </li>
           )}
           {results.map((r, i) => (

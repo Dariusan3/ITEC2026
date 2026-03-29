@@ -73,8 +73,8 @@ export default function App() {
     <div style={{ fontFamily: 'system-ui', padding: '2rem', color: '#111' }}>
       <h1>iTECify live preview</h1>
       <p>
-        Editează <code>src/App.jsx</code> — cu Preview activ, fișierele se sincronizează spre container (HMR).
-        Altfel apasă din nou Preview.
+        Edit <code>src/App.jsx</code> — with Preview active, files sync to the container (HMR).
+        Otherwise press Preview again.
       </p>
       <button type="button" onClick={() => setN((x) => x + 1)}>
         Count: {n}
@@ -88,19 +88,19 @@ export default function App() {
 button { margin-top: 1rem; padding: 0.5rem 1rem; cursor: pointer; }
 `,
 
-  "README.md": `# Proiect Vite + React (iTECify)
+  "README.md": `# Vite + React project (iTECify)
 
-## Comenzi
-- \`npm run dev\` — dev server (în Preview Docker: pornit automat)
-- \`npm run build\` — build producție
-- \`npm run preview\` — servește build-ul
+## Commands
+- \`npm run dev\` — dev server (in Docker Preview: started automatically)
+- \`npm run build\` — production build
+- \`npm run preview\` — serve the build
 
-## În editor
-Folosește **Preview** cu Docker; ține **Shift+Preview** după schimbări în dependencies sau \`package.json\`.
+## In the editor
+Use **Preview** with Docker; hold **Shift+Preview** after changing dependencies or \`package.json\`.
 `,
 };
 
-/** Căi incluse în demo — utile pentru confirmare în UI */
+/** Paths included in demo — useful for confirmation in UI */
 export const VITE_PREVIEW_TEMPLATE_PATHS = new Set(
   Object.keys(VITE_PREVIEW_TEMPLATE_FILES),
 );
@@ -108,9 +108,9 @@ export const VITE_PREVIEW_TEMPLATE_PATHS = new Set(
 /** @typedef {{ language: string }} FileMeta */
 
 /**
- * Înlocuiește **tot** conținutul camerei cu proiectul minimal Vite.
- * (Dacă doar suprascrii câteva fișiere, monorepo-ul iTECify — client/, server/ —
- * rămâne în Yjs și Preview pornește în continuare `concurrently` pe tot proiectul.)
+ * Replaces **all** room content with the minimal Vite project.
+ * (If you only overwrite a few files, the iTECify monorepo — client/, server/ —
+ * stays in Yjs and Preview continues to start `concurrently` for the whole project.)
  *
  * @param {import('yjs').Map<string, FileMeta>} yFiles
  * @param {(name: string) => import('yjs').Text} getYText

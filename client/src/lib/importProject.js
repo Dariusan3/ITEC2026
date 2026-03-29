@@ -16,7 +16,7 @@ const BLOCKED_SEGMENTS = new Set([
   ".vscode",
 ]);
 
-/** Dimensiune maximă per fișier la import (text). */
+/** Maximum file size per file on import (text). */
 const MAX_FILE_BYTES = 400_000;
 
 const EXT_TO_LANG = {
@@ -38,7 +38,7 @@ const EXT_TO_LANG = {
 };
 
 /**
- * Limbă Monaco pentru meta `yFiles` — aliniat cu FileTree.
+ * Monaco language for `yFiles` meta — aligned with FileTree.
  * @param {string} filename
  */
 export function guessLanguageFromPath(filename) {
@@ -122,7 +122,7 @@ export async function filesFromZipFile(zipFile) {
 export function applyImportToWorkspace(yFiles, getYText, filesRecord, guessLang) {
   const keys = Object.keys(filesRecord);
   if (keys.length === 0) {
-    return { ok: false, error: "Nu s-au găsit fișiere text valide de importat." };
+    return { ok: false, error: "No valid text files found to import." };
   }
 
   const merged = {};
@@ -148,7 +148,7 @@ export function applyImportToWorkspace(yFiles, getYText, filesRecord, guessLang)
   return { ok: true, count: keys.length };
 }
 
-/** Din căi fișiere, returnează prefixuri folder de deschis în explorer. */
+/** From file paths, returns folder prefixes to open in the explorer. */
 export function folderPrefixesFromPaths(paths) {
   const folders = new Set();
   for (const p of paths) {

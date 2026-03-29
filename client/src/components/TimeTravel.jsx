@@ -4,7 +4,7 @@ import { getYText, ydoc, roomId } from "../lib/yjs";
 import { SERVER_URL } from "../lib/config";
 import { ArchiveIcon } from "./ui/Icons";
 
-/** Doar pentru butoanele − / + (pas în istoric). */
+/** Only for − / + buttons (step in history). */
 const timeStepButtonClass =
   "liquid-surface keep-round-lg inline-flex items-center justify-center border text-[11px] font-semibold transition-all duration-150 disabled:cursor-not-allowed disabled:opacity-35 sm:text-xs";
 const timeActionButtonClass =
@@ -14,7 +14,7 @@ export default function TimeTravel({ editorRef, activeFile }) {
   const [snapshots, setSnapshots] = useState([]);
   const [sliderValue, setSliderValue] = useState(-1);
   const [replaying, setReplaying] = useState(false);
-  /** Backup text pentru replay; ținut în ref ca să nu rulăm side-effect-uri în updateri de setState (Monaco → awareness → TopBar). */
+  /** Backup text for replay; kept in ref to avoid side-effects in setState updates (Monaco → awareness → TopBar). */
   const liveBackupRef = useRef(null);
   const liveBackupDoneRef = useRef(false);
 
@@ -229,7 +229,7 @@ export default function TimeTravel({ editorRef, activeFile }) {
 
         <button
           type="button"
-          aria-label="Pas înapoi în istoric"
+          aria-label="Step back in history"
           disabled={!canStepBack}
           onClick={handleMinus}
           className={`${timeStepButtonClass} h-10 w-10 shrink-0 text-lg leading-none`}
@@ -256,7 +256,7 @@ export default function TimeTravel({ editorRef, activeFile }) {
 
         <button
           type="button"
-          aria-label="Pas înainte spre Live"
+          aria-label="Step forward to Live"
           disabled={!canStepForward}
           onClick={handlePlus}
           className={`${timeStepButtonClass} h-10 w-10 shrink-0 text-lg leading-none`}
@@ -277,8 +277,8 @@ export default function TimeTravel({ editorRef, activeFile }) {
           disabled={!replaying}
           title={
             replaying
-              ? "Folosește această versiune ca document live (colaborativ)"
-              : "Disponibil doar în modul replay"
+              ? "Use this version as the live document (collaborative)"
+              : "Available only in replay mode"
           }
           className={`${timeActionButtonClass} px-4 py-2`}
           style={{
@@ -300,8 +300,8 @@ export default function TimeTravel({ editorRef, activeFile }) {
           disabled={!replaying}
           title={
             replaying
-              ? "Revino la documentul live dinainte de replay"
-              : "Ești deja pe Live"
+              ? "Return to the live document before replay"
+              : "Already on Live"
           }
           className={`${timeActionButtonClass} px-4 py-2`}
           style={{

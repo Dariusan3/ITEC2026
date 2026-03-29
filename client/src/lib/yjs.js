@@ -52,7 +52,7 @@ wsProvider.awareness.setLocalStateField('user', { name, color })
 // yFiles: Map of filename -> { language }
 export const yFiles = ydoc.getMap('files')
 export const yAiBlocks = ydoc.getMap('aiBlocks')
-/** Metadate cameră (ex. nodeVersion pentru preview Docker) — sincron Yjs */
+/** Room metadata (e.g. nodeVersion for Docker preview) — Yjs synced */
 export const yRoomMeta = ydoc.getMap('roomMeta')
 // yReactions: Array of { id, file, line, emoji, author }
 export const yReactions = ydoc.getArray('reactions')
