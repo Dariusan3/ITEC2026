@@ -5,6 +5,7 @@ const Groq = require("groq-sdk");
 const express = require("express");
 const cors = require("cors");
 const http = require("http");
+const crypto = require("crypto");
 const Y = require("yjs");
 const { WebSocketServer, WebSocket } = require("ws");
 const { encoding, decoding } = require("lib0");
@@ -360,151 +361,8 @@ Focus on correctness, bugs, risky behavior, or missing edge-case handling. Retur
   }
 });
 
-const SCAFFOLD_BLOCKED = new Set([
-  "node_modules",
-  ".git",
-  "dist",
-  ".next",
-  ".vite",
-  ".turbo",
-  "__pycache__",
-  ".venv",
-  "venv",
-]);
-
-function isSafeScaffoldRelPath(p) {
-  if (!p || typeof p !== "string") return false;
-  if (p.startsWith("/") || p.includes("..")) return false;
-  const norm = path.posix.normalize(p.replace(/\\/g, "/"));
-  if (norm.startsWith("..") || norm.includes("../")) return false;
-  const parts = norm.split("/").filter(Boolean);
-  for (const seg of parts) {
-    if (SCAFFOLD_BLOCKED.has(seg.toLowerCase())) return false;
-  }
-  return parts.length > 0;
-}
-
-/** Limitează și curăță obiectul files din răspunsul modelului. */
-function sanitizeScaffoldFiles(rawFiles, { maxFiles = 32, maxCharsPerFile = 180_000 } = {}) {
-  const out = {};
-  if (!rawFiles || typeof rawFiles !== "object" || Array.isArray(rawFiles)) return out;
-  let n = 0;
-  for (const [k, v] of Object.entries(rawFiles)) {
-    if (n >= maxFiles) break;
-    if (!isSafeScaffoldRelPath(k)) continue;
-    const content = typeof v === "string" ? v : String(v ?? "");
-    if (content.length > maxCharsPerFile) continue;
-    out[k] = content;
-    n++;
-  }
-  return out;
-}
-
-// A6: Generează mai multe fișiere (structură proiect / landing page etc.)
-app.post("/api/ai/scaffold", async (req, res) => {
-  const { prompt, language, workspacePaths } = req.body;
-  if (!prompt || typeof prompt !== "string" || !prompt.trim()) {
-    return res.status(400).json({ error: "prompt is required" });
-  }
-
-  const pathsHint = Array.isArray(workspacePaths)
-    ? workspacePaths
-        .filter((p) => typeof p === "string")
-        .slice(0, 120)
-        .join("\n")
-    : "";
-
-  const systemPrompt = `You are an expert full-stack developer. Users work in iTECify, a collaborative browser IDE with Yjs sync.
-
-Respond with ONLY valid JSON (no markdown fences, no text before/after). The JSON must have exactly two keys:
-- "files": an object where each KEY is a relative file path using forward slashes only (e.g. "src/App.jsx", "index.html"). Each VALUE is the COMPLETE file content as a JSON string (escape newlines as \\n).
-- "explanation": a short string in English or Romanian describing what you created.
-
-Rules:
-- Create a coherent mini-project: typically 4–18 files (landing page, small React+Vite app, or static HTML/CSS/JS). Use as many files as needed but stay within the limit.
-- Paths must not contain ".." or start with "/". Do not use node_modules, .git, dist in the path.
-- Every file must be full source — no placeholders like "// TODO" for critical parts.
-- For React+Vite include: package.json (with scripts dev/build, dependencies), vite.config.js with @vitejs/plugin-react, index.html, src/main.jsx, src/App.jsx, src/index.css as needed.
-- In package.json for Vite projects: list "vite", "react", "react-dom", and "@vitejs/plugin-react" in "dependencies" (not only devDependencies) so Docker preview always installs them; use "dev": "vite" or "vite --host 0.0.0.0 --port 5173".
-- For static landing: index.html, styles.css, maybe main.js.
-- package.json must be strictly valid JSON.
-- Do not output binary; only UTF-8 text source.`;
-
-  const userMsg = `User request:\n${prompt.trim()}\n\nPreferred stack / language hint: ${language || "javascript"}\n\nExisting workspace paths (may be empty — avoid breaking names unless replacing):\n${pathsHint || "(empty)"}`;
-
-  try {
-    const chatCompletion = await groq.chat.completions.create({
-      model: "llama-3.3-70b-versatile",
-      max_tokens: 8192,
-      temperature: 0.35,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userMsg },
-      ],
-    });
-
-    const raw = chatCompletion.choices[0].message.content.trim();
-    const stripped = stripOuterCodeFences(raw)
-      .replace(/^```(?:json)?\n?/i, "")
-      .replace(/\n?```$/i, "")
-      .trim();
-
-    let parsed;
-    try {
-      parsed = JSON.parse(stripped);
-    } catch {
-      parsed = parseLooseJson(stripped);
-    }
-    if (!parsed || typeof parsed !== "object") {
-      return res.status(422).json({
-        error:
-          "Modelul nu a returnat JSON valid. Încearcă din nou cu o cerere mai scurtă sau mai clară.",
-      });
-    }
-
-    let files = parsed.files;
-    if (typeof files === "string") {
-      try {
-        files = JSON.parse(files);
-      } catch {
-        files = null;
-      }
-    }
-    if (!files || typeof files !== "object" || Array.isArray(files)) {
-      return res.status(422).json({
-        error: 'Răspuns invalid: lipsește obiectul "files".',
-      });
-    }
-
-    files = sanitizeScaffoldFiles(files);
-    if (Object.keys(files).length === 0) {
-      return res.status(422).json({
-        error:
-          "Nu s-au putut extrage fișiere valide din răspunsul AI (căi sau conținut respins).",
-      });
-    }
-
-    assertWorkspaceWithinLimit(files, "scaffold");
-
-    let explanation =
-      typeof parsed.explanation === "string"
-        ? parsed.explanation.trim()
-        : "Fișiere generate.";
-    if (!explanation) explanation = `Generated ${Object.keys(files).length} file(s).`;
-
-    res.json({ files, explanation });
-  } catch (err) {
-    const status = err.status === 413 ? 413 : 500;
-    console.error("[AI scaffold]", err.message);
-    res.status(status).json({
-      error: err.message || "Scaffold failed",
-    });
-  }
-});
-
-// --- Code execution engine (Docker + fallback) ---
+// --- Code execution engine (Docker only; always resource-capped) ---
 const Docker = require("dockerode");
-const { spawn } = require("child_process");
 const fs = require("fs");
 const os = require("os");
 
@@ -612,41 +470,59 @@ async function prePullImages() {
 prePullImages().catch(() => {});
 
 function buildCmdWithPackages(config, packages) {
-  if (!packages || packages.length === 0)
-    return { cmd: config.cmd, network: "none" };
-  const safe = packages
+  const safe = (packages || [])
     .map((p) => p.replace(/[^a-zA-Z0-9@._/\-]/g, ""))
     .filter(Boolean)
     .slice(0, 10);
-  if (safe.length === 0) return { cmd: config.cmd, network: "none" };
-
-  const pkgList = safe.join(" ");
-  let installCmd;
-  if (config.pkgMgr === "npm") {
-    const usesJest = safe.some((p) => p === "jest" || /^jest@/.test(p));
-    const sandboxFile = `/sandbox/code${config.ext}`;
-    const runCmd = usesJest
-      ? `/tmp/pkgs/node_modules/.bin/jest ${sandboxFile} --runInBand --forceExit`
-      : `NODE_PATH=/tmp/pkgs/node_modules ${config.cmd.join(" ")}`;
-    installCmd = `npm install --prefix /tmp/pkgs ${pkgList} --quiet 2>&1 && ${runCmd}`;
-  } else if (config.pkgMgr === "pip") {
-    const runCmd = config.cmd.join(" ");
-    installCmd = `pip install --quiet ${pkgList} 2>&1 && ${runCmd}`;
-  } else {
+  if (safe.length === 0) {
     return {
-      cmd: config.cmd,
-      network: "none",
-      warning: "Package installs not supported for this language",
+      safePackages: [],
+      runtimeCmd: config.cmd,
+      runtimeEnv: [],
+      installCmd: null,
+      warning: null,
     };
   }
-  return { cmd: ["sh", "-c", installCmd], network: "bridge" };
-}
 
-const FALLBACK_CMD = {
-  javascript: "node",
-  typescript: "node",
-  python: "python3",
-};
+  if (config.pkgMgr === "npm") {
+    const usesJest = safe.some((p) => p === "jest" || /^jest@/.test(p));
+    return {
+      safePackages: safe,
+      installCmd: ["sh", "-c", `npm install --prefix /pkgs ${safe.join(" ")} --quiet 2>&1`],
+      runtimeCmd: usesJest
+        ? [
+            "sh",
+            "-c",
+            `/pkgs/node_modules/.bin/jest /sandbox/code${config.ext} --runInBand --forceExit`,
+          ]
+        : config.cmd,
+      runtimeEnv: ["NODE_PATH=/pkgs/node_modules"],
+      warning: null,
+    };
+  }
+
+  if (config.pkgMgr === "pip") {
+    return {
+      safePackages: safe,
+      installCmd: [
+        "sh",
+        "-c",
+        `pip install --disable-pip-version-check --no-input --quiet --target /pkgs ${safe.join(" ")} 2>&1`,
+      ],
+      runtimeCmd: config.cmd,
+      runtimeEnv: ["PYTHONPATH=/pkgs"],
+      warning: null,
+    };
+  }
+
+  return {
+    safePackages: [],
+    installCmd: null,
+    runtimeCmd: config.cmd,
+    runtimeEnv: [],
+    warning: "Package installs not supported for this language",
+  };
+}
 
 const DANGEROUS_PATTERNS = {
   javascript: [
@@ -727,26 +603,60 @@ async function runInDocker(
   const tmpFile = path.join(tmpDir, `code${config.ext}`);
   fs.writeFileSync(tmpFile, code);
 
-  const { cmd, network, warning } = buildCmdWithPackages(config, packages);
+  const pkgDir = path.join(tmpDir, "pkgs");
+  fs.mkdirSync(pkgDir, { recursive: true });
+
+  const {
+    safePackages,
+    installCmd,
+    runtimeCmd,
+    runtimeEnv,
+    warning,
+  } = buildCmdWithPackages(config, packages);
   if (warning) onData("info", warning);
 
   const hasStdin = !!(stdin && stdin.trim().length > 0);
 
   let container;
   try {
-    const envList = Object.entries(env).map(([k, v]) => `${k}=${v}`);
+    if (safePackages.length > 0 && installCmd) {
+      onData("info", "[Installing packages in isolated setup phase]");
+      await runPackageInstallInDocker(config, installCmd, onData, pkgDir);
+    }
+
+    const envList = [
+      "HOME=/tmp",
+      "TMPDIR=/tmp",
+      "NPM_CONFIG_CACHE=/tmp/.npm",
+      "PIP_CACHE_DIR=/tmp/.pip",
+      ...runtimeEnv,
+      ...Object.entries(env).map(([k, v]) => `${k}=${v}`),
+    ];
+    const binds = [`${tmpDir}:/sandbox:ro`];
+    if (safePackages.length > 0 && installCmd) {
+      binds.push(`${pkgDir}:/pkgs:ro`);
+    }
 
     container = await docker.createContainer({
       Image: config.image,
       Platform: DOCKER_PLATFORM_SPEC,
-      Cmd: cmd,
+      Cmd: runtimeCmd,
       Env: envList.length ? envList : undefined,
       HostConfig: {
         Memory: 128 * 1024 * 1024,
+        MemorySwap: 128 * 1024 * 1024,
         CpuPeriod: 100000,
         CpuQuota: 50000,
-        NetworkMode: network,
-        Binds: [`${tmpDir}:/sandbox:ro`],
+        PidsLimit: 64,
+        NetworkMode: "none",
+        Binds: binds,
+        Tmpfs: {
+          "/tmp": "rw,nosuid,nodev,size=134217728",
+          "/run": "rw,nosuid,nodev,size=16777216",
+        },
+        CapDrop: ["ALL"],
+        SecurityOpt: ["no-new-privileges"],
+        ReadonlyRootfs: true,
         // AutoRemove + wait() races on Docker Desktop (404 no such container after fast exit)
         AutoRemove: false,
       },
@@ -813,45 +723,75 @@ async function runInDocker(
   }
 }
 
-async function runDirect(code, language, onData, stdin = "") {
-  const cmd = FALLBACK_CMD[language];
-  if (!cmd) throw new Error(`No fallback for ${language} — Docker required`);
-
-  const config = LANG_CONFIG[language];
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "itecify-"));
-  const tmpFile = path.join(tmpDir, `code${config.ext}`);
-  fs.writeFileSync(tmpFile, code);
-
+async function runPackageInstallInDocker(config, installCmd, onData, pkgDir) {
+  let container;
   try {
-    return await new Promise((resolve) => {
-      const child = spawn(cmd, [tmpFile]);
-      const timer = setTimeout(() => {
-        child.kill();
-        onData("stderr", "Execution timed out (10s limit)");
-        resolve({ exitCode: 1 });
-      }, 10000);
-
-      child.stdout.on("data", (chunk) => onData("stdout", chunk.toString()));
-      child.stderr.on("data", (chunk) => onData("stderr", chunk.toString()));
-
-      if (stdin && stdin.trim().length > 0) {
-        child.stdin.write(stdin.endsWith("\n") ? stdin : stdin + "\n");
-      }
-      child.stdin.end();
-
-      child.on("close", (code) => {
-        clearTimeout(timer);
-        resolve({ exitCode: code ?? 1 });
-      });
-
-      child.on("error", (err) => {
-        clearTimeout(timer);
-        onData("stderr", err.message);
-        resolve({ exitCode: 1 });
-      });
+    container = await docker.createContainer({
+      Image: config.image,
+      Platform: DOCKER_PLATFORM_SPEC,
+      Cmd: installCmd,
+      Env: [
+        "HOME=/tmp",
+        "TMPDIR=/tmp",
+        "NPM_CONFIG_CACHE=/tmp/.npm",
+        "PIP_CACHE_DIR=/tmp/.pip",
+      ],
+      HostConfig: {
+        Memory: 128 * 1024 * 1024,
+        MemorySwap: 128 * 1024 * 1024,
+        CpuPeriod: 100000,
+        CpuQuota: 50000,
+        PidsLimit: 128,
+        NetworkMode: "bridge",
+        Binds: [`${pkgDir}:/pkgs`],
+        Tmpfs: {
+          "/tmp": "rw,nosuid,nodev,size=134217728",
+          "/run": "rw,nosuid,nodev,size=16777216",
+        },
+        CapDrop: ["ALL"],
+        SecurityOpt: ["no-new-privileges"],
+        ReadonlyRootfs: true,
+        AutoRemove: false,
+      },
+      AttachStdout: true,
+      AttachStderr: true,
+      Tty: false,
     });
+
+    const stream = await container.attach({
+      stream: true,
+      stdout: true,
+      stderr: true,
+    });
+    const stdoutStream = new (require("stream").PassThrough)();
+    const stderrStream = new (require("stream").PassThrough)();
+    container.modem.demuxStream(stream, stdoutStream, stderrStream);
+    stdoutStream.on("data", (chunk) => onData("stdout", chunk.toString()));
+    stderrStream.on("data", (chunk) => onData("stderr", chunk.toString()));
+
+    await container.start();
+
+    await Promise.race([
+      container.wait().then((result) => {
+        if (result.StatusCode !== 0) {
+          throw new Error("Package installation failed");
+        }
+      }),
+      new Promise((_, reject) =>
+        setTimeout(async () => {
+          try {
+            await container.kill();
+          } catch {}
+          reject(new Error("Package installation timed out (45s limit)"));
+        }, 45000),
+      ),
+    ]);
   } finally {
-    fs.rmSync(tmpDir, { recursive: true, force: true });
+    if (container) {
+      try {
+        await container.remove({ force: true });
+      } catch {}
+    }
   }
 }
 
@@ -902,39 +842,14 @@ app.post("/api/run", runLimiter, async (req, res) => {
 
   try {
     const dockerAvailable = await isDockerAvailable();
-    const mode = dockerAvailable ? "docker" : "direct";
-    send(
-      "info",
-      `[${mode === "docker" ? "Docker sandbox" : "Direct execution"}]`,
-    );
-    if (mode === "docker") {
-      send(
-        "info",
-        "Limite sandbox: ~128 MB RAM, CPU limitat, timeout execuție 30s.",
-      );
-    } else {
-      send("info", "Execuție directă: timeout 10s (fără Docker).");
+    if (!dockerAvailable) {
+      send("stderr", "Docker is required for code execution so runs stay resource-capped. Start Docker Desktop and restart the server.");
+      send("done", "");
+      return res.end();
     }
 
-    logStructured("run", "start", {
-      roomId: String(roomId || "").slice(0, 32),
-      language,
-      mode,
-    });
-
-    if (dockerAvailable) {
-      await runInDocker(code, config, send, stdin, packages, env);
-    } else {
-      if (!FALLBACK_CMD[language]) {
-        send(
-          "stderr",
-          `${language} requires Docker — start Docker Desktop and restart the server`,
-        );
-        send("done", "");
-        return res.end();
-      }
-      await runDirect(code, language, send, stdin);
-    }
+    send("info", "[Docker sandbox]");
+    await runInDocker(code, config, send, stdin, packages, env);
   } catch (err) {
     console.error("[Run Error]", err.message);
     send("stderr", `Error: ${err.message}`);
@@ -1258,14 +1173,334 @@ app.post("/api/room/:roomId/verify-password", async (req, res) => {
 app.post("/api/room/:roomId/set-password", async (req, res) => {
   const { roomId } = req.params;
   const { password } = req.body;
-  if (!req.session.user)
+  const userId = req.session?.user?.id ?? null;
+  const actorLogin = req.session?.user?.login ?? null;
+  if (!userId) {
     return res
       .status(401)
       .json({ error: "Login required to set room password" });
+  }
+
+  const permission = await getRoomActionPermission(roomId, userId);
+  if (!permission.allowed) {
+    return res.status(403).json({ error: permission.error });
+  }
 
   const hash = password ? await bcrypt.hash(password, 10) : null;
   const ok = await db.setRoomPassword(roomId, hash);
+  if (ok) {
+    recordRoomAudit({
+      roomId,
+      actorUserId: userId,
+      actorLogin,
+      action: password ? "room.password_set" : "room.password_cleared",
+    });
+  }
   res.json({ ok });
+});
+
+app.get("/api/room/:roomId/role", async (req, res) => {
+  const { roomId } = req.params;
+  const userId = req.session?.user?.id ?? null;
+  if (!userId) return res.json({ role: "member" });
+  const role = await db.getRoomMemberRole(roomId, userId);
+  res.json({ role });
+});
+
+app.get("/api/room/:roomId/admin-state", async (req, res) => {
+  const { roomId } = req.params;
+  const userId = req.session?.user?.id ?? null;
+  if (!userId) return res.json({ isOwner: false, isAdmin: false, ownerUserId: null });
+  const state = await db.getRoomAdminState(roomId, userId);
+  res.json(state);
+});
+
+app.post("/api/room/:roomId/role", async (req, res) => {
+  const { roomId } = req.params;
+  const { role } = req.body;
+  const userId = req.session?.user?.id ?? null;
+  const actorLogin = req.session?.user?.login ?? null;
+  if (!userId) return res.status(401).json({ error: "Login required" });
+  if (!["member", "teacher", "student"].includes(role)) {
+    return res.status(400).json({ error: "Invalid role" });
+  }
+  const currentRole = await db.getRoomMemberRole(roomId, userId);
+  const hasTeacher = await db.roomHasTeacher(roomId);
+  if (role === "teacher" && currentRole !== "teacher" && hasTeacher) {
+    return res.status(403).json({
+      error: "A teacher is already assigned. Ask a teacher to promote you.",
+    });
+  }
+  const ok = await db.setRoomMemberRole(roomId, userId, role);
+  if (ok) {
+    applyLiveRoomRole(roomId, userId, role);
+    recordRoomAudit({
+      roomId,
+      actorUserId: userId,
+      actorLogin,
+      action: "room.role_self_set",
+      targetUserId: userId,
+      metadata: { role },
+    });
+  }
+  res.json({ ok, role });
+});
+
+app.get("/api/room/:roomId/members", async (req, res) => {
+  const { roomId } = req.params;
+  if (!db.isEnabled()) return res.json({ members: [] });
+  const members = await db.listRoomMembers(roomId);
+  res.json({ members });
+});
+
+app.post("/api/room/:roomId/members/:userId/role", async (req, res) => {
+  const { roomId, userId } = req.params;
+  const { role } = req.body;
+  const actorId = req.session?.user?.id ?? null;
+  const actorLogin = req.session?.user?.login ?? null;
+
+  if (!actorId) return res.status(401).json({ error: "Login required" });
+  if (!["member", "teacher", "student"].includes(role)) {
+    return res.status(400).json({ error: "Invalid role" });
+  }
+
+  const actorRole = await db.getRoomMemberRole(roomId, actorId);
+  if (actorRole !== "teacher") {
+    return res.status(403).json({ error: "Teacher role required" });
+  }
+
+  const ok = await db.setRoomMemberRole(roomId, Number(userId), role);
+  if (ok) {
+    applyLiveRoomRole(roomId, Number(userId), role);
+    recordRoomAudit({
+      roomId,
+      actorUserId: actorId,
+      actorLogin,
+      action: "room.role_assigned",
+      targetUserId: Number(userId),
+      metadata: { role },
+    });
+  }
+  res.json({ ok, role });
+});
+
+app.post("/api/room/:roomId/members/:userId/admin", async (req, res) => {
+  const { roomId, userId } = req.params;
+  const { isAdmin } = req.body;
+  const actorId = req.session?.user?.id ?? null;
+  const actorLogin = req.session?.user?.login ?? null;
+
+  if (!actorId) return res.status(401).json({ error: "Login required" });
+
+  const adminState = await db.getRoomAdminState(roomId, actorId);
+  if (!adminState.isOwner) {
+    return res.status(403).json({ error: "Room owner required" });
+  }
+  if (Number(userId) === Number(adminState.ownerUserId)) {
+    return res.status(400).json({ error: "Owner admin status cannot be changed" });
+  }
+
+  const ok = await db.setRoomMemberAdmin(roomId, Number(userId), !!isAdmin);
+  if (ok) {
+    recordRoomAudit({
+      roomId,
+      actorUserId: actorId,
+      actorLogin,
+      action: isAdmin ? "room.admin_granted" : "room.admin_revoked",
+      targetUserId: Number(userId),
+      metadata: { isAdmin: !!isAdmin },
+    });
+  }
+  res.json({ ok, isAdmin: !!isAdmin });
+});
+
+app.post("/api/room/:roomId/transfer-owner", async (req, res) => {
+  const { roomId } = req.params;
+  const { targetUserId } = req.body;
+  const actorId = req.session?.user?.id ?? null;
+  const actorLogin = req.session?.user?.login ?? null;
+
+  if (!actorId) return res.status(401).json({ error: "Login required" });
+  const adminState = await db.getRoomAdminState(roomId, actorId);
+  if (!adminState.isOwner) {
+    return res.status(403).json({ error: "Room owner required" });
+  }
+  if (!targetUserId || Number(targetUserId) === Number(adminState.ownerUserId)) {
+    return res.status(400).json({ error: "Choose another room member" });
+  }
+
+  const ok = await db.transferRoomOwnership(roomId, Number(targetUserId));
+  if (ok) {
+    recordRoomAudit({
+      roomId,
+      actorUserId: actorId,
+      actorLogin,
+      action: "room.owner_transferred",
+      targetUserId: Number(targetUserId),
+    });
+  }
+  res.json({ ok, ownerUserId: Number(targetUserId) });
+});
+
+app.post("/api/room/:roomId/invites", async (req, res) => {
+  const { roomId } = req.params;
+  const { role = "member", grantAdmin = false, expiresInDays = 7, maxUses = 1 } = req.body;
+  const actorId = req.session?.user?.id ?? null;
+  const actorLogin = req.session?.user?.login ?? null;
+
+  if (!actorId) return res.status(401).json({ error: "Login required" });
+  if (!["member", "teacher", "student"].includes(role)) {
+    return res.status(400).json({ error: "Invalid role" });
+  }
+  if (!Number.isFinite(Number(maxUses)) || Number(maxUses) < 1 || Number(maxUses) > 500) {
+    return res.status(400).json({ error: "maxUses must be between 1 and 500" });
+  }
+
+  const adminState = await db.getRoomAdminState(roomId, actorId);
+  const actorRole = await db.getRoomMemberRole(roomId, actorId);
+  const canCreateInvite =
+    adminState.isOwner || adminState.isAdmin || actorRole === "teacher";
+  if (!canCreateInvite) {
+    return res.status(403).json({ error: "Admin or teacher access required" });
+  }
+  if (grantAdmin && !adminState.isOwner) {
+    return res.status(403).json({ error: "Only the room owner can grant admin via invite" });
+  }
+
+  const token = crypto.randomBytes(18).toString("base64url");
+  const expiresAt = Number.isFinite(Number(expiresInDays))
+    ? new Date(Date.now() + Number(expiresInDays) * 24 * 60 * 60 * 1000).toISOString()
+    : null;
+
+  const invite = await db.createRoomInvite({
+    roomId,
+    token,
+    createdByUserId: actorId,
+    role,
+    grantAdmin,
+    expiresAt,
+    maxUses: Number(maxUses),
+  });
+  if (!invite) {
+    return res.status(500).json({ error: "Could not create invite" });
+  }
+
+  recordRoomAudit({
+    roomId,
+    actorUserId: actorId,
+    actorLogin,
+    action: "room.invite_created",
+    metadata: { role, grantAdmin: !!grantAdmin, expiresAt, maxUses: Number(maxUses) },
+  });
+
+  res.json({
+    invite,
+    inviteUrl: `${req.protocol}://${req.get("host")}${req.baseUrl || ""}/?invite=${token}#${roomId}`,
+  });
+});
+
+app.get("/api/room/:roomId/invites", async (req, res) => {
+  const { roomId } = req.params;
+  const actorId = req.session?.user?.id ?? null;
+  if (!actorId) return res.status(401).json({ error: "Login required" });
+
+  const adminState = await db.getRoomAdminState(roomId, actorId);
+  const actorRole = await db.getRoomMemberRole(roomId, actorId);
+  const canManageInvites =
+    adminState.isOwner || adminState.isAdmin || actorRole === "teacher";
+  if (!canManageInvites) {
+    return res.status(403).json({ error: "Admin or teacher access required" });
+  }
+
+  const invites = await db.listRoomInvites(roomId);
+  res.json({ invites });
+});
+
+app.delete("/api/room/:roomId/invites/:inviteId", async (req, res) => {
+  const { roomId, inviteId } = req.params;
+  const actorId = req.session?.user?.id ?? null;
+  const actorLogin = req.session?.user?.login ?? null;
+  if (!actorId) return res.status(401).json({ error: "Login required" });
+
+  const adminState = await db.getRoomAdminState(roomId, actorId);
+  const actorRole = await db.getRoomMemberRole(roomId, actorId);
+  const canManageInvites =
+    adminState.isOwner || adminState.isAdmin || actorRole === "teacher";
+  if (!canManageInvites) {
+    return res.status(403).json({ error: "Admin or teacher access required" });
+  }
+
+  const ok = await db.revokeRoomInvite(roomId, inviteId, actorId);
+  if (ok) {
+    recordRoomAudit({
+      roomId,
+      actorUserId: actorId,
+      actorLogin,
+      action: "room.invite_revoked",
+      metadata: { inviteId },
+    });
+  }
+  res.json({ ok });
+});
+
+app.post("/api/invite/:token/accept", async (req, res) => {
+  const { token } = req.params;
+  const actorId = req.session?.user?.id ?? null;
+  const actorLogin = req.session?.user?.login ?? null;
+
+  if (!actorId) return res.status(401).json({ error: "Login required" });
+  if (!db.isEnabled()) return res.status(503).json({ error: "DB not configured" });
+
+  const invite = await db.getRoomInviteByToken(token);
+  if (!invite) return res.status(404).json({ error: "Invite not found" });
+  if (invite.revoked_at) return res.status(400).json({ error: "Invite has been revoked" });
+  if (invite.expires_at && new Date(invite.expires_at).getTime() < Date.now()) {
+    return res.status(400).json({ error: "Invite has expired" });
+  }
+  if (Number(invite.use_count ?? 0) >= Number(invite.max_uses ?? 1)) {
+    return res.status(400).json({ error: "Invite usage limit reached" });
+  }
+
+  const accepted = await db.acceptRoomInvite(token, actorId);
+  if (!accepted) {
+    return res.status(400).json({ error: "Invite could not be accepted" });
+  }
+
+  const roleOk = await db.setRoomMemberRole(invite.room_id, actorId, invite.role || "member");
+  let adminOk = true;
+  if (invite.grant_admin) {
+    adminOk = await db.setRoomMemberAdmin(invite.room_id, actorId, true);
+  }
+  if (roleOk) {
+    applyLiveRoomRole(invite.room_id, actorId, invite.role || "member");
+  }
+  recordRoomAudit({
+    roomId: invite.room_id,
+    actorUserId: actorId,
+    actorLogin,
+    action: "room.invite_accepted",
+    targetUserId: actorId,
+    metadata: {
+      role: invite.role || "member",
+      grantAdmin: !!invite.grant_admin,
+      useCount: Number(accepted.use_count ?? 0),
+      maxUses: Number(accepted.max_uses ?? 1),
+    },
+  });
+
+  res.json({
+    ok: roleOk && adminOk,
+    roomId: invite.room_id,
+    role: invite.role || "member",
+    isAdmin: !!invite.grant_admin,
+  });
+});
+
+app.get("/api/room/:roomId/audit", async (req, res) => {
+  const { roomId } = req.params;
+  if (!db.isEnabled()) return res.json({ entries: [] });
+  const entries = await db.listRoomAuditLog(roomId);
+  res.json({ entries });
 });
 
 // --- Explicit room save (called by client on beforeunload / before OAuth) ---
@@ -1519,6 +1754,141 @@ termWss.on("connection", (ws) => {
   });
 });
 
+// ─── Interview mode ───────────────────────────────────────────────────────────
+// Start a recording session for a room
+app.post("/api/interview/start", async (req, res) => {
+  const { roomId, title, startedBy } = req.body;
+  if (!roomId) return res.status(400).json({ error: "roomId required" });
+  const userId = req.session?.user?.id ?? null;
+  if (!userId) return res.status(401).json({ error: "Login required" });
+  const permission = await getRoomActionPermission(roomId, userId);
+  if (!permission.allowed) {
+    return res.status(403).json({ error: permission.error });
+  }
+  if (!db.isEnabled()) {
+    return res.json({ id: `${roomId}-${Date.now()}`, roomId, mock: true });
+  }
+  const session = await db.createInterviewSession(
+    roomId,
+    title || null,
+    startedBy || req.session?.user?.login || null
+  );
+  if (!session?.id) {
+    return res.json({ id: `${roomId}-${Date.now()}`, roomId, mock: true });
+  }
+  recordRoomAudit({
+    roomId,
+    actorUserId: userId,
+    actorLogin: req.session?.user?.login ?? null,
+    action: "interview.started",
+    metadata: {
+      sessionId: session.id,
+      title: title || null,
+    },
+  });
+  res.json({ ...session, roomId });
+});
+
+// Stop a recording — snapshot the current Yjs state
+app.post("/api/interview/stop", async (req, res) => {
+  const { sessionId, roomId, participants, notes } = req.body;
+  if (!sessionId || !roomId) return res.status(400).json({ error: "sessionId + roomId required" });
+  const userId = req.session?.user?.id ?? null;
+  if (!userId) return res.status(401).json({ error: "Login required" });
+  const permission = await getRoomActionPermission(roomId, userId);
+  if (!permission.allowed) {
+    return res.status(403).json({ error: permission.error });
+  }
+
+  // Capture Yjs binary snapshot from the live server doc
+  const doc = docs.get(`itecify-${roomId}`);
+  let yjsSnapshot = null;
+  if (doc) {
+    yjsSnapshot = Buffer.from(Y.encodeStateAsUpdate(doc)).toString("base64");
+  }
+
+  const session = await db.getInterviewSession(sessionId);
+  const startedAtMs = session?.started_at
+    ? new Date(session.started_at).getTime()
+    : Date.now() - 60_000;
+  const endedAtMs = Date.now();
+  const replayTimeline = [];
+
+  if (db.isEnabled()) {
+    const key = snapshotListKey(roomId);
+    if (key && isRedisUsable()) {
+      try {
+        const raw = await redisClient.lrange(key, 0, -1);
+        raw.forEach((entry) => {
+          try {
+            const parsed = JSON.parse(entry);
+            if (parsed.timestamp >= startedAtMs && parsed.timestamp <= endedAtMs) {
+              replayTimeline.push({
+                timestamp: parsed.timestamp,
+                label: parsed.label,
+                snapshot: parsed.snapshot,
+              });
+            }
+          } catch {
+            // ignore malformed snapshot entries
+          }
+        });
+      } catch {
+        // ignore redis timeline issues
+      }
+    }
+  }
+
+  if (yjsSnapshot) {
+    replayTimeline.push({
+      timestamp: endedAtMs,
+      label: "Final",
+      snapshot: yjsSnapshot,
+    });
+  }
+
+  await db.stopInterviewSession(sessionId, {
+    participants: participants || [],
+    notes: notes || null,
+    yjsSnapshot,
+    replayTimeline,
+  });
+  recordRoomAudit({
+    roomId,
+    actorUserId: userId,
+    actorLogin: req.session?.user?.login ?? null,
+    action: "interview.stopped",
+    metadata: {
+      sessionId,
+      participants: participants || [],
+      hasNotes: !!notes,
+      checkpoints: replayTimeline.length,
+    },
+  });
+
+  res.json({
+    ok: true,
+    sessionId,
+    replayUrl: `/?replay=${sessionId}`,
+  });
+});
+
+// List interview sessions for a room
+app.get("/api/interview/room/:roomId", async (req, res) => {
+  const { roomId } = req.params;
+  const sessions = await db.listRoomInterviewSessions(roomId);
+  res.json({ sessions });
+});
+
+// Get interview session metadata + snapshot
+app.get("/api/interview/:sessionId", async (req, res) => {
+  const { sessionId } = req.params;
+  if (!db.isEnabled()) return res.status(404).json({ error: "DB not configured" });
+  const session = await db.getInterviewSession(sessionId);
+  if (!session) return res.status(404).json({ error: "Session not found" });
+  res.json({ session });
+});
+
 const apiServer = http.createServer(app);
 apiServer.on("upgrade", (req, socket, head) => {
   if (preview.handlePreviewUpgrade(req, socket, head)) return;
@@ -1659,6 +2029,111 @@ function broadcastUpdate(doc, message, excludeConn) {
   });
 }
 
+function recordRoomAudit(entry) {
+  db.insertRoomAuditLog(entry).catch(() => {});
+}
+
+async function getRoomActionPermission(roomId, userId) {
+  if (!userId) {
+    return { allowed: false, error: "Login required" };
+  }
+  if (!db.isEnabled()) {
+    return { allowed: true, bootstrap: false, role: "member", isOwner: false, isAdmin: false };
+  }
+
+  const [role, hasTeacher, adminState] = await Promise.all([
+    db.getRoomMemberRole(roomId, userId),
+    db.roomHasTeacher(roomId),
+    db.getRoomAdminState(roomId, userId),
+  ]);
+
+  if (adminState.isOwner || adminState.isAdmin || role === "teacher") {
+    return { allowed: true, bootstrap: false, role, ...adminState };
+  }
+  if (!hasTeacher && !adminState.ownerUserId) {
+    return { allowed: true, bootstrap: true, role, ...adminState };
+  }
+  return {
+    allowed: false,
+    bootstrap: false,
+    role,
+    ...adminState,
+    error: "Teacher role required for this action",
+  };
+}
+
+function recomputeClassroomState(doc, sourceConn = null) {
+  let locked = false;
+  let broadcast = "";
+  const previous = doc.classroom || { locked: false, broadcast: "" };
+
+  doc.awareness.states.forEach((entry) => {
+    const state = entry?.state || entry;
+    if (state?.org?.role === "teacher") {
+      if (state.org.locked) locked = true;
+      if (state.org.broadcast) broadcast = state.org.broadcast;
+    }
+  });
+
+  doc.classroom = { locked, broadcast };
+
+  if (sourceConn?.roomRole === "teacher") {
+    const roomId = doc.name.startsWith("itecify-")
+      ? doc.name.slice("itecify-".length)
+      : doc.name;
+
+    if (previous.locked !== locked) {
+      recordRoomAudit({
+        roomId,
+        actorUserId: sourceConn.userId ?? null,
+        actorLogin: sourceConn.userLogin ?? null,
+        action: locked ? "classroom.lock_enabled" : "classroom.lock_disabled",
+      });
+    }
+
+    if ((previous.broadcast || "") !== (broadcast || "")) {
+      recordRoomAudit({
+        roomId,
+        actorUserId: sourceConn.userId ?? null,
+        actorLogin: sourceConn.userLogin ?? null,
+        action: broadcast ? "classroom.broadcast_updated" : "classroom.broadcast_cleared",
+        metadata: broadcast ? { message: broadcast.slice(0, 280) } : {},
+      });
+    }
+  }
+}
+
+function applyLiveRoomRole(roomId, userId, role) {
+  const doc = docs.get(`itecify-${roomId}`);
+  if (!doc) return;
+
+  const changed = [];
+  doc.conns.forEach((_, conn) => {
+    if (conn.userId !== userId) return;
+    conn.roomRole = role;
+
+    doc.awareness.meta.forEach((meta, clientID) => {
+      if (meta.conn !== conn) return;
+      const current = doc.awareness.states.get(clientID);
+      if (!current?.state) return;
+      current.state.org = {
+        ...(current.state.org || {}),
+        role,
+        locked: role === "teacher" ? !!current.state.org?.locked : false,
+        broadcast: role === "teacher" ? current.state.org?.broadcast || "" : "",
+      };
+      doc.awareness.states.set(clientID, current);
+      changed.push(clientID);
+    });
+  });
+
+  if (changed.length > 0) {
+    recomputeClassroomState(doc, conn);
+    const msg = encodeAwarenessUpdate(doc.awareness.states, changed);
+    broadcastUpdate(doc, msg, null);
+  }
+}
+
 function encodeAwarenessUpdate(states, changedClients) {
   // Encode the inner awareness payload
   const innerEncoder = encoding.createEncoder();
@@ -1700,6 +2175,15 @@ function applyAwarenessUpdate(doc, buf, conn) {
       if (state === null) {
         doc.awareness.states.delete(clientID);
       } else {
+        if (typeof state === "object") {
+          const role = conn.roomRole || "member";
+          state.org = {
+            ...(state.org || {}),
+            role,
+            locked: role === "teacher" ? !!state.org?.locked : false,
+            broadcast: role === "teacher" ? state.org?.broadcast || "" : "",
+          };
+        }
         doc.awareness.states.set(clientID, { clock, state });
       }
       doc.awareness.meta.set(clientID, { clock, conn });
@@ -1708,6 +2192,7 @@ function applyAwarenessUpdate(doc, buf, conn) {
   }
 
   if (changed.length > 0) {
+    recomputeClassroomState(doc);
     const msg = encodeAwarenessUpdate(doc.awareness.states, changed);
     broadcastUpdate(doc, msg, null);
   }
@@ -1719,6 +2204,9 @@ function setupConnection(ws, req) {
   // Resolve userId before getYDoc so the first loadRoom call receives it
   const userId = req.session?.user?.id ?? null;
   const doc = getYDoc(docName, userId);
+  ws.userId = userId;
+  ws.userLogin = req.session?.user?.login ?? null;
+  ws.roomRole = "member";
 
   doc.conns.set(ws, new Set());
 
@@ -1726,13 +2214,37 @@ function setupConnection(ws, req) {
   const roomIdFromDoc = docName.startsWith("itecify-")
     ? docName.slice("itecify-".length)
     : docName;
+  ws.roleReady = userId
+    ? db.getRoomMemberRole(roomIdFromDoc, userId)
+        .then((role) => {
+          ws.roomRole = role || "member";
+        })
+        .catch(() => {
+          ws.roomRole = "member";
+        })
+    : Promise.resolve();
+
   if (userId) {
     db.touchRoomMember(roomIdFromDoc, userId).catch(() => {});
+    db.ensureRoomOwnership(roomIdFromDoc, userId)
+      .then((result) => {
+        if (result?.claimed) {
+          recordRoomAudit({
+            roomId: roomIdFromDoc,
+            actorUserId: userId,
+            actorLogin: req.session?.user?.login ?? null,
+            action: "room.owner_bootstrapped",
+            targetUserId: userId,
+          });
+        }
+      })
+      .catch(() => {});
     // Track the most recently connected authenticated user so saves carry user_id
     doc.lastUserId = userId;
   }
 
   ws.on("message", async (rawMsg) => {
+    await ws.roleReady;
     const message = new Uint8Array(rawMsg);
     const decoder = decoding.createDecoder(message);
     const msgType = decoding.readVarUint(decoder);
@@ -1760,6 +2272,9 @@ function setupConnection(ws, req) {
         encoding.writeVarUint8Array(svEncoder, Y.encodeStateVector(doc));
         ws.send(encoding.toUint8Array(svEncoder));
       } else if (syncType === SYNC_STEP2 || syncType === SYNC_UPDATE) {
+        if (doc.classroom?.locked && ws.roomRole !== "teacher") {
+          return;
+        }
         const update = decoding.readVarUint8Array(decoder);
         Y.applyUpdate(doc, update);
 
@@ -1792,6 +2307,7 @@ function setupConnection(ws, req) {
       }
     });
     if (removedClients.length > 0) {
+      recomputeClassroomState(doc);
       const msg = encodeAwarenessUpdate(doc.awareness.states, removedClients);
       broadcastUpdate(doc, msg, null);
     }

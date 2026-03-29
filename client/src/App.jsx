@@ -117,14 +117,14 @@ export default function App() {
   const [settings, setSettings] = useState(loadSettings);
   const [editorReady, setEditorReady] = useState(false);
   const [diffTargetFile, setDiffTargetFile] = useState(null);
-  const [workspaceSearchOpen, setWorkspaceSearchOpen] = useState(false);
-  const [showOnboarding, setShowOnboarding] = useState(
-    () => !hasCompletedOnboarding(),
-  );
-  const [previewSyncInfo, setPreviewSyncInfo] = useState(null);
-  const [confirmDlg, setConfirmDlg] = useState(null);
-  const [roomNodeVersion, setRoomNodeVersion] = useState("20");
-  const [clockTick, setClockTick] = useState(0);
+  const [roomRole, setRoomRole] = useState("member");
+  const [teacherBroadcast, setTeacherBroadcast] = useState("");
+  const [teacherLocked, setTeacherLocked] = useState(false);
+  const [classState, setClassState] = useState({
+    locked: false,
+    broadcast: "",
+    teacherName: "",
+  });
   const editorRef = useRef(null);
   /** După Vite demo, următorul Preview trebuie să oprească containerul vechi (ex. monorepo concurrently). */
   const previewForceAfterViteDemoRef = useRef(false);
@@ -287,6 +287,46 @@ export default function App() {
       .catch(() => {});
   }, []);
 
+  useEffect(() => {
+    fetch(`${SERVER_URL}/api/room/${roomId}/role`, {
+      credentials: "include",
+    })
+      .then((r) => (r.ok ? r.json() : { role: "member" }))
+      .then((data) => {
+        setRoomRole(data.role || "member");
+      })
+      .catch(() => {
+        setRoomRole("member");
+      });
+  }, []);
+
+  useEffect(() => {
+    wsProvider.awareness.setLocalStateField("org", {
+      role: roomRole,
+      locked: roomRole === "teacher" ? teacherLocked : false,
+      broadcast: roomRole === "teacher" ? teacherBroadcast : "",
+    });
+  }, [roomRole, teacherBroadcast, teacherLocked]);
+
+  useEffect(() => {
+    const update = () => {
+      let next = { locked: false, broadcast: "", teacherName: "" };
+      wsProvider.awareness.getStates().forEach((state) => {
+        if (state.org?.role === "teacher") {
+          next = {
+            locked: !!state.org.locked,
+            broadcast: state.org.broadcast || "",
+            teacherName: state.user?.name || state.user?.login || "Teacher",
+          };
+        }
+      });
+      setClassState(next);
+    };
+    wsProvider.awareness.on("change", update);
+    update();
+    return () => wsProvider.awareness.off("change", update);
+  }, []);
+
   const handleUnlock = async () => {
     setPasswordError("");
     try {
@@ -311,6 +351,24 @@ export default function App() {
     setSettings(next);
     localStorage.setItem("itecify:settings", JSON.stringify(next));
   }, []);
+
+  const handleRoleChange = useCallback(async (nextRole) => {
+    const previousRole = roomRole;
+    setRoomRole(nextRole);
+    try {
+      const res = await fetch(`${SERVER_URL}/api/room/${roomId}/role`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ role: nextRole }),
+      });
+      if (!res.ok) {
+        setRoomRole(previousRole);
+      }
+    } catch {
+      setRoomRole(previousRole);
+    }
+  }, [roomRole]);
 
   // Keep language in sync with active file's metadata
   const handleFileSelect = useCallback(
@@ -649,6 +707,8 @@ export default function App() {
     yFiles.get(diffTargetFile)?.language ||
     yFiles.get(activeFile)?.language ||
     language;
+  const effectiveClassLock =
+    classState.locked && roomRole !== "teacher" && !viewOnly;
 
   const handleRun = useCallback(async () => {
     const code = getYText(activeFile).toString();
@@ -849,12 +909,12 @@ export default function App() {
         onPreview={viewOnly ? null : handlePreviewStart}
         previewBusy={previewBusy}
         onViteDemo={viewOnly ? null : handleViteDemo}
-        onFullstackDemo={viewOnly ? null : handleFullstackDemo}
-        onOpenWorkspaceSearch={
-          viewOnly ? undefined : () => setWorkspaceSearchOpen(true)
-        }
-        roomNodeVersion={roomNodeVersion}
-        onRoomNodeVersionChange={(v) => yRoomMeta.set("nodeVersion", v)}
+        roomRole={roomRole}
+        onRoleChange={handleRoleChange}
+        teacherBroadcast={teacherBroadcast}
+        onTeacherBroadcastChange={setTeacherBroadcast}
+        teacherLocked={teacherLocked}
+        onTeacherLockedChange={setTeacherLocked}
         settings={settings}
         onSettingsChange={handleSettingsChange}
         onFollowUser={handleFollowUser}
@@ -872,6 +932,25 @@ export default function App() {
         />
 
         <div className="flex flex-col flex-1 overflow-hidden">
+          {(classState.broadcast || effectiveClassLock) && (
+            <div
+              className="border-b px-4 py-2 text-[11px]"
+              style={{
+                borderColor: "var(--border)",
+                background: "color-mix(in srgb, var(--accent) 10%, var(--bg-secondary))",
+                color: "var(--text-primary)",
+              }}
+            >
+              {classState.broadcast && (
+                <span>{classState.teacherName ? `${classState.teacherName}: ` : ""}{classState.broadcast}</span>
+              )}
+              {effectiveClassLock && (
+                <span className={classState.broadcast ? "ml-3" : ""} style={{ color: "var(--accent)" }}>
+                  Room locked by teacher
+                </span>
+              )}
+            </div>
+          )}
           <TabBar
             tabs={openTabs}
             activeFile={activeFile}
@@ -901,8 +980,8 @@ export default function App() {
                   ref={editorRef}
                   language={language}
                   activeFile={activeFile}
-                  settings={effectiveSettings}
-                  readOnly={viewOnly}
+                  settings={settings}
+                  readOnly={viewOnly || effectiveClassLock}
                 />
               )
             ) : (

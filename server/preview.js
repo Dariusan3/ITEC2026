@@ -456,12 +456,25 @@ async function startPreview(roomId, files, docker, platformSpec, options = {}) {
         [`${containerPortStr}/tcp`]: [{ HostPort: "0" }],
       },
       Memory: 1024 * 1024 * 1024,
+      MemorySwap: 1024 * 1024 * 1024,
       CpuPeriod: 100000,
       CpuQuota: 200000,
+      PidsLimit: 512,
       NetworkMode: "bridge",
+      Tmpfs: {
+        "/tmp": "rw,nosuid,nodev,size=536870912",
+        "/run": "rw,nosuid,nodev,size=33554432",
+      },
+      CapDrop: ["ALL"],
+      SecurityOpt: ["no-new-privileges"],
       AutoRemove: false,
     },
-    Env: ["NODE_ENV=development"],
+    Env: [
+      "NODE_ENV=development",
+      "HOME=/tmp",
+      "TMPDIR=/tmp",
+      "NPM_CONFIG_CACHE=/tmp/.npm",
+    ],
   });
 
   await container.start();

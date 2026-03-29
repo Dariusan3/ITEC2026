@@ -65,8 +65,9 @@ const CODE = [
 const FEATURES = [
   { num: '01', title: 'Real-time Collaboration', desc: 'Every keystroke syncs instantly. Live cursors, user presence, and CRDT conflict resolution — feel the room come alive.', tag: 'CRDT · Yjs' },
   { num: '02', title: 'AI Assistance', desc: 'Ask questions in natural language, get inline suggestions, explain selections, fix errors, generate tests — all without leaving the editor.', tag: 'Powered by Groq' },
-  { num: '03', title: '10+ Languages', desc: 'JS, TS, Python, Rust, Go, Java, C, HTML, CSS, JSON. Code runs in an isolated Docker sandbox with configurable packages and env vars.', tag: 'Docker sandbox' },
+  { num: '03', title: '25+ Languages', desc: 'JS, TS, Python, Rust, Go, Java, C, C++, Kotlin, Ruby, PHP, YAML, SQL and more. Code runs in an isolated Docker sandbox with configurable packages and env vars.', tag: 'Docker sandbox' },
   { num: '04', title: 'Time Travel', desc: 'Snapshots are taken every 10 seconds. Scrub through the full edit history of a session and restore any earlier state of your code.', tag: 'Redis snapshots' },
+  { num: '05', title: 'GitHub Import', desc: 'Paste any public GitHub repo URL and load up to 30 source files directly into the room — ready to read, edit and run.', tag: 'GitHub API' },
 ]
 
 export default function LandingPage() {
@@ -313,67 +314,68 @@ export default function LandingPage() {
         </div>
 
         {/* ── FEATURES ────────────────────────────────────────────────── */}
-        <section className="max-w-5xl mx-auto px-6 lg:px-8 py-24">
+        <section className="max-w-5xl mx-auto px-6 lg:px-8 py-20">
           <div
             data-anim
-            className="text-[10px] font-bold uppercase tracking-[0.3em] mb-16"
+            className="text-[10px] font-bold uppercase tracking-[0.3em] mb-10"
             style={{ color: 'var(--accent)' }}
           >
             — What's inside
           </div>
 
-          <div>
+          <div style={{ borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)' }}>
             {FEATURES.map((f, i) => (
               <div
                 key={f.num}
                 data-anim
-                data-delay={String(i + 1)}
-                className="flex flex-col sm:flex-row items-start gap-6 sm:gap-12 py-10 border-t"
-                style={{ borderColor: 'var(--border)' }}
+                data-delay={String((i % 3) + 1)}
+                className="flex flex-col sm:flex-row items-start gap-6 sm:gap-12 py-9"
+                style={{
+                  borderBottom: i < FEATURES.length - 1 ? '1px solid var(--border)' : 'none',
+                }}
               >
                 <span
                   className="shrink-0 font-black leading-none tabular-nums select-none"
                   style={{
-                    fontSize: 'clamp(2.5rem, 4vw, 3.5rem)',
+                    fontSize: 'clamp(2.2rem, 3.5vw, 3rem)',
                     letterSpacing: '-0.05em',
-                    color: 'rgba(203,166,247,0.18)',
-                    minWidth: '4.5rem',
+                    color: 'rgba(203,166,247,0.15)',
+                    minWidth: '4rem',
                   }}
                 >
                   {f.num}
                 </span>
                 <div className="flex-1 pt-1">
-                  <div className="flex flex-wrap items-center gap-3 mb-3">
+                  <div className="flex flex-wrap items-center gap-3 mb-2.5">
                     <h3
                       className="font-bold"
-                      style={{ fontSize: 'clamp(1rem, 1.5vw, 1.2rem)', color: 'var(--text-primary)' }}
+                      style={{ fontSize: 'clamp(0.95rem, 1.4vw, 1.15rem)', color: 'var(--text-primary)' }}
                     >
                       {f.title}
                     </h3>
                     <span
-                      className="text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 border"
-                      style={{ borderColor: 'rgba(203,166,247,0.25)', color: 'var(--accent)', background: 'rgba(203,166,247,0.07)' }}
+                      className="text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 border rounded-sm"
+                      style={{ borderColor: 'rgba(203,166,247,0.22)', color: 'var(--accent)', background: 'rgba(203,166,247,0.06)' }}
                     >
                       {f.tag}
                     </span>
                   </div>
-                  <p className="text-sm leading-relaxed" style={{ color: 'var(--text-secondary)', maxWidth: '52ch' }}>
+                  <p className="text-[13px] leading-relaxed" style={{ color: 'var(--text-secondary)', maxWidth: '54ch' }}>
                     {f.desc}
                   </p>
                 </div>
               </div>
             ))}
-            <div style={{ borderTop: '1px solid var(--border)' }} />
           </div>
         </section>
 
         {/* ── RECENT ROOMS ────────────────────────────────────────────── */}
         {recentRooms.length > 0 && (
-          <section className="max-w-5xl mx-auto px-6 lg:px-8 pb-24">
-            <div data-anim className="text-[10px] font-bold uppercase tracking-[0.3em] mb-8" style={{ color: 'var(--text-secondary)' }}>
+          <section className="max-w-5xl mx-auto px-6 lg:px-8 pt-16 pb-0">
+            <div data-anim className="text-[10px] font-bold uppercase tracking-[0.3em] mb-6" style={{ color: 'var(--text-secondary)' }}>
               — Recent rooms
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5">
               {recentRooms.map((r, i) => (
                 <button
                   key={r.id}
@@ -381,10 +383,10 @@ export default function LandingPage() {
                   onClick={() => { window.location.hash = r.id }}
                   data-anim
                   data-delay={String((i % 3) + 1)}
-                  className="room-btn flex items-center justify-between border px-4 py-3.5 text-left transition-all"
+                  className="room-btn flex items-center justify-between border px-4 py-3 text-left transition-all"
                   style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border)' }}
                 >
-                  <span className="font-mono text-sm truncate" style={{ color: 'var(--accent)' }}>
+                  <span className="font-mono text-[12px] truncate" style={{ color: 'var(--accent)' }}>
                     #{r.id}
                   </span>
                   <span className="text-[10px] ml-3 shrink-0 tabular-nums" style={{ color: 'var(--text-secondary)' }}>
@@ -399,49 +401,64 @@ export default function LandingPage() {
         {/* ── BOTTOM CTA ──────────────────────────────────────────────── */}
         <section
           data-anim
-          className="border-t"
-          style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border)' }}
+          className="mt-24"
+          style={{
+            background: 'var(--bg-secondary)',
+            borderTop: '1px solid var(--border)',
+          }}
         >
           <div
-            className="max-w-3xl mx-auto px-6 py-28 text-center"
+            className="max-w-3xl mx-auto px-6 py-24 text-center"
             style={{
-              backgroundImage: 'radial-gradient(ellipse 60% 50% at 50% 0%, rgba(203,166,247,0.08) 0%, transparent 100%)',
+              backgroundImage: 'radial-gradient(ellipse 70% 55% at 50% 0%, rgba(203,166,247,0.07) 0%, transparent 100%)',
             }}
           >
             <p
-              className="text-[10px] font-bold uppercase tracking-[0.3em] mb-6"
+              className="text-[10px] font-bold uppercase tracking-[0.3em] mb-5"
               style={{ color: 'var(--accent)' }}
             >
               ✦ Start now
             </p>
             <h2
               className="font-black leading-tight mb-4"
-              style={{ fontSize: 'clamp(1.8rem, 3.5vw, 3rem)', letterSpacing: '-0.035em' }}
+              style={{ fontSize: 'clamp(1.8rem, 3.5vw, 2.8rem)', letterSpacing: '-0.035em' }}
             >
               Your next collab session<br />
               is one click away.
             </h2>
-            <p className="text-sm mb-10" style={{ color: 'var(--text-secondary)' }}>
+            <p className="text-[13px] mb-10 leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
               No account required. Share the link. Start coding.
             </p>
-            <button
-              type="button"
-              onClick={handleNewRoom}
-              className="inline-flex items-center gap-2 px-10 py-4 text-sm font-bold uppercase tracking-wide transition-all hover:brightness-115 hover:scale-[1.03] active:scale-100"
-              style={{ background: 'var(--accent)', color: '#1e1e2e', border: '1px solid var(--accent)' }}
-            >
-              Open a room →
-            </button>
+            <div className="flex flex-wrap items-center justify-center gap-3">
+              <button
+                type="button"
+                onClick={handleNewRoom}
+                className="inline-flex items-center gap-2 px-10 py-4 text-sm font-bold uppercase tracking-wide transition-all hover:brightness-115 hover:scale-[1.02] active:scale-100"
+                style={{ background: 'var(--accent)', color: '#1e1e2e', border: '1px solid var(--accent)' }}
+              >
+                Open a room →
+              </button>
+              <a
+                href="https://github.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 px-8 py-4 text-sm font-semibold uppercase tracking-wide transition-all hover:brightness-110 border"
+                style={{ background: 'transparent', color: 'var(--text-secondary)', borderColor: 'var(--border)' }}
+              >
+                <GithubIcon /> View source
+              </a>
+            </div>
           </div>
         </section>
 
         {/* ── FOOTER ──────────────────────────────────────────────────── */}
         <footer
-          className="border-t px-6 py-4 flex flex-wrap items-center justify-between gap-2 text-[10px] uppercase tracking-widest"
-          style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)', background: 'var(--bg-primary)' }}
+          className="border-t px-6 py-5 flex flex-wrap items-center justify-between gap-3 text-[10px] uppercase tracking-widest"
+          style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)', background: 'var(--bg-primary)', opacity: 0.7 }}
         >
-          <span>iTECify · ITEC2026</span>
-          <span>Built with Yjs · Monaco · Groq</span>
+          <span>iTECify · ITEC 2026</span>
+          <span className="hidden sm:block" style={{ color: 'var(--border)' }}>·</span>
+          <span>Yjs · Monaco · Groq · Docker</span>
         </footer>
 
       </div>

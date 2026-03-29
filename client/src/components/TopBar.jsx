@@ -334,31 +334,62 @@ export default function TopBar({
   onPreview,
   previewBusy = false,
   onViteDemo,
-  onFullstackDemo,
-  onOpenWorkspaceSearch,
-  roomNodeVersion,
-  onRoomNodeVersionChange,
+  roomRole = "member",
+  onRoleChange,
+  teacherBroadcast = "",
+  onTeacherBroadcastChange,
+  teacherLocked = false,
+  onTeacherLockedChange,
   viewOnly = false,
 }) {
   const [users, setUsers] = useState([]);
   const [files, setFiles] = useState([]);
+  const [roomMembers, setRoomMembers] = useState([]);
+  const [auditEntries, setAuditEntries] = useState([]);
+  const [memberAction, setMemberAction] = useState("");
+  const [adminAction, setAdminAction] = useState("");
+  const [adminState, setAdminState] = useState({
+    isOwner: false,
+    isAdmin: false,
+    ownerUserId: null,
+  });
+  const [inviteRole, setInviteRole] = useState("student");
+  const [inviteGrantAdmin, setInviteGrantAdmin] = useState(false);
+  const [inviteExpiryDays, setInviteExpiryDays] = useState(7);
+  const [inviteMaxUses, setInviteMaxUses] = useState(1);
+  const [inviteAction, setInviteAction] = useState(false);
+  const [inviteMessage, setInviteMessage] = useState("");
+  const [activeInvites, setActiveInvites] = useState([]);
+  const [inviteManageAction, setInviteManageAction] = useState("");
   const [copied, setCopied] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showDiffMenu, setShowDiffMenu] = useState(false);
+  const [showInterview, setShowInterview] = useState(false);
+  const [showClassroom, setShowClassroom] = useState(false);
   const [showLogin, setShowLogin] = useState(false);
   const [showPasswordPanel, setShowPasswordPanel] = useState(false);
   const [passwordInput, setPasswordInput] = useState("");
   const [passwordMsg, setPasswordMsg] = useState("");
   const [showMyRooms, setShowMyRooms] = useState(false);
   const [myRooms, setMyRooms] = useState([]);
-  const [showLocalRooms, setShowLocalRooms] = useState(false);
-  const [localRooms, setLocalRooms] = useState(() => loadLocalHistory());
+  const [interviewTitle, setInterviewTitle] = useState("");
+  const [interviewNotes, setInterviewNotes] = useState("");
+  const [interviewSession, setInterviewSession] = useState(null);
+  const [interviewSessions, setInterviewSessions] = useState([]);
+  const [interviewReplayUrl, setInterviewReplayUrl] = useState("");
+  const [interviewMessage, setInterviewMessage] = useState("");
+  const [classroomMessage, setClassroomMessage] = useState("");
   const diffMenuRef = useRef(null);
+  const interviewRef = useRef(null);
+  const classroomRef = useRef(null);
+  const acceptedInviteRef = useRef(null);
   const { user, loginGitHub, loginGoogle, logout } = useAuth();
 
   useEffect(() => {
     if (user) {
       wsProvider.awareness.setLocalStateField("user", {
+        id: user.id,
+        login: user.login,
         name: user.name || user.login,
         color: wsProvider.awareness.getLocalState()?.user?.color || "#8ff7a7",
         avatar: user.avatar,
@@ -392,13 +423,33 @@ export default function TopBar({
   }, [showDiffMenu]);
 
   useEffect(() => {
+    if (!showInterview) return;
+    const onDoc = (event) => {
+      if (!interviewRef.current?.contains(event.target)) setShowInterview(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [showInterview]);
+
+  useEffect(() => {
+    if (!showClassroom) return;
+    const onDoc = (event) => {
+      if (!classroomRef.current?.contains(event.target)) setShowClassroom(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [showClassroom]);
+
+  useEffect(() => {
     const awareness = wsProvider.awareness;
     const update = () => {
       const seen = new Set();
       const states = [];
       awareness.getStates().forEach((state, clientId) => {
-        if (state.user && !seen.has(state.user.name)) {
-          seen.add(state.user.name);
+        const identity =
+          state.user?.id || state.user?.login || state.user?.name || clientId;
+        if (state.user && !seen.has(identity)) {
+          seen.add(identity);
           states.push({ ...state.user, cursor: state.cursor, clientId });
         }
       });
@@ -416,6 +467,22 @@ export default function TopBar({
       setTimeout(() => setCopied(false), 2000);
     });
   }, []);
+
+  const handleShareReadOnly = () => {
+    const url = `${window.location.origin}${window.location.pathname}?view=1#${roomId}`;
+    navigator.clipboard.writeText(url).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  const handleShareEmbed = () => {
+    const url = `${window.location.origin}${window.location.pathname}?embed=1#${roomId}`;
+    navigator.clipboard.writeText(url).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
 
   const handleFork = () => {
     const newRoom = Math.random().toString(36).slice(2, 10);
@@ -522,6 +589,7 @@ export default function TopBar({
       if (!res.ok || !data.ok) throw new Error(data.error || "Failed");
       setPasswordMsg(pw ? "Password set!" : "Password removed.");
       setPasswordInput("");
+      loadAuditEntries().catch(() => {});
       setTimeout(() => {
         setPasswordMsg("");
         setShowPasswordPanel(false);
@@ -543,6 +611,340 @@ export default function TopBar({
     a.click();
     URL.revokeObjectURL(a.href);
   };
+
+  const loadRoomMembers = useCallback(async () => {
+    const res = await fetch(`${SERVER_URL}/api/room/${roomId}/members`, {
+      credentials: "include",
+    });
+    const data = await res.json().catch(() => ({ members: [] }));
+    setRoomMembers(Array.isArray(data.members) ? data.members : []);
+  }, []);
+
+  const loadAdminState = useCallback(async () => {
+    const res = await fetch(`${SERVER_URL}/api/room/${roomId}/admin-state`, {
+      credentials: "include",
+    });
+    const data = await res.json().catch(() => ({
+      isOwner: false,
+      isAdmin: false,
+      ownerUserId: null,
+    }));
+    setAdminState({
+      isOwner: !!data.isOwner,
+      isAdmin: !!data.isAdmin,
+      ownerUserId: data.ownerUserId ?? null,
+    });
+  }, []);
+
+  const loadAuditEntries = useCallback(async () => {
+    const res = await fetch(`${SERVER_URL}/api/room/${roomId}/audit`, {
+      credentials: "include",
+    });
+    const data = await res.json().catch(() => ({ entries: [] }));
+    setAuditEntries(Array.isArray(data.entries) ? data.entries : []);
+  }, []);
+
+  const loadActiveInvites = useCallback(async () => {
+    const res = await fetch(`${SERVER_URL}/api/room/${roomId}/invites`, {
+      credentials: "include",
+    });
+    const data = await res.json().catch(() => ({ invites: [] }));
+    setActiveInvites(Array.isArray(data.invites) ? data.invites : []);
+  }, []);
+
+  const loadInterviewSessions = useCallback(async () => {
+    const res = await fetch(`${SERVER_URL}/api/interview/room/${roomId}`);
+    const data = await res.json().catch(() => ({ sessions: [] }));
+    setInterviewSessions(data.sessions || []);
+  }, []);
+
+  useEffect(() => {
+    if (!showClassroom) return;
+    loadAdminState().catch(() => {});
+    loadRoomMembers().catch(() => {});
+    loadAuditEntries().catch(() => {});
+    loadActiveInvites().catch(() => {});
+  }, [showClassroom, loadAdminState, loadRoomMembers, loadAuditEntries, loadActiveInvites]);
+
+  const handleAssignRole = useCallback(
+    async (targetUserId, nextRole) => {
+      if (!targetUserId) return;
+      setClassroomMessage("");
+      setMemberAction(`${targetUserId}:${nextRole}`);
+      try {
+        const res = await fetch(
+          `${SERVER_URL}/api/room/${roomId}/members/${targetUserId}/role`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({ role: nextRole }),
+          },
+        );
+        if (res.ok) {
+          await loadRoomMembers();
+          await loadAuditEntries();
+        } else {
+          const data = await res.json().catch(() => ({}));
+          setClassroomMessage(data.error || "Could not update role.");
+        }
+      } finally {
+        setMemberAction("");
+      }
+    },
+    [loadAuditEntries, loadRoomMembers],
+  );
+
+  const handleToggleAdmin = useCallback(
+    async (targetUserId, nextIsAdmin) => {
+      if (!targetUserId) return;
+      setClassroomMessage("");
+      setAdminAction(`${targetUserId}:${nextIsAdmin ? "on" : "off"}`);
+      try {
+        const res = await fetch(
+          `${SERVER_URL}/api/room/${roomId}/members/${targetUserId}/admin`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({ isAdmin: nextIsAdmin }),
+          },
+        );
+        if (res.ok) {
+          await loadRoomMembers();
+          await loadAuditEntries();
+        } else {
+          const data = await res.json().catch(() => ({}));
+          setClassroomMessage(data.error || "Could not update admin access.");
+        }
+      } finally {
+        setAdminAction("");
+      }
+    },
+    [loadAuditEntries, loadRoomMembers],
+  );
+
+  const handleTransferOwnership = useCallback(
+    async (targetUserId) => {
+      if (!targetUserId) return;
+      setClassroomMessage("");
+      setAdminAction(`transfer:${targetUserId}`);
+      try {
+        const res = await fetch(`${SERVER_URL}/api/room/${roomId}/transfer-owner`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ targetUserId }),
+        });
+        if (res.ok) {
+          await loadAdminState();
+          await loadRoomMembers();
+          await loadAuditEntries();
+          setClassroomMessage("Ownership transferred.");
+        } else {
+          const data = await res.json().catch(() => ({}));
+          setClassroomMessage(data.error || "Could not transfer ownership.");
+        }
+      } finally {
+        setAdminAction("");
+      }
+    },
+    [loadAdminState, loadAuditEntries, loadRoomMembers],
+  );
+
+  const handleCreateInvite = useCallback(async () => {
+    setInviteAction(true);
+    setInviteMessage("");
+    setClassroomMessage("");
+    try {
+      const res = await fetch(`${SERVER_URL}/api/room/${roomId}/invites`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          role: inviteRole,
+          grantAdmin: inviteGrantAdmin,
+          expiresInDays: inviteExpiryDays,
+          maxUses: inviteMaxUses,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setInviteMessage(data.error || "Could not create invite.");
+        return;
+      }
+      if (data.inviteUrl) {
+        await navigator.clipboard.writeText(data.inviteUrl);
+        setInviteMessage("Invite link copied.");
+      } else {
+        setInviteMessage("Invite created.");
+      }
+      await loadAuditEntries();
+      await loadActiveInvites();
+    } catch {
+      setInviteMessage("Could not create invite.");
+    } finally {
+      setInviteAction(false);
+    }
+  }, [inviteExpiryDays, inviteGrantAdmin, inviteMaxUses, inviteRole, loadActiveInvites, loadAuditEntries]);
+
+  const handleCopyInvite = useCallback(async (token) => {
+    if (!token) return;
+    const url = `${window.location.origin}${window.location.pathname}?invite=${token}#${roomId}`;
+    await navigator.clipboard.writeText(url);
+    setInviteMessage("Invite link copied.");
+  }, []);
+
+  const handleRevokeInvite = useCallback(
+    async (inviteId) => {
+      if (!inviteId) return;
+      setInviteManageAction(inviteId);
+      setInviteMessage("");
+      try {
+        const res = await fetch(`${SERVER_URL}/api/room/${roomId}/invites/${inviteId}`, {
+          method: "DELETE",
+          credentials: "include",
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          setInviteMessage(data.error || "Could not revoke invite.");
+          return;
+        }
+        setInviteMessage("Invite revoked.");
+        await loadActiveInvites();
+        await loadAuditEntries();
+      } finally {
+        setInviteManageAction("");
+      }
+    },
+    [loadActiveInvites, loadAuditEntries],
+  );
+
+  useEffect(() => {
+    const inviteToken = new URLSearchParams(window.location.search).get("invite");
+    if (!inviteToken || !user || acceptedInviteRef.current === inviteToken) return;
+    acceptedInviteRef.current = inviteToken;
+    setClassroomMessage("");
+    fetch(`${SERVER_URL}/api/invite/${inviteToken}/accept`, {
+      method: "POST",
+      credentials: "include",
+    })
+      .then((res) => res.json().then((data) => ({ ok: res.ok, data })))
+      .then(({ ok, data }) => {
+        if (!ok) {
+          setClassroomMessage(data.error || "Could not accept invite.");
+          return;
+        }
+        setClassroomMessage(
+          data.isAdmin
+            ? "Invite accepted. You now have admin access."
+            : `Invite accepted. Your role is ${data.role}.`,
+        );
+        const url = new URL(window.location.href);
+        url.searchParams.delete("invite");
+        window.history.replaceState({}, "", url);
+        loadAdminState().catch(() => {});
+        loadRoomMembers().catch(() => {});
+        loadAuditEntries().catch(() => {});
+      })
+      .catch(() => {
+        setClassroomMessage("Could not accept invite.");
+      });
+  }, [user, loadAdminState, loadAuditEntries, loadRoomMembers]);
+
+  const handleInterviewStart = async () => {
+    setInterviewMessage("");
+    const res = await fetch(`${SERVER_URL}/api/interview/start`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({
+        roomId,
+        title: interviewTitle.trim() || null,
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setInterviewMessage(data.error || "Could not start interview mode.");
+      return;
+    }
+    setInterviewSession(data);
+    setInterviewReplayUrl("");
+    loadInterviewSessions().catch(() => {});
+    loadAuditEntries().catch(() => {});
+  };
+
+  const handleInterviewStop = async () => {
+    if (!interviewSession?.id) return;
+    setInterviewMessage("");
+    const participants = users.map((u) => u.name).filter(Boolean);
+    const res = await fetch(`${SERVER_URL}/api/interview/stop`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({
+        sessionId: interviewSession.id,
+        roomId,
+        participants,
+        notes: interviewNotes.trim() || null,
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setInterviewMessage(data.error || "Could not save replay.");
+      return;
+    }
+    const replayUrl =
+      data.replayUrl ||
+      `${window.location.origin}${window.location.pathname}?replay=${interviewSession.id}`;
+    setInterviewReplayUrl(replayUrl.startsWith("http") ? replayUrl : `${window.location.origin}${replayUrl}`);
+    setInterviewSession(null);
+    loadInterviewSessions().catch(() => {});
+    loadAuditEntries().catch(() => {});
+  };
+
+  const formatAuditLabel = useCallback((entry) => {
+    const actor = entry.actor_login ? `@${entry.actor_login}` : "Someone";
+    const role = entry.metadata?.role;
+    switch (entry.action) {
+      case "room.password_set":
+        return `${actor} set a room password`;
+      case "room.password_cleared":
+        return `${actor} removed the room password`;
+      case "room.role_self_set":
+        return `${actor} set their role to ${role || "member"}`;
+      case "room.role_assigned":
+        return `${actor} assigned ${role || "member"} access`;
+      case "room.owner_bootstrapped":
+        return `${actor} became the room owner`;
+      case "room.admin_granted":
+        return `${actor} granted admin access`;
+      case "room.admin_revoked":
+        return `${actor} revoked admin access`;
+      case "room.owner_transferred":
+        return `${actor} transferred room ownership`;
+      case "room.invite_created":
+        return `${actor} created an invite link`;
+      case "room.invite_revoked":
+        return `${actor} revoked an invite`;
+      case "room.invite_accepted":
+        return `${actor} accepted an invite`;
+      case "interview.started":
+        return `${actor} started an interview session`;
+      case "interview.stopped":
+        return `${actor} saved an interview replay`;
+      case "classroom.lock_enabled":
+        return `${actor} locked editing`;
+      case "classroom.lock_disabled":
+        return `${actor} unlocked editing`;
+      case "classroom.broadcast_updated":
+        return `${actor} updated the broadcast`;
+      case "classroom.broadcast_cleared":
+        return `${actor} cleared the broadcast`;
+      default:
+        return `${actor} performed ${entry.action}`;
+    }
+  }, []);
 
   return (
     <div
@@ -754,6 +1156,16 @@ export default function TopBar({
             <span>{copied ? "Copied" : "Share"}</span>
           </Btn>
 
+          <Btn onClick={handleShareReadOnly} title="Copy read-only link">
+            <EyeIcon className="h-3.5 w-3.5" />
+            <span>View link</span>
+          </Btn>
+
+          <Btn onClick={handleShareEmbed} title="Copy embeddable widget link">
+            <EyeIcon className="h-3.5 w-3.5" />
+            <span>Embed</span>
+          </Btn>
+
           <Btn onClick={handleFork} title="Fork this session into a new room">
             <ForkIcon className="h-3.5 w-3.5" />
             <span>Fork</span>
@@ -830,6 +1242,442 @@ export default function TopBar({
             <ArchiveIcon className="h-3.5 w-3.5" />
             <span>ZIP</span>
           </Btn>
+
+          <div className="relative" ref={interviewRef}>
+            <Btn
+              onClick={() => {
+                setShowInterview((v) => !v);
+                if (!showInterview) loadInterviewSessions().catch(() => {});
+              }}
+              title="Interview mode"
+              style={{
+                borderColor: interviewSession ? "var(--red)" : "var(--border)",
+                color: interviewSession ? "var(--red)" : "var(--text-secondary)",
+              }}
+            >
+              <SparkIcon className="h-3.5 w-3.5" />
+              <span>Interview</span>
+            </Btn>
+            {showInterview && (
+              <div
+                className="floating-panel absolute right-0 top-[calc(100%+10px)] z-50 p-3"
+                style={{ width: 320 }}
+              >
+                <p className="mb-2 text-[11px] font-semibold" style={{ color: "var(--text-primary)" }}>
+                  Interview mode
+                </p>
+                <input
+                  value={interviewTitle}
+                  onChange={(e) => setInterviewTitle(e.target.value)}
+                  placeholder="Session title"
+                  className="panel-input mb-2 w-full px-3 py-2 text-xs"
+                />
+                <textarea
+                  value={interviewNotes}
+                  onChange={(e) => setInterviewNotes(e.target.value)}
+                  placeholder="Notes"
+                  rows={3}
+                  className="panel-input mb-2 w-full resize-none px-3 py-2 text-xs"
+                />
+                <div className="flex gap-2">
+                  {!interviewSession ? (
+                    <Btn onClick={handleInterviewStart} className="w-full">
+                      Start
+                    </Btn>
+                  ) : (
+                    <Btn
+                      onClick={handleInterviewStop}
+                      className="w-full"
+                      style={{
+                        background: "var(--red)",
+                        borderColor: "var(--red)",
+                        color: "var(--bg-primary)",
+                      }}
+                    >
+                      Stop & save replay
+                    </Btn>
+                  )}
+                </div>
+                {interviewMessage && (
+                  <p className="mt-2 text-[10px]" style={{ color: "var(--red)" }}>
+                    {interviewMessage}
+                  </p>
+                )}
+                {interviewReplayUrl && (
+                  <a
+                    href={interviewReplayUrl}
+                    className="mt-2 block text-[10px] underline"
+                    style={{ color: "var(--accent)" }}
+                  >
+                    Open replay
+                  </a>
+                )}
+                <div className="mt-3">
+                  <p className="mb-1 text-[10px] uppercase tracking-[0.16em]" style={{ color: "var(--text-secondary)" }}>
+                    Previous sessions
+                  </p>
+                  <div className="max-h-40 overflow-auto space-y-1">
+                    {interviewSessions.map((session) => (
+                      <a
+                        key={session.id}
+                        href={`${window.location.pathname}?replay=${session.id}`}
+                        className="block rounded-xl border px-3 py-2 text-[10px]"
+                        style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
+                      >
+                        <div>{session.title || "Untitled session"}</div>
+                        <div style={{ color: "var(--text-secondary)" }}>
+                          {new Date(session.started_at).toLocaleString()}
+                        </div>
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="relative" ref={classroomRef}>
+            <Btn
+              onClick={() => setShowClassroom((v) => !v)}
+              title="Teacher / student mode"
+            >
+              <LockIcon className="h-3.5 w-3.5" />
+              <span>Class</span>
+            </Btn>
+            {showClassroom && (
+              <div
+                className="floating-panel absolute right-0 top-[calc(100%+10px)] z-50 p-3"
+                style={{ width: 320 }}
+              >
+                <p className="mb-2 text-[11px] font-semibold" style={{ color: "var(--text-primary)" }}>
+                  Classroom mode
+                </p>
+                {(adminState.isOwner || adminState.isAdmin) && (
+                  <p className="mb-2 text-[10px]" style={{ color: "var(--text-secondary)" }}>
+                    {adminState.isOwner ? "You own this room." : "You are a room admin."}
+                  </p>
+                )}
+                <div className="mb-3 flex gap-1">
+                  {["member", "teacher", "student"].map((role) => (
+                    <button
+                      key={role}
+                      type="button"
+                      onClick={() => onRoleChange?.(role)}
+                      className="flex-1 rounded-xl border px-2 py-2 text-[10px] uppercase tracking-[0.14em]"
+                      style={{
+                        borderColor: roomRole === role ? "var(--accent)" : "var(--border)",
+                        color: roomRole === role ? "var(--accent)" : "var(--text-secondary)",
+                        background: "var(--bg-tertiary)",
+                      }}
+                    >
+                      {role}
+                    </button>
+                  ))}
+                </div>
+                {classroomMessage && (
+                  <p className="mb-2 text-[10px]" style={{ color: "var(--red)" }}>
+                    {classroomMessage}
+                  </p>
+                )}
+                {showClassroom && (
+                  <div className="mb-3 rounded-2xl border px-3 py-2.5" style={{ borderColor: "var(--border)", background: "var(--bg-tertiary)" }}>
+                    <div className="mb-1 text-[10px] uppercase tracking-[0.16em]" style={{ color: "var(--text-secondary)" }}>
+                      Roster
+                    </div>
+                    <div className="max-h-48 space-y-2 overflow-auto pr-1">
+                      {roomMembers.map((member) => {
+                        const profile = member.user || {};
+                        const online = users.some((onlineUser) =>
+                          String(onlineUser.id || "") === String(member.user_id) ||
+                          (profile.login && onlineUser.login === profile.login) ||
+                          (profile.name && onlineUser.name === profile.name),
+                        );
+                        return (
+                          <div
+                            key={member.user_id}
+                            className="rounded-xl border px-2.5 py-2"
+                            style={{ borderColor: "var(--border)", background: "color-mix(in srgb, var(--bg-secondary) 74%, transparent)" }}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="min-w-0">
+                                <div className="truncate text-[11px] font-semibold" style={{ color: "var(--text-primary)" }}>
+                                  {profile.name || profile.login || `User ${member.user_id}`}
+                                </div>
+                                <div className="truncate text-[10px]" style={{ color: "var(--text-secondary)" }}>
+                                  {profile.login ? `@${profile.login}` : "Room member"}
+                                  {online ? " · online" : ""}
+                                </div>
+                              </div>
+                              <span className="rounded-full border px-2 py-1 text-[9px] uppercase tracking-[0.16em]" style={{ borderColor: "var(--border)", color: member.role === "teacher" ? "var(--accent)" : "var(--text-secondary)" }}>
+                                {member.role}
+                              </span>
+                            </div>
+                            <div className="mt-1 flex flex-wrap gap-1">
+                              {member.is_owner && (
+                                <span className="rounded-full border px-2 py-1 text-[9px] uppercase tracking-[0.16em]" style={{ borderColor: "var(--accent)", color: "var(--accent)" }}>
+                                  owner
+                                </span>
+                              )}
+                              {member.is_admin && !member.is_owner && (
+                                <span className="rounded-full border px-2 py-1 text-[9px] uppercase tracking-[0.16em]" style={{ borderColor: "var(--blue)", color: "var(--blue)" }}>
+                                  admin
+                                </span>
+                              )}
+                            </div>
+                            {roomRole === "teacher" && String(member.user_id) !== String(user?.id || "") && (
+                              <div className="mt-2 flex gap-1">
+                                {["member", "teacher", "student"].map((role) => (
+                                  <button
+                                    key={role}
+                                    type="button"
+                                    onClick={() => handleAssignRole(member.user_id, role)}
+                                    disabled={memberAction === `${member.user_id}:${role}`}
+                                    className="flex-1 rounded-lg border px-2 py-1.5 text-[9px] uppercase tracking-[0.14em] disabled:opacity-60"
+                                    style={{
+                                      borderColor: member.role === role ? "var(--accent)" : "var(--border)",
+                                      color: member.role === role ? "var(--accent)" : "var(--text-secondary)",
+                                      background: "var(--bg-secondary)",
+                                    }}
+                                  >
+                                    {memberAction === `${member.user_id}:${role}` ? "..." : role}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                            {adminState.isOwner && !member.is_owner && (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleAdmin(member.user_id, !member.is_admin)}
+                                  disabled={adminAction === `${member.user_id}:${member.is_admin ? "off" : "on"}`}
+                                  className="mt-2 w-full rounded-lg border px-2 py-1.5 text-[9px] uppercase tracking-[0.14em] disabled:opacity-60"
+                                  style={{
+                                    borderColor: member.is_admin ? "var(--red)" : "var(--blue)",
+                                    color: member.is_admin ? "var(--red)" : "var(--blue)",
+                                    background: "var(--bg-secondary)",
+                                  }}
+                                >
+                                  {adminAction === `${member.user_id}:${member.is_admin ? "off" : "on"}`
+                                    ? "..."
+                                    : member.is_admin
+                                      ? "Remove admin"
+                                      : "Make admin"}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleTransferOwnership(member.user_id)}
+                                  disabled={adminAction === `transfer:${member.user_id}`}
+                                  className="mt-2 w-full rounded-lg border px-2 py-1.5 text-[9px] uppercase tracking-[0.14em] disabled:opacity-60"
+                                  style={{
+                                    borderColor: "var(--accent)",
+                                    color: "var(--accent)",
+                                    background: "var(--bg-secondary)",
+                                  }}
+                                >
+                                  {adminAction === `transfer:${member.user_id}` ? "..." : "Transfer ownership"}
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        );
+                      })}
+                      {roomMembers.length === 0 && (
+                        <div className="rounded-xl border px-3 py-2 text-[10px]" style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}>
+                          No saved room members yet. Logged-in users appear here after joining.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+                <div className="mb-3 rounded-2xl border px-3 py-2.5" style={{ borderColor: "var(--border)", background: "var(--bg-tertiary)" }}>
+                  <div className="mb-1 text-[10px] uppercase tracking-[0.16em]" style={{ color: "var(--text-secondary)" }}>
+                    Invite flow
+                  </div>
+                  <div className="flex gap-1">
+                    {["member", "student", "teacher"].map((role) => (
+                      <button
+                        key={role}
+                        type="button"
+                        onClick={() => setInviteRole(role)}
+                        className="flex-1 rounded-lg border px-2 py-2 text-[9px] uppercase tracking-[0.14em]"
+                        style={{
+                          borderColor: inviteRole === role ? "var(--accent)" : "var(--border)",
+                          color: inviteRole === role ? "var(--accent)" : "var(--text-secondary)",
+                          background: "var(--bg-secondary)",
+                        }}
+                      >
+                        {role}
+                      </button>
+                    ))}
+                  </div>
+                  {adminState.isOwner && (
+                    <label className="mt-2 flex items-center justify-between rounded-xl border px-3 py-2 text-[10px]" style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}>
+                      <span>Grant admin on accept</span>
+                      <input
+                        type="checkbox"
+                        checked={inviteGrantAdmin}
+                        onChange={(e) => setInviteGrantAdmin(e.target.checked)}
+                      />
+                    </label>
+                  )}
+                  <div className="mt-2 grid grid-cols-2 gap-2">
+                    <label className="rounded-xl border px-3 py-2 text-[10px]" style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}>
+                      <span className="block" style={{ color: "var(--text-secondary)" }}>
+                        Expiry days
+                      </span>
+                      <input
+                        type="number"
+                        min="1"
+                        max="90"
+                        value={inviteExpiryDays}
+                        onChange={(e) => setInviteExpiryDays(Math.max(1, Math.min(90, Number(e.target.value) || 1)))}
+                        className="mt-1 w-full bg-transparent outline-none"
+                        style={{ color: "var(--text-primary)" }}
+                      />
+                    </label>
+                    <label className="rounded-xl border px-3 py-2 text-[10px]" style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}>
+                      <span className="block" style={{ color: "var(--text-secondary)" }}>
+                        Max uses
+                      </span>
+                      <input
+                        type="number"
+                        min="1"
+                        max="500"
+                        value={inviteMaxUses}
+                        onChange={(e) => setInviteMaxUses(Math.max(1, Math.min(500, Number(e.target.value) || 1)))}
+                        className="mt-1 w-full bg-transparent outline-none"
+                        style={{ color: "var(--text-primary)" }}
+                      />
+                    </label>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleCreateInvite}
+                    disabled={inviteAction}
+                    className="mt-2 w-full rounded-xl border px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.16em] disabled:opacity-60"
+                    style={{
+                      borderColor: "var(--accent)",
+                      background: "var(--accent)",
+                      color: "var(--bg-primary)",
+                    }}
+                  >
+                    {inviteAction ? "Creating..." : "Copy invite link"}
+                  </button>
+                  {inviteMessage && (
+                    <p className="mt-2 text-[10px]" style={{ color: inviteMessage.includes("copied") ? "var(--green)" : "var(--red)" }}>
+                      {inviteMessage}
+                    </p>
+                  )}
+                  <div className="mt-3 rounded-xl border px-2.5 py-2" style={{ borderColor: "var(--border)", background: "color-mix(in srgb, var(--bg-secondary) 74%, transparent)" }}>
+                    <div className="mb-2 text-[9px] uppercase tracking-[0.16em]" style={{ color: "var(--text-secondary)" }}>
+                      Active invites
+                    </div>
+                    <div className="max-h-40 space-y-2 overflow-auto pr-1">
+                      {activeInvites.map((invite) => (
+                        <div
+                          key={invite.id}
+                          className="rounded-lg border px-2 py-2"
+                          style={{ borderColor: "var(--border)", background: "var(--bg-tertiary)" }}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="text-[10px]" style={{ color: "var(--text-primary)" }}>
+                              {invite.role}
+                              {invite.grant_admin ? " + admin" : ""}
+                            </div>
+                            <div className="text-[9px]" style={{ color: "var(--text-secondary)" }}>
+                              {invite.expires_at
+                                ? `exp ${new Date(invite.expires_at).toLocaleDateString()}`
+                                : "no expiry"}
+                            </div>
+                          </div>
+                          <div className="mt-1 text-[9px]" style={{ color: "var(--text-secondary)" }}>
+                            Uses {invite.use_count ?? 0}/{invite.max_uses ?? 1}
+                          </div>
+                          <div className="mt-2 flex gap-1">
+                            <button
+                              type="button"
+                              onClick={() => handleCopyInvite(invite.token)}
+                              className="flex-1 rounded-lg border px-2 py-1.5 text-[9px] uppercase tracking-[0.14em]"
+                              style={{
+                                borderColor: "var(--accent)",
+                                color: "var(--accent)",
+                                background: "var(--bg-secondary)",
+                              }}
+                            >
+                              Copy
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleRevokeInvite(invite.id)}
+                              disabled={inviteManageAction === invite.id}
+                              className="flex-1 rounded-lg border px-2 py-1.5 text-[9px] uppercase tracking-[0.14em] disabled:opacity-60"
+                              style={{
+                                borderColor: "var(--red)",
+                                color: "var(--red)",
+                                background: "var(--bg-secondary)",
+                              }}
+                            >
+                              {inviteManageAction === invite.id ? "..." : "Revoke"}
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                      {activeInvites.length === 0 && (
+                        <div className="rounded-lg border px-2 py-2 text-[10px]" style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}>
+                          No active invites.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                <div className="mb-3 rounded-2xl border px-3 py-2.5" style={{ borderColor: "var(--border)", background: "var(--bg-tertiary)" }}>
+                  <div className="mb-1 text-[10px] uppercase tracking-[0.16em]" style={{ color: "var(--text-secondary)" }}>
+                    Admin activity
+                  </div>
+                  <div className="max-h-40 space-y-2 overflow-auto pr-1">
+                    {auditEntries.map((entry) => (
+                      <div
+                        key={entry.id}
+                        className="rounded-xl border px-2.5 py-2"
+                        style={{ borderColor: "var(--border)", background: "color-mix(in srgb, var(--bg-secondary) 74%, transparent)" }}
+                      >
+                        <div className="text-[10px]" style={{ color: "var(--text-primary)" }}>
+                          {formatAuditLabel(entry)}
+                        </div>
+                        <div className="mt-1 text-[9px]" style={{ color: "var(--text-secondary)" }}>
+                          {new Date(entry.created_at).toLocaleString()}
+                        </div>
+                      </div>
+                    ))}
+                    {auditEntries.length === 0 && (
+                      <div className="rounded-xl border px-3 py-2 text-[10px]" style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}>
+                        No admin activity yet.
+                      </div>
+                    )}
+                  </div>
+                </div>
+                {roomRole === "teacher" && (
+                  <>
+                    <textarea
+                      value={teacherBroadcast}
+                      onChange={(e) => onTeacherBroadcastChange?.(e.target.value)}
+                      placeholder="Broadcast message to students"
+                      rows={3}
+                      className="panel-input mb-2 w-full resize-none px-3 py-2 text-xs"
+                    />
+                    <label className="flex items-center justify-between rounded-xl border px-3 py-2 text-[11px]" style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}>
+                      <span>Lock student editing</span>
+                      <input
+                        type="checkbox"
+                        checked={teacherLocked}
+                        onChange={(e) => onTeacherLockedChange?.(e.target.checked)}
+                      />
+                    </label>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
 
           <div className="relative">
             <Btn onClick={() => setShowGithub((v) => !v)} title="Import files from a GitHub repository">
