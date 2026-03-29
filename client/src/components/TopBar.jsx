@@ -3,11 +3,6 @@ import JSZip from "jszip";
 import { wsProvider, roomId, getYText, yFiles } from "../lib/yjs";
 import { useAuth } from "../lib/auth";
 import { SERVER_URL } from "../lib/config";
-import {
-  loadLocalHistory,
-  setRoomLabel,
-  setRoomStarred,
-} from "../lib/localRoomHistory";
 import SettingsPanel from "./SettingsPanel";
 import {
   ArchiveIcon,
@@ -578,8 +573,6 @@ export default function TopBar({
   const [showPasswordPanel, setShowPasswordPanel] = useState(false);
   const [passwordInput, setPasswordInput] = useState("");
   const [passwordMsg, setPasswordMsg] = useState("");
-  const [showLocalRooms, setShowLocalRooms] = useState(false);
-  const [localRooms, setLocalRooms] = useState(() => loadLocalHistory());
   const [showMyRooms, setShowMyRooms] = useState(false);
   const [myRooms, setMyRooms] = useState([]);
   const [interviewTitle, setInterviewTitle] = useState("");
@@ -1258,100 +1251,6 @@ export default function TopBar({
         </div>
 
         <div className="order-2 flex w-full min-w-0 flex-wrap items-center gap-1.5 border-t pt-2 sm:gap-2">
-          <div className="relative">
-            <Btn
-              onClick={() => {
-                setLocalRooms(loadLocalHistory());
-                setShowLocalRooms((v) => !v);
-              }}
-              title="Recent rooms and favorites (local)"
-              style={{
-                background: showLocalRooms ? "var(--accent)" : "var(--bg-tertiary)",
-                borderColor: showLocalRooms ? "var(--accent)" : "var(--border)",
-                color: showLocalRooms ? "var(--bg-primary)" : "var(--text-secondary)",
-              }}
-            >
-              Recent
-            </Btn>
-            {showLocalRooms && (
-              <div
-                className="floating-panel absolute right-0 top-[calc(100%+8px)] z-50 max-h-72 w-64 overflow-hidden"
-                style={{ borderColor: "var(--border)", background: "var(--bg-secondary)", color: "var(--text-primary)" }}
-              >
-                <div
-                  className="flex items-center justify-between border-b px-2 py-1.5 text-[10px] uppercase"
-                  style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}
-                >
-                  <span>Local history</span>
-                  <button
-                    type="button"
-                    className="opacity-60 hover:opacity-100"
-                    onClick={() => setShowLocalRooms(false)}
-                  >
-                    <CloseIcon className="h-3 w-3" />
-                  </button>
-                </div>
-                <div className="max-h-56 overflow-y-auto">
-                  {localRooms.length === 0 ? (
-                    <p className="p-3 text-[11px]" style={{ color: "var(--text-secondary)" }}>
-                      No room saved yet.
-                    </p>
-                  ) : (
-                    localRooms.map((h) => (
-                      <div
-                        key={h.id}
-                        className="flex items-center gap-1 border-b px-2 py-1.5 text-[11px]"
-                        style={{ borderColor: "var(--border)" }}
-                      >
-                        <button
-                          type="button"
-                          className="shrink-0 text-[12px] leading-none"
-                          title="Favorite"
-                          style={{ color: h.star ? "var(--accent)" : "var(--text-secondary)" }}
-                          onClick={() => {
-                            setRoomStarred(h.id, !h.star);
-                            setLocalRooms(loadLocalHistory());
-                          }}
-                        >
-                          {h.star ? "★" : "☆"}
-                        </button>
-                        <a
-                          href={`${window.location.origin}${window.location.pathname}#${h.id}`}
-                          className="min-w-0 flex-1 truncate font-mono hover:underline"
-                          style={{ color: "var(--accent)" }}
-                          onClick={() => setShowLocalRooms(false)}
-                        >
-                          {h.label ? `${h.label} · ` : ""}#{h.id}
-                        </a>
-                      </div>
-                    ))
-                  )}
-                </div>
-                {roomId && (
-                  <div className="border-t px-2 py-2 text-[10px]" style={{ borderColor: "var(--border)" }}>
-                    <input
-                      type="text"
-                      placeholder={`Room alias #${roomId}…`}
-                      className="w-full rounded-none border px-2 py-1 font-mono text-[10px] outline-none"
-                      style={{
-                        borderColor: "var(--border)",
-                        background: "var(--bg-tertiary)",
-                        color: "var(--text-primary)",
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key !== "Enter") return;
-                        const v = e.currentTarget.value;
-                        setRoomLabel(roomId, v);
-                        e.currentTarget.value = "";
-                        setLocalRooms(loadLocalHistory());
-                      }}
-                    />
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
           <Btn
             onClick={handleShare}
             style={{
