@@ -23,32 +23,41 @@ import {
   CloseIcon,
 } from "./ui/Icons";
 
+// id must match Monaco language id
 const LANGUAGES = [
-  "javascript",
-  "react-jsx",
-  "typescript",
-  "python",
-  "rust",
-  "go",
-  "java",
-  "c",
-  "html",
-  "css",
-  "json",
-  "markdown",
+  // ── Web
+  { id: "javascript",  label: "JavaScript",  abbr: "JS",  color: "#f9e2af" },
+  { id: "react-jsx",   label: "React (JSX)", abbr: "RC",  color: "#94e2d5" },
+  { id: "typescript",  label: "TypeScript",  abbr: "TS",  color: "#89b4fa" },
+  { id: "html",        label: "HTML",        abbr: "HT",  color: "#f38ba8" },
+  { id: "css",         label: "CSS",         abbr: "CS",  color: "#89dceb" },
+  { id: "json",        label: "JSON",        abbr: "{}",  color: "#cba6f7" },
+  { id: "yaml",        label: "YAML",        abbr: "YML", color: "#a6e3a1" },
+  { id: "xml",         label: "XML",         abbr: "XML", color: "#f38ba8" },
+  { id: "markdown",    label: "Markdown",    abbr: "MD",  color: "#cba6f7" },
+  // ── Systems
+  { id: "c",           label: "C",           abbr: "C",   color: "#fab387" },
+  { id: "cpp",         label: "C++",         abbr: "C++", color: "#fab387" },
+  { id: "rust",        label: "Rust",        abbr: "RS",  color: "#fab387" },
+  { id: "go",          label: "Go",          abbr: "GO",  color: "#89dceb" },
+  // ── JVM
+  { id: "java",        label: "Java",        abbr: "JV",  color: "#f38ba8" },
+  { id: "kotlin",      label: "Kotlin",      abbr: "KT",  color: "#89b4fa" },
+  { id: "scala",       label: "Scala",       abbr: "SC",  color: "#f38ba8" },
+  // ── Scripting
+  { id: "python",      label: "Python",      abbr: "PY",  color: "#a6e3a1" },
+  { id: "ruby",        label: "Ruby",        abbr: "RB",  color: "#f38ba8" },
+  { id: "php",         label: "PHP",         abbr: "PHP", color: "#89b4fa" },
+  { id: "lua",         label: "Lua",         abbr: "LU",  color: "#89b4fa" },
+  { id: "shell",       label: "Shell",       abbr: "SH",  color: "#a6e3a1" },
+  // ── Data / Config
+  { id: "sql",         label: "SQL",         abbr: "SQL", color: "#cba6f7" },
+  { id: "toml",        label: "TOML",        abbr: "TM",  color: "#fab387" },
+  { id: "dockerfile",  label: "Dockerfile",  abbr: "DF",  color: "#89dceb" },
+  // ── Other
+  { id: "r",           label: "R",           abbr: "R",   color: "#89b4fa" },
+  { id: "swift",       label: "Swift",       abbr: "SW",  color: "#fab387" },
 ];
-
-function langLabel(l) {
-  if (l === "react-jsx") return "React (JSX)";
-  if (l === "markdown") return "Markdown";
-  return l;
-}
-
-function langBadge(l) {
-  if (l === "react-jsx") return "RC";
-  if (l === "markdown") return "MD";
-  return l.slice(0, 2).toUpperCase();
-}
 
 /* ── shared button styles ─────────────────────────────────────── */
 
@@ -141,9 +150,20 @@ function Btn({
   );
 }
 
+const LANG_GROUPS = [
+  { label: "Web",        ids: ["javascript","react-jsx","typescript","html","css","json","yaml","xml","markdown"] },
+  { label: "Systems",    ids: ["c","cpp","rust","go"] },
+  { label: "JVM",        ids: ["java","kotlin","scala"] },
+  { label: "Scripting",  ids: ["python","ruby","php","lua","shell"] },
+  { label: "Data / Config", ids: ["sql","toml","dockerfile"] },
+  { label: "Other",      ids: ["r","swift"] },
+];
+const LANG_BY_ID = Object.fromEntries(LANGUAGES.map((l) => [l.id, l]));
+
 function LanguageDropdown({ language, onLanguageChange }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef(null);
+  const activeMeta = LANG_BY_ID[language] || { label: language, abbr: language.slice(0,2).toUpperCase(), color: "var(--text-secondary)" };
 
   useEffect(() => {
     if (!open) return;
@@ -160,7 +180,7 @@ function LanguageDropdown({ language, onLanguageChange }) {
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
         aria-haspopup="listbox"
-        className="min-w-[8.5rem] justify-between gap-2 sm:min-w-[9.25rem]"
+        className="min-w-38 justify-between gap-2 sm:min-w-42"
         style={{
           background: open
             ? "color-mix(in srgb, var(--accent) 12%, var(--bg-tertiary))"
@@ -170,64 +190,79 @@ function LanguageDropdown({ language, onLanguageChange }) {
             : "var(--border)",
         }}
       >
-        <span className="truncate text-left">{langLabel(language)}</span>
         <span
-          className={`ml-auto opacity-60 transition-transform duration-150 ${open ? "rotate-180" : ""}`}
+          className="shrink-0 font-mono font-bold"
+          style={{ fontSize: 9, color: activeMeta.color, minWidth: 22 }}
+        >
+          {activeMeta.abbr}
+        </span>
+        <span className="flex-1 truncate text-left text-[11px]">{activeMeta.label}</span>
+        <span
+          className={`ml-auto opacity-50 transition-transform duration-150 ${open ? "rotate-180" : ""}`}
           aria-hidden
         >
           ▾
         </span>
       </Btn>
+
       {open && (
-        <ul
-          className="floating-panel absolute left-0 top-[calc(100%+10px)] z-50 max-h-72 min-w-[13rem] overflow-auto p-2.5"
-          style={{
-            transformOrigin: "top left",
-          }}
+        <div
+          className="floating-panel absolute left-0 top-[calc(100%+10px)] z-50 overflow-hidden p-0"
+          style={{ width: 230 }}
           role="listbox"
         >
-          {LANGUAGES.map((lang) => (
-            <li key={lang} role="option" aria-selected={language === lang}>
-              <button
-                type="button"
-                className="flex w-full items-center justify-between rounded-none pl-4 pr-3 py-2.5 text-left text-[11px] font-semibold capitalize transition-all duration-150 hover:-translate-y-px hover:brightness-110 sm:text-xs"
-                style={{
-                  background:
-                    language === lang
-                      ? "color-mix(in srgb, var(--accent) 12%, var(--bg-tertiary))"
-                      : "transparent",
-                  color:
-                    language === lang ? "var(--accent)" : "var(--text-primary)",
-                  boxShadow:
-                    language === lang
-                      ? "inset 0 0 0 1px color-mix(in srgb, var(--accent) 22%, var(--border))"
-                      : "none",
-                }}
-                onClick={() => {
-                  onLanguageChange(lang);
-                  setOpen(false);
-                }}
-              >
-                <span>{lang}</span>
-                <span
-                  className="rounded-none px-2 py-0.5 text-[9px] uppercase tracking-[0.16em]"
-                  style={{
-                    color:
-                      language === lang
-                        ? "var(--bg-primary)"
-                        : "var(--text-secondary)",
-                    background:
-                      language === lang
-                        ? "var(--accent)"
-                        : "color-mix(in srgb, var(--bg-primary) 72%, var(--border))",
-                  }}
+          <div className="max-h-80 overflow-y-auto p-2">
+            {LANG_GROUPS.map((group) => (
+              <div key={group.label} className="mb-2 last:mb-0">
+                <p
+                  className="mb-1 px-2 text-[8px] font-bold uppercase tracking-[0.22em]"
+                  style={{ color: "var(--text-secondary)", opacity: 0.55 }}
                 >
-                  {lang.slice(0, 2)}
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
+                  {group.label}
+                </p>
+                {group.ids.map((id) => {
+                  const meta = LANG_BY_ID[id];
+                  if (!meta) return null;
+                  const isActive = language === id;
+                  return (
+                    <button
+                      key={id}
+                      type="button"
+                      role="option"
+                      aria-selected={isActive}
+                      className="flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left transition-all duration-150 hover:brightness-110"
+                      style={{
+                        background: isActive
+                          ? "color-mix(in srgb, var(--accent) 14%, var(--bg-tertiary))"
+                          : "transparent",
+                        boxShadow: isActive
+                          ? "inset 0 0 0 1px color-mix(in srgb, var(--accent) 22%, var(--border))"
+                          : "none",
+                      }}
+                      onClick={() => { onLanguageChange(id); setOpen(false); }}
+                    >
+                      <span
+                        className="w-8 shrink-0 text-center font-mono text-[9px] font-bold"
+                        style={{ color: meta.color }}
+                      >
+                        {meta.abbr}
+                      </span>
+                      <span
+                        className="flex-1 text-[11px] font-medium"
+                        style={{ color: isActive ? "var(--accent)" : "var(--text-primary)" }}
+                      >
+                        {meta.label}
+                      </span>
+                      {isActive && (
+                        <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: "var(--accent)" }} />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+        </div>
       )}
     </div>
   );
@@ -428,6 +463,82 @@ export default function TopBar({
       `${window.location.origin}${window.location.pathname}?fork=${newRoom}#${newRoom}`,
       "_blank",
     );
+  };
+
+  const [showGithub, setShowGithub] = useState(false);
+  const [githubUrl, setGithubUrl] = useState("");
+  const [githubState, setGithubState] = useState("idle"); // idle | loading | done | error
+  const [githubMsg, setGithubMsg] = useState("");
+
+  const ALLOWED_EXTS = new Set([
+    "js","jsx","ts","tsx","py","rs","go","java","c","h","cpp","css","scss","html","json","md","yaml","yml","toml","sh","env.example",
+  ]);
+
+  const handleGithubImport = async () => {
+    const raw = githubUrl.trim();
+    if (!raw) return;
+    // Parse: https://github.com/owner/repo[.git][/tree/branch[/path]]
+    const match = raw.match(/github\.com\/([^/]+)\/([^/\s]+?)(?:\.git)?(?:\/tree\/([^/\s]+))?(?:[/?#].*)?$/);
+    if (!match) { setGithubMsg("Invalid GitHub URL. Use https://github.com/owner/repo"); return; }
+    const [, owner, repo, branch = "main"] = match;
+    setGithubState("loading");
+    setGithubMsg("");
+    try {
+      const treeRes = await fetch(
+        `https://api.github.com/repos/${owner}/${repo}/git/trees/${branch}?recursive=1`,
+      );
+      if (!treeRes.ok) {
+        const alt = branch === "main" ? "master" : "main";
+        const altRes = await fetch(
+          `https://api.github.com/repos/${owner}/${repo}/git/trees/${alt}?recursive=1`,
+        );
+        if (!altRes.ok) throw new Error(`Repo not found or private (${owner}/${repo})`);
+        const altData = await altRes.json();
+        return loadTree(altData, owner, repo);
+      }
+      const treeData = await treeRes.json();
+      await loadTree(treeData, owner, repo);
+    } catch (e) {
+      setGithubState("error");
+      setGithubMsg(e.message || "Failed to import");
+    }
+  };
+
+  const loadTree = async (treeData, owner, repo) => {
+    const blobs = (treeData.tree || []).filter((node) => {
+      if (node.type !== "blob") return false;
+      if (node.size > 200_000) return false;
+      const ext = node.path.split(".").pop().toLowerCase();
+      return ALLOWED_EXTS.has(ext);
+    }).slice(0, 30);
+
+    if (blobs.length === 0) throw new Error("No supported source files found (max 30, ≤200KB)");
+
+    const guessLang = (name) => {
+      const ext = name.split(".").pop().toLowerCase();
+      const map = { js:"javascript",jsx:"javascript",ts:"typescript",tsx:"typescript",py:"python",rs:"rust",go:"go",java:"java",c:"c",h:"c",cpp:"c",css:"css",scss:"css",html:"html",json:"json" };
+      return map[ext] || "javascript";
+    };
+
+    // Clear existing files
+    [...yFiles.keys()].forEach((k) => yFiles.delete(k));
+
+    await Promise.all(
+      blobs.map(async (node) => {
+        const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${node.path}`);
+        const data = await res.json();
+        const content = atob(data.content.replace(/\n/g, ""));
+        const lang = guessLang(node.path);
+        yFiles.set(node.path, { language: lang });
+        const yText = getYText(node.path);
+        if (yText.length > 0) yText.delete(0, yText.length);
+        yText.insert(0, content);
+      }),
+    );
+
+    setGithubState("done");
+    setGithubMsg(`Loaded ${blobs.length} files from ${owner}/${repo}`);
+    setTimeout(() => { setShowGithub(false); setGithubState("idle"); setGithubUrl(""); setGithubMsg(""); }, 2000);
   };
 
   const handleSetPassword = async () => {
@@ -756,6 +867,73 @@ export default function TopBar({
             <ArchiveIcon className="h-3.5 w-3.5" />
             <span>ZIP</span>
           </Btn>
+
+          <div className="relative">
+            <Btn onClick={() => setShowGithub((v) => !v)} title="Import files from a GitHub repository">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+                <path d="M12 2C6.477 2 2 6.477 2 12c0 4.418 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.009-.868-.013-1.703-2.782.604-3.369-1.341-3.369-1.341-.454-1.155-1.11-1.463-1.11-1.463-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.578 9.578 0 0 1 12 6.836a9.59 9.59 0 0 1 2.504.337c1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.202 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.138 20.163 22 16.418 22 12c0-5.523-4.477-10-10-10z"/>
+              </svg>
+              <span>GitHub</span>
+            </Btn>
+
+            {showGithub && (
+              <div
+                className="floating-panel absolute right-0 top-[calc(100%+10px)] z-50 p-3"
+                style={{ width: 300 }}
+              >
+                <p className="mb-2 text-[11px] font-semibold" style={{ color: "var(--text-primary)" }}>
+                  Import from GitHub
+                </p>
+                <p className="mb-2.5 text-[10px] leading-relaxed" style={{ color: "var(--text-secondary)" }}>
+                  Paste a public repo URL. Up to 30 source files will be loaded into this room.
+                </p>
+                <input
+                  autoFocus
+                  value={githubUrl}
+                  onChange={(e) => setGithubUrl(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleGithubImport()}
+                  placeholder="https://github.com/owner/repo"
+                  className="mb-2 w-full rounded-xl border px-3 py-2 text-[11px] font-mono outline-none"
+                  style={{
+                    background: "var(--bg-tertiary)",
+                    borderColor: "var(--border)",
+                    color: "var(--text-primary)",
+                  }}
+                />
+                {githubMsg && (
+                  <p
+                    className="mb-2 text-[10px]"
+                    style={{ color: githubState === "error" ? "var(--red)" : "var(--green)" }}
+                  >
+                    {githubMsg}
+                  </p>
+                )}
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={handleGithubImport}
+                    disabled={githubState === "loading" || !githubUrl.trim()}
+                    className="liquid-surface flex-1 rounded-xl border px-3 py-2 text-[11px] font-semibold uppercase tracking-wide transition-all disabled:opacity-50"
+                    style={{
+                      background: "var(--accent)",
+                      borderColor: "var(--accent)",
+                      color: "var(--bg-primary)",
+                    }}
+                  >
+                    {githubState === "loading" ? "Loading…" : githubState === "done" ? "Done ✓" : "Import"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setShowGithub(false); setGithubUrl(""); setGithubMsg(""); setGithubState("idle"); }}
+                    className="liquid-surface rounded-xl border px-3 py-2 text-[11px] font-semibold uppercase tracking-wide transition-all"
+                    style={{ background: "var(--bg-tertiary)", borderColor: "var(--border)", color: "var(--text-secondary)" }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
 
           <Btn
             onClick={handleGist}

@@ -54,6 +54,8 @@ export const yFiles = ydoc.getMap('files')
 export const yAiBlocks = ydoc.getMap('aiBlocks')
 /** Metadate cameră (ex. nodeVersion pentru preview Docker) — sincron Yjs */
 export const yRoomMeta = ydoc.getMap('roomMeta')
+// yReactions: Array of { id, file, line, emoji, author }
+export const yReactions = ydoc.getArray('reactions')
 
 // Get or create a Yjs text for a given filename
 export function getYText(filename) {

@@ -10,6 +10,8 @@ import ConnectionBanner from "./components/ConnectionBanner";
 import WorkspaceSearch from "./components/WorkspaceSearch";
 import ConfirmModal from "./components/ConfirmModal";
 import OnboardingTour, { hasCompletedOnboarding } from "./components/OnboardingTour";
+import TabBar from "./components/TabBar";
+import EmojiReactions from "./components/EmojiReactions";
 import {
   yFiles,
   getYText,
@@ -107,6 +109,7 @@ function loadSettings() {
 export default function App() {
   const [activeFile, setActiveFile] = useState("main.js");
   const [language, setLanguage] = useState("javascript");
+  const [openTabs, setOpenTabs] = useState(["main.js"]);
   const [running, setRunning] = useState(false);
   const [output, setOutput] = useState(null);
   const [stdin, setStdin] = useState("");
@@ -313,10 +316,69 @@ export default function App() {
     (filename, lang, location) => {
       setActiveFile(filename);
       setLanguage(lang || "javascript");
+      setOpenTabs((prev) => prev.includes(filename) ? prev : [...prev, filename]);
       if (location?.line) revealEditorLocation(location.line, location.column);
     },
     [revealEditorLocation],
   );
+
+  const handleTabClose = useCallback((filename) => {
+    setOpenTabs((prev) => {
+      const next = prev.filter((f) => f !== filename);
+      if (filename === activeFile && next.length > 0) {
+        const idx = prev.indexOf(filename);
+        const fallback = next[Math.min(idx, next.length - 1)];
+        const lang = yFiles.get(fallback)?.language || "javascript";
+        setActiveFile(fallback);
+        setLanguage(lang);
+      }
+      return next;
+    });
+  }, [activeFile]);
+
+  const handleTabReorder = useCallback((fromIdx, toIdx) => {
+    setOpenTabs((prev) => {
+      const next = [...prev];
+      const [moved] = next.splice(fromIdx, 1);
+      next.splice(toIdx, 0, moved);
+      return next;
+    });
+  }, []);
+
+  const handleCloseOthers = useCallback((filename) => {
+    setOpenTabs([filename]);
+    setActiveFile(filename);
+    const lang = yFiles.get(filename)?.language || "javascript";
+    setLanguage(lang);
+  }, []);
+
+  const handleCloseToRight = useCallback((filename) => {
+    setOpenTabs((prev) => {
+      const idx = prev.indexOf(filename);
+      const next = prev.slice(0, idx + 1);
+      if (!next.includes(activeFile)) {
+        setActiveFile(filename);
+        setLanguage(yFiles.get(filename)?.language || "javascript");
+      }
+      return next;
+    });
+  }, [activeFile]);
+
+  const handleCloseToLeft = useCallback((filename) => {
+    setOpenTabs((prev) => {
+      const idx = prev.indexOf(filename);
+      const next = prev.slice(idx);
+      if (!next.includes(activeFile)) {
+        setActiveFile(filename);
+        setLanguage(yFiles.get(filename)?.language || "javascript");
+      }
+      return next;
+    });
+  }, [activeFile]);
+
+  const handleCloseAll = useCallback(() => {
+    setOpenTabs([]);
+  }, []);
 
   // When language dropdown changes, update the file's metadata in Yjs too
   const handleLanguageChange = useCallback(
@@ -790,6 +852,19 @@ export default function App() {
         <FileTree activeFile={activeFile} onFileSelect={handleFileSelect} />
 
         <div className="flex flex-col flex-1 overflow-hidden">
+          <TabBar
+            tabs={openTabs}
+            activeFile={activeFile}
+            yFiles={yFiles}
+            onSelect={(filename, lang) => handleFileSelect(filename, lang)}
+            onClose={handleTabClose}
+            onReorder={handleTabReorder}
+            onCloseOthers={handleCloseOthers}
+            onCloseToRight={handleCloseToRight}
+            onCloseToLeft={handleCloseToLeft}
+            onCloseAll={handleCloseAll}
+          />
+          <EmojiReactions editorRef={editorRef} activeFile={activeFile} />
           <TimeTravel editorRef={editorRef} activeFile={activeFile} />
           <div className="flex-1 overflow-hidden">
             {editorReady ? (
@@ -852,6 +927,7 @@ export default function App() {
           activeFile={activeFile}
           language={language}
           output={output}
+          onFileSelect={handleFileSelect}
         />
       </div>
     </div>
