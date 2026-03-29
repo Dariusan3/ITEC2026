@@ -144,6 +144,17 @@ export function PlusIcon(props) {
   );
 }
 
+/** Folder + săgeată în sus — import director local */
+export function FolderUploadIcon(props) {
+  return (
+    <SvgIcon {...props}>
+      <path d="M12 3v6" />
+      <path d="M9 6l3-3 3 3" />
+      <path d="M4 11h5l2 2h6l2-2h3v9H4z" />
+    </SvgIcon>
+  );
+}
+
 export function CloseIcon(props) {
   return (
     <SvgIcon {...props}>

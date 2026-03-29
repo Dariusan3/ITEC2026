@@ -3,6 +3,11 @@ import * as monaco from "monaco-editor";
 import { yAiBlocks, getYText, yFiles, wsProvider } from "../lib/yjs";
 import { SERVER_URL } from "../lib/config";
 import Chat from "./Chat";
+import ProjectDocs from "./ProjectDocs";
+import {
+  applyImportToWorkspace,
+  guessLanguageFromPath,
+} from "../lib/importProject";
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -12,6 +17,25 @@ function getCursorLine(editorRef) {
 }
 
 /** Extrage un număr de linie din ieșirea compilatorului / runtime (pentru Fix AI). */
+/** Primul fișier util de deschis după scaffold. */
+function pickScaffoldEntryPath(fileKeys) {
+  const keys = [...fileKeys];
+  const prefer = [
+    "index.html",
+    "src/App.jsx",
+    "App.jsx",
+    "src/main.jsx",
+    "main.jsx",
+    "main.js",
+    "package.json",
+  ];
+  for (const p of prefer) {
+    if (keys.includes(p)) return p;
+  }
+  keys.sort((a, b) => a.localeCompare(b));
+  return keys[0] || null;
+}
+
 function extractErrorLineHint(text) {
   if (!text) return null;
   const patterns = [
@@ -429,9 +453,22 @@ const QUICK_ACTIONS = [
   { key: "fix", icon: "⚡", label: "Fix", title: "Fix errors from last run" },
   { key: "tests", icon: "⬡", label: "Tests", title: "Generate test file" },
   { key: "review", icon: "◌", label: "Review", title: "Review current file" },
+  {
+    key: "scaffold",
+    icon: "▤",
+    label: "Build",
+    title:
+      "Generează mai multe fișiere din textul din casetă (ex: landing page, mini-proiect)",
+  },
 ];
 
-export default function Sidebar({ editorRef, activeFile, language, output }) {
+export default function Sidebar({
+  editorRef,
+  activeFile,
+  language,
+  output,
+  onOpenWorkspaceFile,
+}) {
   const [tab, setTab] = useState("ai");
   const [prompt, setPrompt] = useState("");
   const [messages, setMessages] = useState([]);
@@ -653,6 +690,53 @@ export default function Sidebar({ editorRef, activeFile, language, output }) {
             : "No obvious issues found in the current file.";
 
           addMsg({ role: "review", content: summary });
+        } else if (action === "scaffold") {
+          const userMsg = prompt.trim();
+          if (!userMsg) {
+            throw new Error(
+              "Scrie în casetă ce vrei să construiască AI-ul (ex: landing page React cu Vite), apoi apasă Build.",
+            );
+          }
+          setPrompt("");
+          const res = await fetch(`${SERVER_URL}/api/ai/scaffold`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              prompt: userMsg,
+              language: language || "javascript",
+              workspacePaths: [...yFiles.keys()].slice(0, 120),
+            }),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || "Scaffold failed");
+          const files = data.files;
+          if (!files || typeof files !== "object") {
+            throw new Error("Răspuns invalid.");
+          }
+          const keys = Object.keys(files);
+          if (
+            !window.confirm(
+              `AI va crea sau actualiza ${keys.length} fișier(e) în cameră pentru toți colaboratorii. Continuă?`,
+            )
+          ) {
+            return;
+          }
+          const result = applyImportToWorkspace(
+            yFiles,
+            getYText,
+            files,
+            guessLanguageFromPath,
+          );
+          if (!result.ok) throw new Error(result.error);
+          const list = keys.join(", ");
+          addMsg({
+            role: "ai",
+            content: `**${data.explanation || "Gata."}**\n\nFișiere: ${list}`,
+          });
+          const openPath = pickScaffoldEntryPath(keys);
+          if (openPath && onOpenWorkspaceFile) {
+            onOpenWorkspaceFile(openPath, guessLanguageFromPath(openPath));
+          }
         }
       } catch (err) {
         addMsg({ role: "error", content: err.message });
@@ -660,13 +744,22 @@ export default function Sidebar({ editorRef, activeFile, language, output }) {
         setLoading(false);
       }
     },
-    [loading, activeFile, language, output, editorRef],
+    [
+      loading,
+      activeFile,
+      language,
+      output,
+      editorRef,
+      prompt,
+      onOpenWorkspaceFile,
+    ],
   );
 
   const TABS = [
     { id: "ai", label: "AI" },
     { id: "presence", label: "Who's Here" },
     { id: "chat", label: "Chat" },
+    { id: "docs", label: "Ghid" },
   ];
 
   return (
@@ -684,7 +777,7 @@ export default function Sidebar({ editorRef, activeFile, language, output }) {
             key={t.id}
             type="button"
             onClick={() => setTab(t.id)}
-            className="liquid-surface flex min-h-[2.9rem] flex-1 items-center justify-center rounded-none border px-2 py-3 text-[11px] font-semibold uppercase tracking-[0.16em] shadow-[0_12px_24px_rgba(0,0,0,0.14)] transition-all duration-150 hover:-translate-y-px hover:brightness-110 active:scale-[0.95] sm:min-h-[3rem] sm:text-xs"
+            className="liquid-surface flex min-h-[2.9rem] min-w-0 flex-1 items-center justify-center rounded-none border px-1.5 py-3 text-[10px] font-semibold uppercase tracking-[0.12em] shadow-[0_12px_24px_rgba(0,0,0,0.14)] transition-all duration-150 hover:-translate-y-px hover:brightness-110 active:scale-[0.95] sm:min-h-[3rem] sm:px-2 sm:text-[11px]"
             style={{
               background: tab === t.id ? "var(--accent)" : "var(--bg-tertiary)",
               color:
@@ -788,7 +881,7 @@ export default function Sidebar({ editorRef, activeFile, language, output }) {
             style={{ borderColor: "var(--border)" }}
           >
             {/* Quick actions — deasupra textarea */}
-            <div className="grid grid-cols-4 gap-1.5">
+            <div className="grid grid-cols-3 gap-1.5">
               {QUICK_ACTIONS.map((a) => (
                 <button
                   key={a.key}
@@ -956,6 +1049,18 @@ export default function Sidebar({ editorRef, activeFile, language, output }) {
               ))}
             </div>
           </div>
+        </div>
+      )}
+
+      {tab === "docs" && (
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          <ProjectDocs
+            onOpenInEditor={
+              onOpenWorkspaceFile
+                ? (path, lang) => onOpenWorkspaceFile(path, lang ?? "markdown")
+                : undefined
+            }
+          />
         </div>
       )}
     </div>

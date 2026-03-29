@@ -12,9 +12,9 @@ const PREVIEW_READY_MS = Math.max(
   parseInt(process.env.PREVIEW_READY_TIMEOUT_MS || "540000", 10) || 540000,
 );
 
-/** npm mai rapid, mai puțin zgomot */
+/** npm mai rapid, mai puțin zgomot — include=dev evită omit devDependencies în medii ciudate */
 const NPM_INSTALL =
-  "npm install --no-audit --no-fund --loglevel warn";
+  "npm install --include=dev --no-audit --no-fund --loglevel warn";
 
 const PROTECTED_SEGMENTS = new Set([
   "node_modules",
@@ -95,10 +95,8 @@ function inferDevSetup(packageJsonText) {
   }
   const hasDevVite = /vite/.test(devVite);
   if (/vite/.test(dev) || hasDevVite) {
-    const useHostPortArgs = !hasDevVite || /vite/.test(dev);
-    const runDev = useHostPortArgs
-      ? `npm run dev -- --host 0.0.0.0 --port 5173`
-      : `npm run dev`;
+    /** `npx vite` folosește binarul din node_modules/.bin (evită „vite: not found” din scripturi shell). --yes = non-interactive în Docker. */
+    const runDev = `npx --yes vite --host 0.0.0.0 --port 5173`;
     return {
       internalPort: 5173,
       shellCmd: `set -e; cd /workspace && ${preNpm} && ${NPM_INSTALL} && ${runDev}`,

@@ -2,11 +2,19 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { yFiles, getYText } from "../lib/yjs";
 import ConfirmModal from "./ConfirmModal";
 import {
+  ArchiveIcon,
   ChevronDownIcon,
   ChevronRightIcon,
   FolderIcon,
+  FolderUploadIcon,
   PlusIcon,
 } from "./ui/Icons";
+import {
+  applyImportToWorkspace,
+  filesFromDirectoryInput,
+  filesFromZipFile,
+  folderPrefixesFromPaths,
+} from "../lib/importProject";
 const LANG_ICONS = {
   javascript: { icon: "JS", color: "#d7f58d" },
   "react-jsx": { icon: "RC", color: "#8ff7a7" },
@@ -313,7 +321,7 @@ function TreeNode({
 const explorerBtnClass =
   "liquid-surface keep-round-lg inline-flex h-full items-center justify-center border px-2.5 py-1.5 font-mono text-[10px] font-bold leading-none shadow-[0_10px_20px_rgba(0,0,0,0.14)] transition-all duration-150 hover:-translate-y-px hover:brightness-110 active:scale-[0.93] sm:px-3 sm:py-1.5 sm:text-[11px]";
 
-export default function FileTree({ activeFile, onFileSelect }) {
+export default function FileTree({ activeFile, onFileSelect, readOnly = false }) {
   const [files, setFiles] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [creating, setCreating] = useState(false);
@@ -328,6 +336,8 @@ export default function FileTree({ activeFile, onFileSelect }) {
   const [confirmState, setConfirmState] = useState(null);
   const newInputRef = useRef(null);
   const renameInputRef = useRef(null);
+  const folderImportRef = useRef(null);
+  const zipImportRef = useRef(null);
 
   const askConfirm = useCallback(
     (title, body, onOk, { danger = false } = {}) =>
@@ -412,6 +422,66 @@ export default function FileTree({ activeFile, onFileSelect }) {
   };
 
   const [creatingFolder, setCreatingFolder] = useState(false);
+
+  const commitImport = useCallback(
+    (filesRecord) => {
+      const result = applyImportToWorkspace(yFiles, getYText, filesRecord, guessLang);
+      if (!result.ok) {
+        alert(result.error);
+        return;
+      }
+      const prefixes = folderPrefixesFromPaths(Object.keys(filesRecord));
+      setOpenFolders((prev) => new Set([...prev, ...prefixes]));
+      const sorted = Object.keys(filesRecord)
+        .filter((k) => !k.endsWith(".gitkeep"))
+        .sort((a, b) => a.localeCompare(b));
+      if (sorted.length > 0) {
+        onFileSelect(sorted[0], guessLang(sorted[0]));
+      }
+    },
+    [onFileSelect],
+  );
+
+  const promptImport = useCallback(
+    (filesRecord) => {
+      const n = Object.keys(filesRecord).length;
+      if (n === 0) {
+        alert("Nu s-au găsit fișiere text valide de importat (sau toate sunt filtrate).");
+        return;
+      }
+      askConfirm(
+        "Import proiect",
+        `Se vor adăuga sau actualiza ${n} fișier(e) în cameră pentru toți colaboratorii. Continuă?`,
+        () => commitImport(filesRecord),
+        { danger: false },
+      );
+    },
+    [askConfirm, commitImport],
+  );
+
+  const handleFolderImport = async (e) => {
+    const fl = e.target.files;
+    e.target.value = "";
+    if (!fl?.length) return;
+    try {
+      const record = await filesFromDirectoryInput(fl);
+      promptImport(record);
+    } catch (err) {
+      alert(err.message || "Eroare la citirea folderului.");
+    }
+  };
+
+  const handleZipImport = async (e) => {
+    const f = e.target.files?.[0];
+    e.target.value = "";
+    if (!f) return;
+    try {
+      const record = await filesFromZipFile(f);
+      promptImport(record);
+    } catch (err) {
+      alert(err.message || "Eroare la deschiderea arhivei.");
+    }
+  };
 
   const startCreateFile = (folderPath = null) => {
     setCreatingFolder(false);
@@ -585,37 +655,75 @@ export default function FileTree({ activeFile, onFileSelect }) {
             Files
           </span>
         </div>
-        <div className="flex items-center gap-1.5">
-          <button
-            type="button"
-            onClick={() => startCreateFile()}
-            className={explorerBtnClass}
-            style={{
-              background: "var(--bg-tertiary)",
-              borderColor: "var(--border)",
-              color: "var(--accent)",
-              minWidth: "2rem",
-              minHeight: "1.75rem",
-            }}
-            title="New file"
-          >
-            <PlusIcon className="h-3.5 w-3.5" />
-          </button>
-          <button
-            type="button"
-            onClick={startCreateFolder}
-            className={explorerBtnClass}
-            style={{
-              background: "var(--bg-tertiary)",
-              borderColor: "var(--border)",
-              color: "var(--text-secondary)",
-              minWidth: "2rem",
-              minHeight: "1.75rem",
-            }}
-            title="New folder"
-          >
-            <FolderIcon className="h-3.5 w-3.5" />
-          </button>
+        <div className="flex flex-wrap items-center justify-end gap-1">
+          {!readOnly && (
+            <>
+              <button
+                type="button"
+                onClick={() => folderImportRef.current?.click()}
+                className={explorerBtnClass}
+                style={{
+                  background: "var(--bg-tertiary)",
+                  borderColor: "var(--border)",
+                  color: "var(--accent)",
+                  minWidth: "2rem",
+                  minHeight: "1.75rem",
+                }}
+                title="Importă folder local (structură relativă; fără node_modules/.git)"
+              >
+                <FolderUploadIcon className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => zipImportRef.current?.click()}
+                className={explorerBtnClass}
+                style={{
+                  background: "var(--bg-tertiary)",
+                  borderColor: "var(--border)",
+                  color: "var(--text-secondary)",
+                  minWidth: "2rem",
+                  minHeight: "1.75rem",
+                }}
+                title="Importă arhivă .zip"
+              >
+                <ArchiveIcon className="h-3.5 w-3.5" />
+              </button>
+            </>
+          )}
+          {!readOnly && (
+            <>
+              <button
+                type="button"
+                onClick={() => startCreateFile()}
+                className={explorerBtnClass}
+                style={{
+                  background: "var(--bg-tertiary)",
+                  borderColor: "var(--border)",
+                  color: "var(--accent)",
+                  minWidth: "2rem",
+                  minHeight: "1.75rem",
+                }}
+                title="New file"
+              >
+                <PlusIcon className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={startCreateFolder}
+                className={explorerBtnClass}
+                style={{
+                  background: "var(--bg-tertiary)",
+                  borderColor: "var(--border)",
+                  color: "var(--text-secondary)",
+                  minWidth: "2rem",
+                  minHeight: "1.75rem",
+                }}
+                title="New folder"
+              >
+                <FolderIcon className="h-3.5 w-3.5" />
+              </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -935,6 +1043,21 @@ export default function FileTree({ activeFile, onFileSelect }) {
           )}
         </div>
       )}
+      <input
+        ref={folderImportRef}
+        type="file"
+        className="hidden"
+        multiple
+        {...{ webkitdirectory: "", directory: "" }}
+        onChange={handleFolderImport}
+      />
+      <input
+        ref={zipImportRef}
+        type="file"
+        className="hidden"
+        accept=".zip,application/zip,application/x-zip-compressed"
+        onChange={handleZipImport}
+      />
       <ConfirmModal
         open={!!confirmState}
         title={confirmState?.title || ""}

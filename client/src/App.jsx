@@ -865,7 +865,11 @@ export default function App() {
       />
 
       <div className="flex flex-1 overflow-hidden">
-        <FileTree activeFile={activeFile} onFileSelect={handleFileSelect} />
+        <FileTree
+          activeFile={activeFile}
+          onFileSelect={handleFileSelect}
+          readOnly={viewOnly}
+        />
 
         <div className="flex flex-col flex-1 overflow-hidden">
           <TabBar
@@ -942,6 +946,9 @@ export default function App() {
           activeFile={activeFile}
           language={language}
           output={output}
+          onOpenWorkspaceFile={(path, lang) =>
+            handleFileSelect(path, lang || "markdown")
+          }
         />
       </div>
     </div>

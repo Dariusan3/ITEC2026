@@ -8,6 +8,7 @@ const http = require("http");
 const Y = require("yjs");
 const { WebSocketServer, WebSocket } = require("ws");
 const { encoding, decoding } = require("lib0");
+const path = require("path");
 
 const PORT = process.env.PORT || 3001;
 const IS_PROD = process.env.NODE_ENV === 'production';
@@ -359,11 +360,152 @@ Focus on correctness, bugs, risky behavior, or missing edge-case handling. Retur
   }
 });
 
+const SCAFFOLD_BLOCKED = new Set([
+  "node_modules",
+  ".git",
+  "dist",
+  ".next",
+  ".vite",
+  ".turbo",
+  "__pycache__",
+  ".venv",
+  "venv",
+]);
+
+function isSafeScaffoldRelPath(p) {
+  if (!p || typeof p !== "string") return false;
+  if (p.startsWith("/") || p.includes("..")) return false;
+  const norm = path.posix.normalize(p.replace(/\\/g, "/"));
+  if (norm.startsWith("..") || norm.includes("../")) return false;
+  const parts = norm.split("/").filter(Boolean);
+  for (const seg of parts) {
+    if (SCAFFOLD_BLOCKED.has(seg.toLowerCase())) return false;
+  }
+  return parts.length > 0;
+}
+
+/** Limitează și curăță obiectul files din răspunsul modelului. */
+function sanitizeScaffoldFiles(rawFiles, { maxFiles = 32, maxCharsPerFile = 180_000 } = {}) {
+  const out = {};
+  if (!rawFiles || typeof rawFiles !== "object" || Array.isArray(rawFiles)) return out;
+  let n = 0;
+  for (const [k, v] of Object.entries(rawFiles)) {
+    if (n >= maxFiles) break;
+    if (!isSafeScaffoldRelPath(k)) continue;
+    const content = typeof v === "string" ? v : String(v ?? "");
+    if (content.length > maxCharsPerFile) continue;
+    out[k] = content;
+    n++;
+  }
+  return out;
+}
+
+// A6: Generează mai multe fișiere (structură proiect / landing page etc.)
+app.post("/api/ai/scaffold", async (req, res) => {
+  const { prompt, language, workspacePaths } = req.body;
+  if (!prompt || typeof prompt !== "string" || !prompt.trim()) {
+    return res.status(400).json({ error: "prompt is required" });
+  }
+
+  const pathsHint = Array.isArray(workspacePaths)
+    ? workspacePaths
+        .filter((p) => typeof p === "string")
+        .slice(0, 120)
+        .join("\n")
+    : "";
+
+  const systemPrompt = `You are an expert full-stack developer. Users work in iTECify, a collaborative browser IDE with Yjs sync.
+
+Respond with ONLY valid JSON (no markdown fences, no text before/after). The JSON must have exactly two keys:
+- "files": an object where each KEY is a relative file path using forward slashes only (e.g. "src/App.jsx", "index.html"). Each VALUE is the COMPLETE file content as a JSON string (escape newlines as \\n).
+- "explanation": a short string in English or Romanian describing what you created.
+
+Rules:
+- Create a coherent mini-project: typically 4–18 files (landing page, small React+Vite app, or static HTML/CSS/JS). Use as many files as needed but stay within the limit.
+- Paths must not contain ".." or start with "/". Do not use node_modules, .git, dist in the path.
+- Every file must be full source — no placeholders like "// TODO" for critical parts.
+- For React+Vite include: package.json (with scripts dev/build, dependencies), vite.config.js with @vitejs/plugin-react, index.html, src/main.jsx, src/App.jsx, src/index.css as needed.
+- In package.json for Vite projects: list "vite", "react", "react-dom", and "@vitejs/plugin-react" in "dependencies" (not only devDependencies) so Docker preview always installs them; use "dev": "vite" or "vite --host 0.0.0.0 --port 5173".
+- For static landing: index.html, styles.css, maybe main.js.
+- package.json must be strictly valid JSON.
+- Do not output binary; only UTF-8 text source.`;
+
+  const userMsg = `User request:\n${prompt.trim()}\n\nPreferred stack / language hint: ${language || "javascript"}\n\nExisting workspace paths (may be empty — avoid breaking names unless replacing):\n${pathsHint || "(empty)"}`;
+
+  try {
+    const chatCompletion = await groq.chat.completions.create({
+      model: "llama-3.3-70b-versatile",
+      max_tokens: 8192,
+      temperature: 0.35,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userMsg },
+      ],
+    });
+
+    const raw = chatCompletion.choices[0].message.content.trim();
+    const stripped = stripOuterCodeFences(raw)
+      .replace(/^```(?:json)?\n?/i, "")
+      .replace(/\n?```$/i, "")
+      .trim();
+
+    let parsed;
+    try {
+      parsed = JSON.parse(stripped);
+    } catch {
+      parsed = parseLooseJson(stripped);
+    }
+    if (!parsed || typeof parsed !== "object") {
+      return res.status(422).json({
+        error:
+          "Modelul nu a returnat JSON valid. Încearcă din nou cu o cerere mai scurtă sau mai clară.",
+      });
+    }
+
+    let files = parsed.files;
+    if (typeof files === "string") {
+      try {
+        files = JSON.parse(files);
+      } catch {
+        files = null;
+      }
+    }
+    if (!files || typeof files !== "object" || Array.isArray(files)) {
+      return res.status(422).json({
+        error: 'Răspuns invalid: lipsește obiectul "files".',
+      });
+    }
+
+    files = sanitizeScaffoldFiles(files);
+    if (Object.keys(files).length === 0) {
+      return res.status(422).json({
+        error:
+          "Nu s-au putut extrage fișiere valide din răspunsul AI (căi sau conținut respins).",
+      });
+    }
+
+    assertWorkspaceWithinLimit(files, "scaffold");
+
+    let explanation =
+      typeof parsed.explanation === "string"
+        ? parsed.explanation.trim()
+        : "Fișiere generate.";
+    if (!explanation) explanation = `Generated ${Object.keys(files).length} file(s).`;
+
+    res.json({ files, explanation });
+  } catch (err) {
+    const status = err.status === 413 ? 413 : 500;
+    console.error("[AI scaffold]", err.message);
+    res.status(status).json({
+      error: err.message || "Scaffold failed",
+    });
+  }
+});
+
 // --- Code execution engine (Docker + fallback) ---
 const Docker = require("dockerode");
 const { spawn } = require("child_process");
 const fs = require("fs");
-const path = require("path");
 const os = require("os");
 
 const docker = new Docker();
@@ -1380,6 +1522,19 @@ termWss.on("connection", (ws) => {
 const apiServer = http.createServer(app);
 apiServer.on("upgrade", (req, socket, head) => {
   if (preview.handlePreviewUpgrade(req, socket, head)) return;
+});
+apiServer.on("error", (err) => {
+  if (err.code === "EADDRINUSE") {
+    console.error(
+      `[iTECify] Port ${PORT} is already in use (another process or a previous server instance).`,
+    );
+    console.error(
+      `  Windows: netstat -ano | findstr :${PORT}  then  taskkill /PID <pid> /F`,
+    );
+    console.error(`  Or set a different PORT in .env and restart (match Vite proxy in client).`);
+    process.exit(1);
+  }
+  throw err;
 });
 apiServer.listen(PORT, () => {
   console.log(`[iTECify] Server running on http://localhost:${PORT}`);
