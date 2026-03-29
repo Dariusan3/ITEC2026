@@ -1,6 +1,7 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import Terminal from "./Terminal";
 import { ArchiveIcon, ChevronRightIcon } from "./ui/Icons";
+import { featureFlags } from "../lib/featureFlags";
 
 const MAX_HISTORY = 20;
 
@@ -11,7 +12,7 @@ function EmptyPanel({ title, description, icon = null }) {
       style={{ background: "var(--bg-tertiary)" }}
     >
       <div
-        className="flex h-10 w-10 items-center justify-center rounded-2xl"
+        className="flex h-10 w-10 items-center justify-center rounded-none"
         style={{
           background: "color-mix(in srgb, var(--accent) 14%, var(--bg-secondary))",
           color: "var(--accent)",
@@ -43,6 +44,8 @@ export default function OutputPanel({
   previewIframeSrc = null,
   previewError = null,
   previewNotice = null,
+  previewSyncInfo = null,
+  previewBusy = false,
   focusPreviewSignal = 0,
   onPreviewStop,
   previewDisabled = false,
@@ -51,6 +54,7 @@ export default function OutputPanel({
   const [tab, setTab] = useState("output");
   const [stdinOpen, setStdinOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [panelH, setPanelH] = useState(232);
   const [history, setHistory] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem("itecify:run-history") || "[]");
@@ -59,6 +63,24 @@ export default function OutputPanel({
     }
   });
   const scrollRef = useRef(null);
+  const dragRef = useRef(null);
+
+  const onDragStart = useCallback((e) => {
+    e.preventDefault();
+    const startY = e.clientY;
+    const startH = panelH;
+    const onMove = (ev) => {
+      const delta = startY - ev.clientY;
+      const next = Math.max(140, Math.min(window.innerHeight * 0.7, startH + delta));
+      setPanelH(next);
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }, [panelH]);
 
   useEffect(() => {
     if (focusPreviewSignal > 0) setTab("preview");
@@ -126,7 +148,18 @@ export default function OutputPanel({
   }
 
   return (
-    <div className="panel-shell flex h-[14.5rem] min-h-[11rem] max-h-[42vh] shrink-0 flex-col">
+    <div
+      className="panel-shell flex shrink-0 flex-col"
+      style={{ height: `${panelH}px`, minHeight: 140, maxHeight: "70vh" }}
+    >
+      {/* Drag handle */}
+      <div
+        ref={dragRef}
+        onMouseDown={onDragStart}
+        className="h-1.5 cursor-row-resize select-none hover:bg-[var(--accent)]"
+        style={{ background: "var(--border)", transition: "background 0.15s" }}
+        title="Trage pentru a redimensiona"
+      />
       {/* Tab bar */}
       <div
         className="flex w-full shrink-0 flex-wrap items-center justify-between gap-2 px-3 py-2 sm:px-3.5"
@@ -187,7 +220,7 @@ export default function OutputPanel({
             <button
               type="button"
               onClick={downloadOutput}
-              className="liquid-surface rounded-xl border px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide shadow-[0_10px_20px_rgba(0,0,0,0.12)] transition-all duration-150 hover:-translate-y-px hover:opacity-90"
+              className="liquid-surface rounded-none border px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide shadow-[0_10px_20px_rgba(0,0,0,0.12)] transition-all duration-150 hover:-translate-y-px hover:opacity-90"
               style={{
                 background: "var(--bg-tertiary)",
                 borderColor: "var(--border)",
@@ -201,7 +234,7 @@ export default function OutputPanel({
           )}
           <button
             type="button"
-            className="liquid-surface rounded-xl border px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide shadow-[0_10px_20px_rgba(0,0,0,0.12)] transition-all duration-150 hover:-translate-y-px hover:opacity-90"
+            className="liquid-surface rounded-none border px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide shadow-[0_10px_20px_rgba(0,0,0,0.12)] transition-all duration-150 hover:-translate-y-px hover:opacity-90"
             style={{
               borderColor: stdinOpen ? "var(--accent)" : "var(--border)",
               color: stdinOpen ? "var(--accent)" : "var(--text-secondary)",
@@ -214,7 +247,7 @@ export default function OutputPanel({
           </button>
           <button
             type="button"
-            className="liquid-surface flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border text-xs font-semibold shadow-[0_10px_20px_rgba(0,0,0,0.12)] transition-all duration-150 hover:-translate-y-px hover:opacity-90"
+            className="liquid-surface flex h-9 w-9 shrink-0 items-center justify-center rounded-none border text-xs font-semibold shadow-[0_10px_20px_rgba(0,0,0,0.12)] transition-all duration-150 hover:-translate-y-px hover:opacity-90"
             style={{
               background: "var(--bg-tertiary)",
               borderColor: "var(--border)",
@@ -239,7 +272,7 @@ export default function OutputPanel({
               onChange={(e) => onStdinChange(e.target.value)}
               placeholder="Each line = one line of stdin..."
               rows={2}
-              className="w-full resize-none rounded-xl border p-2.5 text-xs font-mono outline-none shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]"
+              className="w-full resize-none rounded-none border p-2.5 text-xs font-mono outline-none shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]"
               style={{
                 background: "var(--bg-tertiary)",
                 borderColor: "var(--border)",
@@ -252,8 +285,8 @@ export default function OutputPanel({
             >
               La Run, <strong>tot</strong> textul de mai sus e trimis odată în program — nu se poate tasta „după fiecare
               prompt” ca în consolă. Pune aici, în ordine, toate valorile (câte o linie per{" "}
-              <code className="rounded bg-[var(--bg-primary)] px-0.5">scanf</code>). Numerele din mesaje (ex. „numărul
-              0…9”) vin din <code className="rounded bg-[var(--bg-primary)] px-0.5">printf</code> / variabilele tale,
+              <code className="rounded-none bg-[var(--bg-primary)] px-0.5">scanf</code>). Numerele din mesaje (ex. „numărul
+              0…9”) vin din <code className="rounded-none bg-[var(--bg-primary)] px-0.5">printf</code> / variabilele tale,
               nu sunt introduse automat de sandbox.
             </p>
           </div>
@@ -263,7 +296,7 @@ export default function OutputPanel({
               value={packages}
               onChange={(e) => onPackagesChange(e.target.value)}
               placeholder="e.g. lodash axios  or  numpy pandas"
-              className="w-full rounded-xl border p-2.5 text-xs font-mono outline-none shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]"
+              className="w-full rounded-none border p-2.5 text-xs font-mono outline-none shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]"
               style={{
                 background: "var(--bg-tertiary)",
                 borderColor: "var(--border)",
@@ -278,7 +311,7 @@ export default function OutputPanel({
               onChange={(e) => onEnvVarsChange(e.target.value)}
               placeholder={"API_KEY=abc\nDEBUG=1"}
               rows={2}
-              className="w-full resize-none rounded-xl border p-2.5 text-xs font-mono outline-none shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]"
+              className="w-full resize-none rounded-none border p-2.5 text-xs font-mono outline-none shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]"
               style={{
                 background: "var(--bg-tertiary)",
                 borderColor: "var(--border)",
@@ -328,6 +361,24 @@ export default function OutputPanel({
         )}
         {!previewDisabled && tab === "preview" && (
           <div className="flex h-full min-h-0 flex-col">
+            {previewIframeSrc && (previewSyncInfo || previewBusy) && (
+              <p
+                className="shrink-0 px-2 py-1 font-mono text-[10px] leading-snug"
+                style={{
+                  color: "var(--text-secondary)",
+                  background: "var(--bg-tertiary)",
+                  borderBottom: "1px solid var(--border)",
+                }}
+              >
+                {previewBusy
+                  ? "Sincronizare preview…"
+                  : previewSyncInfo
+                    ? `Ultimul sync: ${new Date(previewSyncInfo.at).toLocaleTimeString()} · ` +
+                      `${previewSyncInfo.ms} ms · mod ${previewSyncInfo.mode}` +
+                      (featureFlags.livePreviewSync ? " · auto-sync" : "")
+                    : null}
+              </p>
+            )}
             {previewNotice && (
               <p
                 className="shrink-0 px-2 py-1.5 text-[11px] leading-snug"
@@ -363,6 +414,8 @@ export default function OutputPanel({
                 title="Live preview"
                 className="min-h-0 w-full flex-1 border-0 bg-white"
                 src={previewIframeSrc}
+                sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
+                referrerPolicy="no-referrer"
               />
             )}
           </div>
@@ -381,7 +434,7 @@ export default function OutputPanel({
                 return (
                   <div
                     key={i}
-                    className="cursor-pointer rounded-xl border px-3 py-2 transition-all duration-150 hover:-translate-y-px hover:opacity-90"
+                    className="cursor-pointer rounded-none border px-3 py-2 transition-all duration-150 hover:-translate-y-px hover:opacity-90"
                     style={{
                       borderColor: expanded ? "var(--accent)" : "var(--border)",
                       background: "var(--bg-tertiary)",
@@ -471,7 +524,7 @@ function PanelTab({ selected, onClick, children }) {
       role="tab"
       aria-selected={selected}
       onClick={onClick}
-      className="liquid-surface min-h-9 rounded-xl px-5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] transition-all duration-150 hover:-translate-y-px sm:px-6 sm:text-[11px]"
+      className="liquid-surface min-h-9 rounded-none px-5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] transition-all duration-150 hover:-translate-y-px sm:px-6 sm:text-[11px]"
       style={{
         border: selected ? "1px solid var(--accent)" : "1px solid transparent",
         cursor: "pointer",

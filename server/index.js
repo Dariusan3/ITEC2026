@@ -39,7 +39,10 @@ if (process.env.DATABASE_URL) {
 
 const allowedOrigin = process.env.CLIENT_ORIGIN || "http://localhost:5173";
 app.use(cors({ origin: IS_PROD ? allowedOrigin : true, credentials: true }));
-app.use(express.json({ limit: "8mb" }));
+app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || "12mb" }));
+
+const { logStructured } = require("./logger");
+const { assertWorkspaceWithinLimit } = require("./workspaceLimits");
 const sessionMiddleware = session({
   store: sessionStore,
   secret: process.env.SESSION_SECRET || "itecify-dev-secret",
@@ -718,6 +721,11 @@ const runLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: "Too many runs — max 20 per minute. Please wait." },
+  keyGenerator: (req) => {
+    const login = req.session?.user?.login;
+    if (login) return `user:${login}`;
+    return req.ip || "unknown";
+  },
 });
 
 app.post("/api/run", runLimiter, async (req, res) => {
@@ -757,6 +765,20 @@ app.post("/api/run", runLimiter, async (req, res) => {
       "info",
       `[${mode === "docker" ? "Docker sandbox" : "Direct execution"}]`,
     );
+    if (mode === "docker") {
+      send(
+        "info",
+        "Limite sandbox: ~128 MB RAM, CPU limitat, timeout execuție 30s.",
+      );
+    } else {
+      send("info", "Execuție directă: timeout 10s (fără Docker).");
+    }
+
+    logStructured("run", "start", {
+      roomId: String(roomId || "").slice(0, 32),
+      language,
+      mode,
+    });
 
     if (dockerAvailable) {
       await runInDocker(code, config, send, stdin, packages, env);
@@ -779,6 +801,11 @@ app.post("/api/run", runLimiter, async (req, res) => {
   send("done", "");
   res.end();
 
+  logStructured("run", "end", {
+    roomId: String(roomId || "").slice(0, 32),
+    language,
+  });
+
   // Persist run history (fire-and-forget)
   if (roomId) {
     db.insertRunHistory({
@@ -799,10 +826,15 @@ const previewLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: "Too many preview requests — try again later." },
+  keyGenerator: (req) => {
+    const login = req.session?.user?.login;
+    if (login) return `user:${login}`;
+    return req.ip || "unknown";
+  },
 });
 
 app.post("/api/preview/start", previewLimiter, async (req, res) => {
-  const { roomId, files, force } = req.body;
+  const { roomId, files, force, nodeVersion } = req.body;
   if (!files || typeof files !== "object")
     return res.status(400).json({ error: "files (path → content) required" });
 
@@ -815,13 +847,34 @@ app.post("/api/preview/start", previewLimiter, async (req, res) => {
   }
 
   try {
+    try {
+      assertWorkspaceWithinLimit(files, "Preview");
+    } catch (sizeErr) {
+      const code = sizeErr.status || 413;
+      logStructured("preview", "reject_size", {
+        roomId: String(roomId || "").slice(0, 32),
+      });
+      return res.status(code).json({ error: sizeErr.message });
+    }
+
+    logStructured("preview", "start", {
+      roomId: String(roomId || "").slice(0, 32),
+      force: !!force,
+      nodeVersion: String(nodeVersion || "").slice(0, 8),
+    });
+
     const result = await preview.startPreview(
       roomId,
       files,
       docker,
       DOCKER_PLATFORM_SPEC,
-      { force: !!force },
+      { force: !!force, nodeVersion },
     );
+    logStructured("preview", "ready", {
+      roomId: String(roomId || "").slice(0, 32),
+      mode: result.mode,
+      hostPort: result.hostPort,
+    });
     res.json({
       ok: true,
       proxyPath: `/api/preview/proxy/${result.safeRoomId}`,
@@ -830,6 +883,10 @@ app.post("/api/preview/start", previewLimiter, async (req, res) => {
     });
   } catch (err) {
     console.error("[Preview start]", err.message);
+    logStructured("preview", "error", {
+      roomId: String(roomId || "").slice(0, 32),
+      message: err.message,
+    });
     res.status(500).json({ error: err.message || "Preview failed" });
   }
 });

@@ -1,5 +1,6 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { yFiles, getYText } from "../lib/yjs";
+import ConfirmModal from "./ConfirmModal";
 import {
   ChevronDownIcon,
   ChevronRightIcon,
@@ -8,7 +9,9 @@ import {
 } from "./ui/Icons";
 const LANG_ICONS = {
   javascript: { icon: "JS", color: "#d7f58d" },
+  "react-jsx": { icon: "RC", color: "#8ff7a7" },
   typescript: { icon: "TS", color: "#6fe3a3" },
+  markdown: { icon: "MD", color: "#b8ffca" },
   python: { icon: "PY", color: "#8ff7a7" },
   rust: { icon: "RS", color: "#9cecae" },
   go: { icon: "GO", color: "#74f0c2" },
@@ -21,7 +24,7 @@ const LANG_ICONS = {
 
 const EXT_TO_LANG = {
   js: "javascript",
-  jsx: "javascript",
+  jsx: "react-jsx",
   ts: "typescript",
   tsx: "typescript",
   py: "python",
@@ -32,13 +35,14 @@ const EXT_TO_LANG = {
   html: "html",
   css: "css",
   json: "json",
+  md: "markdown",
 };
 
 const treeInputClass =
-  "soft-card w-full rounded-2xl border px-3 py-2 text-xs font-medium outline-none transition-all duration-150 placeholder:text-[color:var(--text-secondary)] focus:-translate-y-px focus:shadow-[0_12px_24px_rgba(0,0,0,0.18)]";
+  "soft-card keep-round-lg w-full border px-3 py-2 text-xs font-medium outline-none transition-all duration-150 placeholder:text-[color:var(--text-secondary)] focus:-translate-y-px focus:shadow-[0_12px_24px_rgba(0,0,0,0.18)]";
 
 const contextActionClass =
-  "mx-1 flex w-[calc(100%-0.5rem)] items-center justify-between rounded-xl px-3 py-2 text-left transition-all duration-150 hover:bg-[color:var(--bg-tertiary)] hover:brightness-110";
+  "mx-1 flex w-[calc(100%-0.5rem)] items-center justify-between px-3 py-2 text-left transition-all duration-150 hover:bg-[color:var(--bg-tertiary)] hover:brightness-110";
 
 function guessLang(filename) {
   const ext = filename.split(".").pop();
@@ -147,7 +151,7 @@ function TreeNode({
             onFileSelect(node.path, node.language);
           }
         }}
-        className="group flex cursor-grab active:cursor-grabbing items-center gap-2.5 rounded-2xl px-3 py-2 text-xs transition-all duration-150 hover:bg-[color:var(--bg-tertiary)]/78 hover:shadow-[0_10px_18px_rgba(0,0,0,0.12)]"
+        className="group flex cursor-grab active:cursor-grabbing items-center gap-2.5 px-3 py-2 text-xs transition-all duration-150 hover:bg-[color:var(--bg-tertiary)]/78 hover:shadow-[0_10px_18px_rgba(0,0,0,0.12)]"
         style={{
           paddingLeft: indent + 8,
           background: isActive ? "color-mix(in srgb, var(--accent) 12%, var(--bg-tertiary))" : "transparent",
@@ -158,7 +162,7 @@ function TreeNode({
         }}
       >
         <span
-          className="inline-flex min-w-[1.9rem] items-center justify-center rounded-xl px-2 py-1 text-[9px] font-bold tracking-[0.12em]"
+          className="inline-flex min-w-[1.9rem] items-center justify-center px-2 py-1 text-[9px] font-bold tracking-[0.12em]"
           style={{
             color: icon.color,
             background: "linear-gradient(180deg, color-mix(in srgb, var(--bg-primary) 80%, transparent), color-mix(in srgb, var(--bg-tertiary) 92%, transparent))",
@@ -223,7 +227,7 @@ function TreeNode({
             e.dataTransfer.getData("text/plain");
           if (from) onMoveFile(from, folderPath);
         }}
-        className="group flex cursor-pointer items-center gap-2.5 rounded-2xl px-3 py-2 text-xs transition-all duration-150 hover:bg-[color:var(--bg-tertiary)]/72 hover:shadow-[0_10px_18px_rgba(0,0,0,0.12)]"
+        className="group flex cursor-pointer items-center gap-2.5 px-3 py-2 text-xs transition-all duration-150 hover:bg-[color:var(--bg-tertiary)]/72 hover:shadow-[0_10px_18px_rgba(0,0,0,0.12)]"
         style={{
           paddingLeft: indent + 8,
           color: "var(--text-secondary)",
@@ -238,7 +242,7 @@ function TreeNode({
           <ChevronRightIcon className="h-3 w-3 shrink-0" />
         )}
         <span
-          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-xl"
+          className="inline-flex h-7 w-7 shrink-0 items-center justify-center"
           style={{
             background: "linear-gradient(180deg, color-mix(in srgb, var(--accent) 10%, var(--bg-primary)), color-mix(in srgb, var(--bg-tertiary) 88%, transparent))",
             boxShadow: "inset 0 0 0 1px color-mix(in srgb, var(--accent) 18%, var(--border)), 0 8px 16px rgba(0,0,0,0.12)",
@@ -262,7 +266,7 @@ function TreeNode({
             e.stopPropagation();
             setCreatingIn(folderPath);
           }}
-          className="liquid-surface opacity-0 group-hover:opacity-100 rounded-xl border p-1.5 transition-all duration-150 hover:-translate-y-px hover:opacity-100"
+          className="liquid-surface keep-round-lg opacity-0 group-hover:opacity-100 border p-1.5 transition-all duration-150 hover:-translate-y-px hover:opacity-100"
           style={{
             color: "var(--accent)",
             borderColor: "color-mix(in srgb, var(--accent) 18%, var(--border))",
@@ -307,7 +311,7 @@ function TreeNode({
 }
 
 const explorerBtnClass =
-  "liquid-surface inline-flex h-full items-center justify-center rounded-2xl border px-2.5 py-1.5 font-mono text-[10px] font-bold leading-none shadow-[0_10px_20px_rgba(0,0,0,0.14)] transition-all duration-150 hover:-translate-y-px hover:brightness-110 active:scale-[0.93] sm:px-3 sm:py-1.5 sm:text-[11px]";
+  "liquid-surface keep-round-lg inline-flex h-full items-center justify-center border px-2.5 py-1.5 font-mono text-[10px] font-bold leading-none shadow-[0_10px_20px_rgba(0,0,0,0.14)] transition-all duration-150 hover:-translate-y-px hover:brightness-110 active:scale-[0.93] sm:px-3 sm:py-1.5 sm:text-[11px]";
 
 export default function FileTree({ activeFile, onFileSelect }) {
   const [files, setFiles] = useState([]);
@@ -321,8 +325,15 @@ export default function FileTree({ activeFile, onFileSelect }) {
   const [openFolders, setOpenFolders] = useState(new Set());
   /** null | "" (root) | folder path — highlight drop target while dragging */
   const [dropHighlight, setDropHighlight] = useState(null);
+  const [confirmState, setConfirmState] = useState(null);
   const newInputRef = useRef(null);
   const renameInputRef = useRef(null);
+
+  const askConfirm = useCallback(
+    (title, body, onOk, { danger = false } = {}) =>
+      setConfirmState({ title, body, onOk, danger }),
+    [],
+  );
 
   useEffect(() => {
     const update = () => {
@@ -482,34 +493,41 @@ export default function FileTree({ activeFile, onFileSelect }) {
       alert("Cannot delete the last file");
       return;
     }
-    if (!confirm(`Delete "${filename}"?`)) return;
-    yFiles.delete(filename);
-    if (activeFile === filename) {
-      const remaining = [];
-      yFiles.forEach((_, n) => {
-        if (!n.endsWith(".gitkeep")) remaining.push(n);
-      });
-      if (remaining.length > 0)
-        onFileSelect(remaining[0], yFiles.get(remaining[0]).language);
-    }
+    askConfirm(
+      `Șterge „${filename}"?`,
+      "Fișierul dispare din cameră pentru toți colaboratorii.",
+      () => {
+        yFiles.delete(filename);
+        if (activeFile === filename) {
+          const remaining = [];
+          yFiles.forEach((_, n) => {
+            if (!n.endsWith(".gitkeep")) remaining.push(n);
+          });
+          if (remaining.length > 0)
+            onFileSelect(remaining[0], yFiles.get(remaining[0]).language);
+        }
+      },
+      { danger: true },
+    );
   };
 
   const deleteFolder = (folderPath) => {
     const children = [...yFiles.keys()].filter((k) =>
       k.startsWith(folderPath + "/"),
     );
-    if (
-      !confirm(
-        `Delete folder "${folderPath}" and all ${children.length} file(s)?`,
-      )
-    )
-      return;
-    children.forEach((k) => yFiles.delete(k));
-    if (children.includes(activeFile)) {
-      const remaining = [...yFiles.keys()].filter((k) => !k.endsWith(".gitkeep"));
-      if (remaining.length > 0)
-        onFileSelect(remaining[0], yFiles.get(remaining[0]).language);
-    }
+    askConfirm(
+      `Șterge folderul „${folderPath}"?`,
+      `Se vor șterge ${children.length} fișier(e) din cameră.`,
+      () => {
+        children.forEach((k) => yFiles.delete(k));
+        if (children.includes(activeFile)) {
+          const remaining = [...yFiles.keys()].filter((k) => !k.endsWith(".gitkeep"));
+          if (remaining.length > 0)
+            onFileSelect(remaining[0], yFiles.get(remaining[0]).language);
+        }
+      },
+      { danger: true },
+    );
   };
 
   const openContextMenu = (e, filename, folderPath = null) => {
@@ -606,7 +624,7 @@ export default function FileTree({ activeFile, onFileSelect }) {
         style={{ borderColor: "var(--border)" }}
       >
         <div
-          className="rounded border px-2 py-1.5"
+          className="border px-2 py-1.5"
           style={{
             background: "var(--bg-tertiary)",
             borderColor: "var(--border)",
@@ -676,7 +694,7 @@ export default function FileTree({ activeFile, onFileSelect }) {
                       column: result.column,
                     })
                   }
-                  className="w-full rounded border px-2 py-1.5 text-left transition-all hover:brightness-110"
+                  className="w-full border px-2 py-1.5 text-left transition-all hover:brightness-110"
                   style={{
                     background:
                       activeFile === result.file
@@ -737,7 +755,7 @@ export default function FileTree({ activeFile, onFileSelect }) {
                       if (e.key === "Enter") renameFile();
                       if (e.key === "Escape") setRenamingFile(null);
                     }}
-                    className="w-full rounded px-2 py-1 text-xs outline-none"
+                    className="w-full px-2 py-1 text-xs outline-none"
                     style={{
                       background: "var(--bg-tertiary)",
                       color: "var(--text-primary)",
@@ -917,6 +935,17 @@ export default function FileTree({ activeFile, onFileSelect }) {
           )}
         </div>
       )}
+      <ConfirmModal
+        open={!!confirmState}
+        title={confirmState?.title || ""}
+        body={confirmState?.body || ""}
+        danger={confirmState?.danger}
+        onConfirm={() => {
+          confirmState?.onOk?.();
+          setConfirmState(null);
+        }}
+        onCancel={() => setConfirmState(null)}
+      />
     </div>
   );
 }

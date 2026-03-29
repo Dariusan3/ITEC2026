@@ -7,7 +7,7 @@ import {
 } from "react";
 import * as monaco from "monaco-editor";
 import { MonacoBinding } from "y-monaco";
-import { ydoc, wsProvider, getYText, yAiBlocks } from "../lib/yjs";
+import { ydoc, wsProvider, getYText, yAiBlocks, yFiles } from "../lib/yjs";
 import { extractJsonStringField } from "../lib/extractJsonStringField";
 import * as prettier from "prettier/standalone";
 import prettierBabel from "prettier/plugins/babel";
@@ -15,9 +15,12 @@ import prettierEstree from "prettier/plugins/estree";
 import prettierTypescript from "prettier/plugins/typescript";
 import prettierPostcss from "prettier/plugins/postcss";
 import prettierHtml from "prettier/plugins/html";
+import prettierMarkdown from "prettier/plugins/markdown";
+import { monacoLanguageFromMeta } from "../lib/editorLanguage";
 
 const PRETTIER_PARSERS = {
   javascript: { parser: "babel", plugins: [prettierBabel, prettierEstree] },
+  "react-jsx": { parser: "babel", plugins: [prettierBabel, prettierEstree] },
   typescript: {
     parser: "typescript",
     plugins: [prettierTypescript, prettierEstree],
@@ -26,6 +29,7 @@ const PRETTIER_PARSERS = {
   scss: { parser: "scss", plugins: [prettierPostcss] },
   html: { parser: "html", plugins: [prettierHtml] },
   json: { parser: "json", plugins: [prettierBabel, prettierEstree] },
+  markdown: { parser: "markdown", plugins: [prettierMarkdown] },
 };
 
 import editorWorker from "monaco-editor/esm/vs/editor/editor.worker?worker";
@@ -142,6 +146,8 @@ const Editor = forwardRef(function Editor(
   { language, activeFile, settings = {}, readOnly = false },
   ref,
 ) {
+  const settingsRef = useRef(settings);
+  settingsRef.current = settings;
   const keymap = settings.keymap || "default";
   const containerRef = useRef(null);
   const editorRef = useRef(null);
@@ -173,20 +179,33 @@ const Editor = forwardRef(function Editor(
     if (!block || !editorRef.current) return;
     const editor = editorRef.current;
     const model = editor.getModel();
-    const targetLine = Math.min(block.line, model.getLineCount());
-    const lineContent = model.getLineContent(targetLine);
-    const code = normalizeAiSuggestion(block.suggestion);
-    editor.executeEdits("ai-accept", [
-      {
-        range: {
-          startLineNumber: targetLine,
-          startColumn: lineContent.length + 1,
-          endLineNumber: targetLine,
-          endColumn: lineContent.length + 1,
+    const sel = editor.getSelection();
+    const hasSelection =
+      sel && (sel.startLineNumber !== sel.endLineNumber || sel.startColumn !== sel.endColumn);
+    if (hasSelection) {
+      const code = normalizeAiSuggestion(block.suggestion);
+      editor.executeEdits("ai-accept", [
+        {
+          range: sel,
+          text: code,
         },
-        text: "\n" + code,
-      },
-    ]);
+      ]);
+    } else {
+      const targetLine = Math.min(block.line, model.getLineCount());
+      const lineContent = model.getLineContent(targetLine);
+      const code = normalizeAiSuggestion(block.suggestion);
+      editor.executeEdits("ai-accept", [
+        {
+          range: {
+            startLineNumber: targetLine,
+            startColumn: lineContent.length + 1,
+            endLineNumber: targetLine,
+            endColumn: lineContent.length + 1,
+          },
+          text: "\n" + code,
+        },
+      ]);
+    }
     yAiBlocks.delete(blockId);
   }, []);
 
@@ -255,8 +274,69 @@ const Editor = forwardRef(function Editor(
   useEffect(() => {
     if (!containerRef.current) return;
     registerEditorThemes();
+
+    monaco.languages.typescript.javascriptDefaults.setCompilerOptions({
+      allowJs: true,
+      jsx: monaco.languages.typescript.JsxEmit.React,
+      module: monaco.languages.typescript.ModuleKind.ESNext,
+      moduleResolution: monaco.languages.typescript.ModuleResolutionKind.NodeJs,
+      target: monaco.languages.typescript.ScriptTarget.ES2022,
+      allowSyntheticDefaultImports: true,
+      esModuleInterop: true,
+      isolatedModules: true,
+      baseUrl: ".",
+      paths: { "@/*": ["./*"], "~/*": ["./*"] },
+    });
+    monaco.languages.typescript.typescriptDefaults.setCompilerOptions({
+      jsx: monaco.languages.typescript.JsxEmit.React,
+      module: monaco.languages.typescript.ModuleKind.ESNext,
+      moduleResolution: monaco.languages.typescript.ModuleResolutionKind.NodeJs,
+      target: monaco.languages.typescript.ScriptTarget.ES2022,
+      allowSyntheticDefaultImports: true,
+      esModuleInterop: true,
+      isolatedModules: true,
+      baseUrl: ".",
+      paths: { "@/*": ["./*"], "~/*": ["./*"] },
+    });
+
+    const snippetProposals = [
+      {
+        label: "useState",
+        kind: monaco.languages.CompletionItemKind.Snippet,
+        documentation: "React useState",
+        insertText: "const [${1:count}, setCount] = useState(${2:0})",
+        insertTextRules:
+          monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+      },
+      {
+        label: "useEffect",
+        kind: monaco.languages.CompletionItemKind.Snippet,
+        documentation: "React useEffect",
+        insertText: "useEffect(() => {\n\t${1}\n}, [${2:deps}])",
+        insertTextRules:
+          monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+      },
+      {
+        label: "fetch-json",
+        kind: monaco.languages.CompletionItemKind.Snippet,
+        documentation: "fetch + JSON",
+        insertText:
+          "const res = await fetch(${1:url})\nif (!res.ok) throw new Error(res.statusText)\nconst data = await res.json()",
+        insertTextRules:
+          monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+      },
+    ];
+
+    const provideSnippets = () => ({ suggestions: snippetProposals });
+    const d1 = monaco.languages.registerCompletionItemProvider("javascript", {
+      provideCompletionItems: provideSnippets,
+    });
+    const d2 = monaco.languages.registerCompletionItemProvider("typescript", {
+      provideCompletionItems: provideSnippets,
+    });
+
     const editor = monaco.editor.create(containerRef.current, {
-      language,
+      language: monacoLanguageFromMeta(language, activeFile),
       theme: DEFAULT_EDITOR_THEME,
       automaticLayout: true,
       fontSize: 14,
@@ -285,8 +365,13 @@ const Editor = forwardRef(function Editor(
       run: async (ed) => {
         const model = ed.getModel();
         if (!model) return;
-        const lang = model.getLanguageId();
-        const config = PRETTIER_PARSERS[lang];
+        const file =
+          decodeURIComponent(model.uri.path.replace(/^\/+/, "")) ||
+          activeFile ||
+          "";
+        const metaLang = file && yFiles.has(file) ? yFiles.get(file)?.language : null;
+        const logical = metaLang || model.getLanguageId();
+        const config = PRETTIER_PARSERS[logical];
         if (!config) return;
         try {
           const formatted = await prettier.format(model.getValue(), {
@@ -305,11 +390,19 @@ const Editor = forwardRef(function Editor(
       },
     });
 
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
+      if (settingsRef.current.formatOnSave) {
+        editor.getAction("prettier-format")?.run();
+      }
+    });
+
     const observer = () => renderAiBlocks();
     yAiBlocks.observe(observer);
     renderAiBlocks();
     return () => {
       yAiBlocks.unobserve(observer);
+      d1.dispose();
+      d2.dispose();
       widgetsRef.current.forEach((w) => editor.removeContentWidget(w));
       editor.dispose();
     };
@@ -328,6 +421,7 @@ const Editor = forwardRef(function Editor(
     }
 
     // Create a new Monaco model for this file
+    const monacoLang = monacoLanguageFromMeta(language, activeFile);
     const yFile = getYText(activeFile);
     const existingModel = monaco.editor
       .getModels()
@@ -336,11 +430,11 @@ const Editor = forwardRef(function Editor(
       existingModel ||
       monaco.editor.createModel(
         yFile.toString(),
-        language,
+        monacoLang,
         monaco.Uri.parse(`file:///${activeFile}`),
       );
     editor.setModel(model);
-    monaco.editor.setModelLanguage(model, language);
+    monaco.editor.setModelLanguage(model, monacoLang);
 
     const binding = new MonacoBinding(
       yFile,
@@ -362,8 +456,12 @@ const Editor = forwardRef(function Editor(
     const editor = editorRef.current;
     if (!editor) return;
     const model = editor.getModel();
-    if (model) monaco.editor.setModelLanguage(model, language);
-  }, [language]);
+    if (model)
+      monaco.editor.setModelLanguage(
+        model,
+        monacoLanguageFromMeta(language, activeFile),
+      );
+  }, [language, activeFile]);
 
   // Apply settings (theme + editor options) reactively
   useEffect(() => {
@@ -464,11 +562,13 @@ const Editor = forwardRef(function Editor(
         keymapRef.current = initVimMode(editor, statusNode);
       });
     } else if (keymap === "emacs") {
-      import("monaco-emacs").then(({ EmacsExtension }) => {
-        const ext = new EmacsExtension(editor);
+      import("monaco-emacs").then((mod) => {
+        const Cls = mod.EmacsExtension || mod.default?.EmacsExtension || mod.default;
+        if (!Cls) return;
+        const ext = new Cls(editor);
         ext.start();
         keymapRef.current = ext;
-      });
+      }).catch(() => {});
     }
 
     return () => {

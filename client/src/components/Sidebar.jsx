@@ -63,6 +63,7 @@ function parseSegments(text) {
 
 function buildOutline(code, language) {
   if (!code?.trim()) return [];
+  const langKey = language === "react-jsx" ? "javascript" : language;
 
   const patternsByLanguage = {
     javascript: [
@@ -77,14 +78,8 @@ function buildOutline(code, language) {
       /^\s*(?:export\s+)?interface\s+([A-Za-z0-9_$]+)/,
       /^\s*(?:export\s+)?type\s+([A-Za-z0-9_$]+)/,
     ],
-    python: [
-      /^\s*def\s+([A-Za-z0-9_]+)/,
-      /^\s*class\s+([A-Za-z0-9_]+)/,
-    ],
-    go: [
-      /^\s*func\s+([A-Za-z0-9_]+)/,
-      /^\s*type\s+([A-Za-z0-9_]+)/,
-    ],
+    python: [/^\s*def\s+([A-Za-z0-9_]+)/, /^\s*class\s+([A-Za-z0-9_]+)/],
+    go: [/^\s*func\s+([A-Za-z0-9_]+)/, /^\s*type\s+([A-Za-z0-9_]+)/],
     java: [
       /^\s*(?:public|private|protected)?\s*(?:static\s+)?(?:class|interface|enum)\s+([A-Za-z0-9_]+)/,
       /^\s*(?:public|private|protected)?\s*(?:static\s+)?[\w<>\[\]]+\s+([A-Za-z0-9_]+)\s*\(/,
@@ -99,15 +94,11 @@ function buildOutline(code, language) {
       /^\s*enum\s+([A-Za-z0-9_]+)/,
       /^\s*impl\s+([A-Za-z0-9_]+)/,
     ],
-    html: [
-      /^\s*<([a-zA-Z][\w-]*)\b/,
-    ],
-    css: [
-      /^\s*([.#]?[A-Za-z0-9_-][^{]*)\s*\{/,
-    ],
+    html: [/^\s*<([a-zA-Z][\w-]*)\b/],
+    css: [/^\s*([.#]?[A-Za-z0-9_-][^{]*)\s*\{/],
   };
 
-  const patterns = patternsByLanguage[language] || patternsByLanguage.javascript;
+  const patterns = patternsByLanguage[langKey] || patternsByLanguage.javascript;
 
   return code
     .split("\n")
@@ -170,7 +161,7 @@ function MsgActionBtn({ onClick, title, variant, children }) {
       type="button"
       onClick={onClick}
       title={title}
-      className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border transition-all duration-150 hover:brightness-110 active:scale-[0.92] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent)] focus-visible:ring-offset-1 focus-visible:ring-offset-[var(--bg-secondary)]"
+      className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-none border transition-all duration-150 hover:brightness-110 active:scale-[0.92] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent)] focus-visible:ring-offset-1 focus-visible:ring-offset-[var(--bg-secondary)]"
       style={{
         background: isDanger
           ? "color-mix(in srgb, var(--red) 6%, var(--bg-tertiary))"
@@ -264,12 +255,11 @@ function AiMessage({ msg, onDelete }) {
       <div className="group/msg flex flex-col items-end gap-1">
         <div className="flex max-w-full flex-row-reverse items-start gap-2">
           <div
-            className="soft-card max-w-[82%] rounded-2xl rounded-tr-md px-3 py-2.5"
+            className="soft-card max-w-[82%] rounded-none px-3 py-2.5"
             style={{
               background:
                 "linear-gradient(180deg, color-mix(in srgb, var(--blue) 16%, var(--bg-tertiary)) 0%, color-mix(in srgb, var(--blue) 10%, var(--bg-secondary)) 100%)",
-              borderColor:
-                "color-mix(in srgb, var(--blue) 28%, var(--border))",
+              borderColor: "color-mix(in srgb, var(--blue) 28%, var(--border))",
               boxShadow: "0 14px 26px rgba(0,0,0,0.14)",
             }}
           >
@@ -308,7 +298,7 @@ function AiMessage({ msg, onDelete }) {
       {/* Label + time + actions */}
       <div className="mb-2 flex items-center gap-2">
         <span
-          className="inline-flex h-[24px] items-center gap-1 rounded-xl border pl-1 pr-2 text-[9px] font-bold uppercase tracking-[0.16em] shadow-[0_10px_20px_rgba(0,0,0,0.08)]"
+          className="inline-flex h-[24px] items-center gap-1 rounded-none border pl-1 pr-2 text-[9px] font-bold uppercase tracking-[0.16em] shadow-[0_10px_20px_rgba(0,0,0,0.08)]"
           style={{
             background: `color-mix(in srgb, ${meta.accent} 14%, var(--bg-tertiary))`,
             borderColor: `color-mix(in srgb, ${meta.accent} 22%, var(--border))`,
@@ -317,7 +307,7 @@ function AiMessage({ msg, onDelete }) {
         >
           {meta.aiIcon ? (
             <span
-              className="flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-lg"
+              className="flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-none"
               style={{
                 background: `color-mix(in srgb, ${meta.accent} 20%, var(--bg-primary))`,
                 color: meta.accent,
@@ -354,10 +344,11 @@ function AiMessage({ msg, onDelete }) {
 
       {/* Content */}
       <div
-        className="soft-card rounded-2xl px-3.5 py-3 text-[11px] leading-relaxed"
+        className="soft-card rounded-none px-3.5 py-3 text-[11px] leading-relaxed"
         style={{
           color: "var(--text-primary)",
-          background: "linear-gradient(180deg, color-mix(in srgb, var(--bg-tertiary) 94%, white 6%) 0%, var(--bg-tertiary) 100%)",
+          background:
+            "linear-gradient(180deg, color-mix(in srgb, var(--bg-tertiary) 94%, white 6%) 0%, var(--bg-tertiary) 100%)",
         }}
       >
         {segments.map((seg, i) =>
@@ -368,7 +359,7 @@ function AiMessage({ msg, onDelete }) {
           ) : (
             <div
               key={i}
-              className="my-2 overflow-hidden rounded-xl"
+              className="my-2 overflow-hidden rounded-none"
               style={{
                 background: "var(--bg-primary)",
                 border: "1px solid var(--border)",
@@ -397,7 +388,7 @@ function AiMessage({ msg, onDelete }) {
 
       {msg.blockId && (
         <div
-          className="mt-2 inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-[9px] opacity-80"
+          className="mt-2 inline-flex items-center gap-1.5 rounded-none px-2 py-1 text-[9px] opacity-80"
           style={{ color: "var(--accent)" }}
         >
           <span>↗</span>
@@ -420,7 +411,7 @@ function ThinkingDots() {
         {[0, 1, 2].map((i) => (
           <span
             key={i}
-            className="block h-2 w-2 rounded-full animate-bounce"
+            className="block h-2 w-2 rounded-none animate-bounce"
             style={{
               background: "var(--accent)",
               animationDelay: `${i * 0.15}s`,
@@ -430,7 +421,10 @@ function ThinkingDots() {
         ))}
       </div>
       <div className="min-w-0">
-        <p className="text-[11px] font-semibold" style={{ color: "var(--text-primary)" }}>
+        <p
+          className="text-[11px] font-semibold"
+          style={{ color: "var(--text-primary)" }}
+        >
           AI is thinking
         </p>
         <p className="text-[10px]" style={{ color: "var(--text-secondary)" }}>
@@ -448,9 +442,10 @@ function EmptyState({ eyebrow, title, description, children }) {
       style={{ background: "var(--bg-tertiary)" }}
     >
       <div
-        className="flex h-10 w-10 items-center justify-center rounded-2xl"
+        className="flex h-10 w-10 items-center justify-center rounded-none"
         style={{
-          background: "color-mix(in srgb, var(--accent) 14%, var(--bg-secondary))",
+          background:
+            "color-mix(in srgb, var(--accent) 14%, var(--bg-secondary))",
           color: "var(--accent)",
         }}
       >
@@ -464,7 +459,10 @@ function EmptyState({ eyebrow, title, description, children }) {
           {eyebrow}
         </span>
       )}
-      <p className="text-[12px] font-semibold" style={{ color: "var(--text-primary)" }}>
+      <p
+        className="text-[12px] font-semibold"
+        style={{ color: "var(--text-primary)" }}
+      >
         {title}
       </p>
       <p
@@ -733,7 +731,7 @@ export default function Sidebar({ editorRef, activeFile, language, output }) {
             key={t.id}
             type="button"
             onClick={() => setTab(t.id)}
-            className="liquid-surface flex min-h-[2.9rem] flex-1 items-center justify-center rounded-2xl border px-2 py-3 text-[11px] font-semibold uppercase tracking-[0.16em] shadow-[0_12px_24px_rgba(0,0,0,0.14)] transition-all duration-150 hover:-translate-y-px hover:brightness-110 active:scale-[0.95] sm:min-h-[3rem] sm:text-xs"
+            className="liquid-surface flex min-h-[2.9rem] flex-1 items-center justify-center rounded-none border px-2 py-3 text-[11px] font-semibold uppercase tracking-[0.16em] shadow-[0_12px_24px_rgba(0,0,0,0.14)] transition-all duration-150 hover:-translate-y-px hover:brightness-110 active:scale-[0.95] sm:min-h-[3rem] sm:text-xs"
             style={{
               background: tab === t.id ? "var(--accent)" : "var(--bg-tertiary)",
               color:
@@ -762,7 +760,7 @@ export default function Sidebar({ editorRef, activeFile, language, output }) {
                 AI Assistant
               </span>
               <span
-                className="shrink-0 rounded-xl border px-2.5 py-1 font-mono text-[10px] shadow-[0_10px_18px_rgba(0,0,0,0.1)] sm:text-[11px]"
+                className="shrink-0 rounded-none border px-2.5 py-1 font-mono text-[10px] shadow-[0_10px_18px_rgba(0,0,0,0.1)] sm:text-[11px]"
                 style={{
                   background: "var(--bg-tertiary)",
                   borderColor: "var(--border)",
@@ -775,7 +773,7 @@ export default function Sidebar({ editorRef, activeFile, language, output }) {
             {messages.length > 0 && (
               <button
                 onClick={() => setMessages([])}
-                className="liquid-surface shrink-0 rounded-xl border px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide shadow-[0_10px_18px_rgba(0,0,0,0.1)] transition-all duration-150 hover:-translate-y-px hover:brightness-110 active:scale-[0.93] sm:text-[11px]"
+                className="liquid-surface shrink-0 rounded-none border px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide shadow-[0_10px_18px_rgba(0,0,0,0.1)] transition-all duration-150 hover:-translate-y-px hover:brightness-110 active:scale-[0.93] sm:text-[11px]"
                 style={{
                   background: "var(--bg-tertiary)",
                   color: "var(--text-secondary)",
@@ -809,7 +807,7 @@ export default function Sidebar({ editorRef, activeFile, language, output }) {
                         setPrompt(hint);
                         textareaRef.current?.focus();
                       }}
-                      className="liquid-surface w-full rounded-xl px-3 py-2.5 text-left text-[11px] font-medium shadow-[0_10px_18px_rgba(0,0,0,0.08)] transition-all duration-150 hover:-translate-y-px hover:brightness-110 active:scale-[0.98]"
+                      className="liquid-surface w-full rounded-none px-3 py-2.5 text-left text-[11px] font-medium shadow-[0_10px_18px_rgba(0,0,0,0.08)] transition-all duration-150 hover:-translate-y-px hover:brightness-110 active:scale-[0.98]"
                       style={{
                         background: "var(--bg-tertiary)",
                         color: "var(--text-secondary)",
@@ -837,7 +835,7 @@ export default function Sidebar({ editorRef, activeFile, language, output }) {
             style={{ borderColor: "var(--border)" }}
           >
             {/* Quick actions — deasupra textarea */}
-            <div className="grid grid-cols-3 gap-1.5">
+            <div className="grid grid-cols-4 gap-1.5">
               {QUICK_ACTIONS.map((a) => (
                 <button
                   key={a.key}
@@ -845,7 +843,7 @@ export default function Sidebar({ editorRef, activeFile, language, output }) {
                   onClick={() => handleQuick(a.key)}
                   disabled={loading}
                   title={a.title}
-                  className="liquid-surface flex min-h-[4.1rem] flex-col items-center justify-center gap-1.5 rounded-[1.15rem] px-2 py-3.5 text-[10px] font-semibold uppercase tracking-[0.14em] shadow-[0_10px_18px_rgba(0,0,0,0.08)] transition-all duration-150 hover:-translate-y-px hover:brightness-110 active:scale-[0.93] disabled:pointer-events-none disabled:opacity-45"
+                  className="liquid-surface flex min-h-[4.1rem] flex-col items-center justify-center gap-1.5 rounded-none px-2 py-3.5 text-[10px] font-semibold uppercase tracking-[0.14em] shadow-[0_10px_18px_rgba(0,0,0,0.08)] transition-all duration-150 hover:-translate-y-px hover:brightness-110 active:scale-[0.93] disabled:pointer-events-none disabled:opacity-45"
                   style={{
                     background: "var(--bg-tertiary)",
                     color: "var(--text-secondary)",
@@ -859,7 +857,7 @@ export default function Sidebar({ editorRef, activeFile, language, output }) {
             </div>
 
             <div
-              className="soft-card relative overflow-visible rounded-[1.25rem]"
+              className="soft-card relative overflow-visible rounded-none"
               style={{
                 background:
                   "linear-gradient(180deg, color-mix(in srgb, var(--bg-tertiary) 92%, white 8%) 0%, color-mix(in srgb, var(--bg-primary) 72%, var(--bg-tertiary)) 100%)",
@@ -882,9 +880,10 @@ export default function Sidebar({ editorRef, activeFile, language, output }) {
               />
               <div className="absolute bottom-3 left-3.5 flex items-center gap-2">
                 <span
-                  className="rounded-full px-2 py-1 text-[9px] uppercase tracking-[0.14em]"
+                  className="rounded-none px-2 py-1 text-[9px] uppercase tracking-[0.14em]"
                   style={{
-                    background: "color-mix(in srgb, var(--bg-primary) 72%, var(--border))",
+                    background:
+                      "color-mix(in srgb, var(--bg-primary) 72%, var(--border))",
                     color: "var(--text-secondary)",
                   }}
                 >
@@ -893,9 +892,10 @@ export default function Sidebar({ editorRef, activeFile, language, output }) {
               </div>
               <div className="absolute bottom-3 right-3 flex items-center gap-2.5">
                 <span
-                  className="rounded-full px-2 py-1 text-[9px] uppercase tracking-[0.14em]"
+                  className="rounded-none px-2 py-1 text-[9px] uppercase tracking-[0.14em]"
                   style={{
-                    background: "color-mix(in srgb, var(--bg-primary) 72%, var(--border))",
+                    background:
+                      "color-mix(in srgb, var(--bg-primary) 72%, var(--border))",
                     color: "var(--text-secondary)",
                   }}
                 >
@@ -905,7 +905,7 @@ export default function Sidebar({ editorRef, activeFile, language, output }) {
                   type="button"
                   onClick={handleAsk}
                   disabled={loading || !prompt.trim()}
-                  className="liquid-surface rounded-2xl border px-4 py-2.5 text-[10px] font-bold uppercase tracking-[0.16em] shadow-[0_12px_20px_rgba(0,0,0,0.12)] transition-all duration-150 hover:-translate-y-px hover:brightness-110 active:scale-[0.93] disabled:pointer-events-none disabled:opacity-45"
+                  className="liquid-surface rounded-none border px-4 py-2.5 text-[10px] font-bold uppercase tracking-[0.16em] shadow-[0_12px_20px_rgba(0,0,0,0.12)] transition-all duration-150 hover:-translate-y-px hover:brightness-110 active:scale-[0.93] disabled:pointer-events-none disabled:opacity-45"
                   style={{
                     background:
                       prompt.trim() && !loading
@@ -1031,7 +1031,7 @@ export default function Sidebar({ editorRef, activeFile, language, output }) {
               Who&apos;s Here
             </span>
             <span
-              className="shrink-0 rounded-xl border px-2.5 py-1 font-mono text-[10px] shadow-[0_10px_18px_rgba(0,0,0,0.1)] sm:text-[11px]"
+              className="shrink-0 rounded-none border px-2.5 py-1 font-mono text-[10px] shadow-[0_10px_18px_rgba(0,0,0,0.1)] sm:text-[11px]"
               style={{
                 background: "var(--bg-tertiary)",
                 borderColor: "var(--border)",
@@ -1053,14 +1053,15 @@ export default function Sidebar({ editorRef, activeFile, language, output }) {
               {users.map((u) => (
                 <div
                   key={u.clientId}
-                  className="soft-card flex items-center gap-2.5 rounded-2xl px-3 py-2.5"
+                  className="soft-card flex items-center gap-2.5 rounded-none px-3 py-2.5"
                   style={{
                     background: "var(--bg-tertiary)",
-                    borderColor: "color-mix(in srgb, var(--border) 92%, transparent)",
+                    borderColor:
+                      "color-mix(in srgb, var(--border) 92%, transparent)",
                   }}
                 >
                   <div
-                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold"
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-none text-xs font-bold"
                     style={{ background: u.color, color: "#050806" }}
                   >
                     {u.name?.[0]?.toUpperCase()}
@@ -1080,7 +1081,7 @@ export default function Sidebar({ editorRef, activeFile, language, output }) {
                     </p>
                   </div>
                   <div
-                    className="h-2.5 w-2.5 shrink-0 rounded-full shadow-[0_0_0_4px_rgba(143,247,167,0.12)]"
+                    className="h-2.5 w-2.5 shrink-0 rounded-none shadow-[0_0_0_4px_rgba(143,247,167,0.12)]"
                     style={{ background: "var(--green)" }}
                   />
                 </div>

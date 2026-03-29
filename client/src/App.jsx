@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import TopBar from "./components/TopBar";
 import FileTree from "./components/FileTree";
 import Editor from "./components/Editor";
@@ -7,12 +7,17 @@ import Sidebar from "./components/Sidebar";
 import OutputPanel from "./components/OutputPanel";
 import TimeTravel from "./components/TimeTravel";
 import ConnectionBanner from "./components/ConnectionBanner";
+import WorkspaceSearch from "./components/WorkspaceSearch";
+import ConfirmModal from "./components/ConfirmModal";
+import OnboardingTour, { hasCompletedOnboarding } from "./components/OnboardingTour";
 import {
   yFiles,
   getYText,
   roomId,
   idbPersistence,
   wsProvider,
+  ydoc,
+  yRoomMeta,
 } from "./lib/yjs";
 import { saveRoomNow } from "./lib/saveRoom";
 import { SERVER_URL } from "./lib/config";
@@ -21,20 +26,33 @@ import {
   mergeVitePreviewTemplate,
   VITE_PREVIEW_TEMPLATE_PATHS,
 } from "./lib/vitePreviewTemplate";
+import {
+  mergeFullstackPreviewTemplate,
+  FULLSTACK_TEMPLATE_PATHS,
+} from "./lib/fullstackViteTemplate";
+import { featureFlags } from "./lib/featureFlags";
+import {
+  validateWorkspaceSize,
+  MAX_RUN_SOURCE_BYTES,
+} from "./lib/workspaceLimits";
+import { loadLocalHistory, saveLocalHistory } from "./lib/localRoomHistory";
 
 // C2: Read-only mode — ?view=1 in URL
 const viewOnly = new URLSearchParams(window.location.search).has("view");
 
-// P4: Session history — track visited rooms in localStorage
+// P4: Session history — track visited rooms (păstrează star/label din localRoomHistory)
 function recordSession(id) {
   try {
-    const hist = JSON.parse(localStorage.getItem("itecify:history") || "[]");
+    const hist = loadLocalHistory();
+    const existing = hist.find((h) => h.id === id);
     const filtered = hist.filter((h) => h.id !== id);
-    filtered.unshift({ id, visitedAt: Date.now() });
-    localStorage.setItem(
-      "itecify:history",
-      JSON.stringify(filtered.slice(0, 20)),
-    );
+    filtered.unshift({
+      id,
+      visitedAt: Date.now(),
+      star: existing?.star,
+      label: existing?.label,
+    });
+    saveLocalHistory(filtered);
   } catch {
     // Ignore errors
   }
@@ -97,9 +115,92 @@ export default function App() {
   const [settings, setSettings] = useState(loadSettings);
   const [editorReady, setEditorReady] = useState(false);
   const [diffTargetFile, setDiffTargetFile] = useState(null);
+  const [workspaceSearchOpen, setWorkspaceSearchOpen] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(
+    () => !hasCompletedOnboarding(),
+  );
+  const [previewSyncInfo, setPreviewSyncInfo] = useState(null);
+  const [confirmDlg, setConfirmDlg] = useState(null);
+  const [roomNodeVersion, setRoomNodeVersion] = useState("20");
+  const [clockTick, setClockTick] = useState(0);
   const editorRef = useRef(null);
   /** După Vite demo, următorul Preview trebuie să oprească containerul vechi (ex. monorepo concurrently). */
   const previewForceAfterViteDemoRef = useRef(false);
+  const previewLastPkgRef = useRef(null);
+  const previewBusyRef = useRef(false);
+  const handlePreviewStartRef = useRef(async () => {});
+  const presenceCountRef = useRef(0);
+
+  const effectiveSettings = useMemo(() => {
+    if (!settings.themeAutoClock) return settings;
+    const h = new Date().getHours();
+    const night = h >= 22 || h < 7;
+    return {
+      ...settings,
+      theme: night ? "itecify-midnight-mint" : "vs",
+    };
+  }, [settings, clockTick]);
+
+  useEffect(() => {
+    if (!settings.themeAutoClock) return undefined;
+    const id = setInterval(() => setClockTick((n) => n + 1), 60_000);
+    return () => clearInterval(id);
+  }, [settings.themeAutoClock]);
+
+  useEffect(() => {
+    const sync = () =>
+      setRoomNodeVersion(String(yRoomMeta.get("nodeVersion") || "20"));
+    yRoomMeta.observe(sync);
+    sync();
+    return () => yRoomMeta.unobserve(sync);
+  }, []);
+
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.ctrlKey && e.shiftKey && e.key === "F") {
+        e.preventDefault();
+        setWorkspaceSearchOpen(true);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  useEffect(() => {
+    if (!settings.eventSounds) return undefined;
+    const playJoin = () => {
+      try {
+        const Ctx = window.AudioContext || window.webkitAudioContext;
+        if (!Ctx) return;
+        const ctx = new Ctx();
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.type = "sine";
+        o.frequency.value = 920;
+        g.gain.value = 0.04;
+        o.connect(g);
+        g.connect(ctx.destination);
+        o.start();
+        setTimeout(() => {
+          o.stop();
+          ctx.close();
+        }, 70);
+      } catch {
+        /* ignore */
+      }
+    };
+    const onAware = () => {
+      const states = [...wsProvider.awareness.getStates().values()];
+      const n = states.filter((s) => s.user?.name).length;
+      if (n > presenceCountRef.current && presenceCountRef.current > 0) {
+        playJoin();
+      }
+      presenceCountRef.current = n;
+    };
+    wsProvider.awareness.on("change", onAware);
+    onAware();
+    return () => wsProvider.awareness.off("change", onAware);
+  }, [settings.eventSounds]);
 
   const revealEditorLocation = useCallback((line, column = 1) => {
     requestAnimationFrame(() => {
@@ -278,23 +379,40 @@ export default function App() {
     return files;
   }, []);
 
+  useEffect(() => {
+    previewBusyRef.current = previewBusy;
+  }, [previewBusy]);
+
   const handlePreviewStart = useCallback(
     async (opts = {}) => {
       setPreviewError(null);
       setPreviewNotice(null);
       setPreviewBusy(true);
+      const t0 = performance.now();
       try {
         const files = collectWorkspaceFiles();
+        const sizeCheck = validateWorkspaceSize(files);
+        if (!sizeCheck.ok) {
+          throw new Error(sizeCheck.error);
+        }
         const forceAfterDemo = previewForceAfterViteDemoRef.current;
         const force = !!opts.force || forceAfterDemo;
+        const nodeVersion = String(yRoomMeta.get("nodeVersion") || "20");
         const res = await fetch("/api/preview/start", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ roomId, files, force }),
+          body: JSON.stringify({ roomId, files, force, nodeVersion }),
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || "Preview failed");
         if (forceAfterDemo) previewForceAfterViteDemoRef.current = false;
+        previewLastPkgRef.current = files["package.json"] ?? null;
+        const roundTripMs = Math.round(performance.now() - t0);
+        setPreviewSyncInfo({
+          at: Date.now(),
+          ms: roundTripMs,
+          mode: data.mode || "cold",
+        });
         // IMPORTANT: nu folosi /api/preview/proxy ca src al iframe-ului. HTML-ul Vite are <script src="/src/main.jsx">;
         // pe același origin cu editorul (localhost:5173) acel URL încarcă main.jsx-ul iTECify (LandingPage), nu Docker.
         // Iframe pe host:port Docker (același hostname ca pagina) — Vite rezolvă căile absolute pe dev serverul din container.
@@ -308,29 +426,85 @@ export default function App() {
         } else {
           throw new Error("Preview: răspuns invalid de la server");
         }
-        if (forceAfterDemo) {
-          setPreviewNotice(
-            "Preview repornit complet după Vite demo — container Docker nou, doar proiectul minimal (pagina „iTECify live preview”).",
-          );
-        } else if (data.mode === "sync") {
-          setPreviewNotice(
-            "Sincronizat în container — Vite/HMR reîncarcă de obicei automat. Ține Shift+Preview pentru repornire completă (ex. după schimbări în dependencies).",
-          );
-        } else if (opts.force) {
-          setPreviewNotice(
-            "Preview repornit de la zero (npm install + dev server).",
-          );
+        if (!opts.silent) {
+          if (forceAfterDemo) {
+            setPreviewNotice(
+              "Preview repornit complet după Vite demo — container Docker nou, doar proiectul minimal (pagina „iTECify live preview”).",
+            );
+          } else if (data.mode === "sync") {
+            setPreviewNotice(
+              "Sincronizat în container — Vite/HMR reîncarcă de obicei automat. Ține Shift+Preview pentru repornire completă (ex. după schimbări în dependencies).",
+            );
+          } else if (opts.force) {
+            setPreviewNotice(
+              "Preview repornit de la zero (npm install + dev server).",
+            );
+          }
+          setPreviewFocus((n) => n + 1);
         }
-        setPreviewFocus((n) => n + 1);
       } catch (e) {
+        setPreviewSyncInfo(null);
         setPreviewError(e.message || String(e));
-        setPreviewFocus((n) => n + 1);
+        if (!opts.silent) setPreviewFocus((n) => n + 1);
       } finally {
         setPreviewBusy(false);
       }
     },
     [collectWorkspaceFiles, roomId],
   );
+
+  useEffect(() => {
+    handlePreviewStartRef.current = handlePreviewStart;
+  }, [handlePreviewStart]);
+
+  useEffect(() => {
+    if (!featureFlags.livePreviewSync || viewOnly || !previewIframeSrc) {
+      return undefined;
+    }
+    let timer;
+    const schedule = () => {
+      if (previewBusyRef.current) return;
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        if (previewBusyRef.current) return;
+        const files = collectWorkspaceFiles();
+        const wv = validateWorkspaceSize(files);
+        if (!wv.ok) return;
+        const pkg = files["package.json"];
+        const force =
+          previewLastPkgRef.current != null &&
+          previewLastPkgRef.current !== pkg;
+        void handlePreviewStartRef.current({ force: !!force, silent: true });
+      }, 720);
+    };
+    ydoc.on("afterTransaction", schedule);
+    return () => {
+      ydoc.off("afterTransaction", schedule);
+      clearTimeout(timer);
+    };
+  }, [previewIframeSrc, collectWorkspaceFiles, viewOnly]);
+
+  useEffect(() => {
+    const key = `itecify:stdin:${roomId}:${activeFile}`;
+    try {
+      const v = localStorage.getItem(key);
+      if (v != null) setStdin(v);
+    } catch {
+      /* ignore */
+    }
+  }, [activeFile, roomId]);
+
+  useEffect(() => {
+    const key = `itecify:stdin:${roomId}:${activeFile}`;
+    const t = setTimeout(() => {
+      try {
+        localStorage.setItem(key, stdin);
+      } catch {
+        /* ignore */
+      }
+    }, 400);
+    return () => clearTimeout(t);
+  }, [stdin, activeFile, roomId]);
 
   const handlePreviewStop = useCallback(async () => {
     try {
@@ -345,25 +519,53 @@ export default function App() {
     setPreviewIframeSrc(null);
     setPreviewError(null);
     setPreviewNotice(null);
+    setPreviewSyncInfo(null);
+    previewLastPkgRef.current = null;
   }, [roomId]);
+
+  const applyViteDemo = useCallback(() => {
+    mergeVitePreviewTemplate(yFiles, getYText);
+    previewForceAfterViteDemoRef.current = true;
+    setActiveFile("src/App.jsx");
+    setLanguage("react-jsx");
+  }, []);
 
   const handleViteDemo = useCallback(() => {
     const keys = [...yFiles.keys()];
     const hasOther = keys.some((k) => !VITE_PREVIEW_TEMPLATE_PATHS.has(k));
-    if (
-      hasOther &&
-      !window.confirm(
-        "Înlocuiești tot conținutul camerei cu exemplul Vite minimal (pagina „iTECify live preview”)?\n\n" +
-          "Fișierele actuale (inclusiv monorepo client/server) dispar din această cameră pentru colaboratori.",
-      )
-    ) {
+    if (hasOther) {
+      setConfirmDlg({
+        title: "Vite demo",
+        body: "Se va inlocui tot continutul camerei cu exemplul Vite minimal.\nFisierele actuale dispar pentru toti colaboratorii.",
+        danger: true,
+        onOk: applyViteDemo,
+      });
       return;
     }
-    mergeVitePreviewTemplate(yFiles, getYText);
+    applyViteDemo();
+  }, [applyViteDemo]);
+
+  const applyFullstackDemo = useCallback(() => {
+    mergeFullstackPreviewTemplate(yFiles, getYText);
     previewForceAfterViteDemoRef.current = true;
     setActiveFile("src/App.jsx");
-    setLanguage("javascript");
+    setLanguage("react-jsx");
   }, []);
+
+  const handleFullstackDemo = useCallback(() => {
+    const keys = [...yFiles.keys()];
+    const hasOther = keys.some((k) => !FULLSTACK_TEMPLATE_PATHS.has(k));
+    if (hasOther) {
+      setConfirmDlg({
+        title: "API demo",
+        body: "Se va inlocui continutul camerei cu exemplul Vite + Express API.\nSe sterg fisierele existente pentru toti colaboratorii.",
+        danger: true,
+        onOk: applyFullstackDemo,
+      });
+      return;
+    }
+    applyFullstackDemo();
+  }, [applyFullstackDemo]);
 
   const diffLanguage =
     yFiles.get(diffTargetFile)?.language ||
@@ -373,6 +575,16 @@ export default function App() {
   const handleRun = useCallback(async () => {
     const code = getYText(activeFile).toString();
     if (!code.trim()) return;
+
+    if (new TextEncoder().encode(code).length > MAX_RUN_SOURCE_BYTES) {
+      setOutput([
+        {
+          type: "stderr",
+          text: "Fișierul activ depășește limita pentru Run. Folosește Preview sau împarte codul.",
+        },
+      ]);
+      return;
+    }
 
     if (!SANDBOX_RUN_LANGUAGES.has(language)) {
       setOutput([
@@ -386,7 +598,13 @@ export default function App() {
     }
 
     setRunning(true);
-    setOutput([{ type: "info", text: `▶ Running ${activeFile}...` }]);
+    setOutput([
+      { type: "info", text: `▶ Running ${activeFile}…` },
+      {
+        type: "info",
+        text: "Sandbox Docker: ~128 MB RAM, timeout 30s (direct: 10s).",
+      },
+    ]);
 
     try {
       const res = await fetch(`${SERVER_URL}/api/run`, {
@@ -469,7 +687,7 @@ export default function App() {
   if (passwordRequired && !passwordUnlocked) {
     return (
       <div className="app-shell flex h-full w-full items-center justify-center px-4">
-        <div className="soft-card w-full max-w-sm rounded-[1.4rem] p-8">
+        <div className="soft-card w-full max-w-sm rounded-none p-8">
           <p
             className="mb-1 text-lg font-black uppercase tracking-[0.12em]"
             style={{ color: "var(--accent)" }}
@@ -506,7 +724,7 @@ export default function App() {
           <button
             type="button"
             onClick={handleUnlock}
-            className="liquid-surface w-full rounded-2xl border px-3 py-2.5 text-sm font-semibold uppercase tracking-[0.12em]"
+            className="liquid-surface w-full rounded-none border px-3 py-2.5 text-sm font-semibold uppercase tracking-[0.12em]"
             style={{
               background: "var(--accent)",
               color: "var(--bg-primary)",
@@ -523,6 +741,27 @@ export default function App() {
   return (
     <div className="app-shell flex h-full w-full flex-col">
       <ConnectionBanner />
+      {showOnboarding && (
+        <OnboardingTour onDismiss={() => setShowOnboarding(false)} />
+      )}
+      <ConfirmModal
+        open={!!confirmDlg}
+        title={confirmDlg?.title || ""}
+        body={confirmDlg?.body || ""}
+        danger={confirmDlg?.danger}
+        onConfirm={() => {
+          confirmDlg?.onOk?.();
+          setConfirmDlg(null);
+        }}
+        onCancel={() => setConfirmDlg(null)}
+      />
+      <WorkspaceSearch
+        open={workspaceSearchOpen}
+        onClose={() => setWorkspaceSearchOpen(false)}
+        onOpenResult={(fname, lang, location) => {
+          handleFileSelect(fname, lang, location);
+        }}
+      />
       <TopBar
         filename={activeFile}
         language={language}
@@ -532,6 +771,12 @@ export default function App() {
         onPreview={viewOnly ? null : handlePreviewStart}
         previewBusy={previewBusy}
         onViteDemo={viewOnly ? null : handleViteDemo}
+        onFullstackDemo={viewOnly ? null : handleFullstackDemo}
+        onOpenWorkspaceSearch={
+          viewOnly ? undefined : () => setWorkspaceSearchOpen(true)
+        }
+        roomNodeVersion={roomNodeVersion}
+        onRoomNodeVersionChange={(v) => yRoomMeta.set("nodeVersion", v)}
         settings={settings}
         onSettingsChange={handleSettingsChange}
         onFollowUser={handleFollowUser}
@@ -562,15 +807,15 @@ export default function App() {
                   ref={editorRef}
                   language={language}
                   activeFile={activeFile}
-                  settings={settings}
+                  settings={effectiveSettings}
                   readOnly={viewOnly}
                 />
               )
             ) : (
               <div className="editor-loading">
-                <div className="soft-card flex items-center gap-3 rounded-2xl px-4 py-3">
+                <div className="soft-card flex items-center gap-3 rounded-none px-4 py-3">
                   <div
-                    className="h-2.5 w-2.5 animate-bounce rounded-full"
+                    className="h-2.5 w-2.5 animate-bounce rounded-none"
                     style={{ background: "var(--accent)" }}
                   />
                   <span
@@ -594,6 +839,8 @@ export default function App() {
             previewIframeSrc={previewIframeSrc}
             previewError={previewError}
             previewNotice={previewNotice}
+            previewSyncInfo={previewSyncInfo}
+            previewBusy={previewBusy}
             focusPreviewSignal={previewFocus}
             onPreviewStop={viewOnly ? undefined : handlePreviewStop}
             previewDisabled={viewOnly}

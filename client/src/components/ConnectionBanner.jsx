@@ -31,7 +31,7 @@ export default function ConnectionBanner() {
         }}
       >
         <span
-          className="h-2 w-2 shrink-0 rounded-full"
+          className="h-2 w-2 shrink-0 rounded-none"
           style={{
             background: 'var(--bg-primary)',
             animation: 'pulse 1.2s ease-in-out infinite',

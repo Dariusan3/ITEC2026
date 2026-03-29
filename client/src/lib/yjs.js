@@ -52,16 +52,22 @@ wsProvider.awareness.setLocalStateField('user', { name, color })
 // yFiles: Map of filename -> { language }
 export const yFiles = ydoc.getMap('files')
 export const yAiBlocks = ydoc.getMap('aiBlocks')
+/** Metadate cameră (ex. nodeVersion pentru preview Docker) — sincron Yjs */
+export const yRoomMeta = ydoc.getMap('roomMeta')
 
 // Get or create a Yjs text for a given filename
 export function getYText(filename) {
   return ydoc.getText(`file:${filename}`)
 }
 
-// Seed default file only after IDB has loaded (so we don't overwrite persisted state)
-idbPersistence.whenSynced.then(() => {
+// Seed default workspace only after IDB has loaded (so we don't overwrite persisted state)
+idbPersistence.whenSynced.then(async () => {
   if (yFiles.size === 0) {
-    yFiles.set('main.js', { language: 'javascript' })
+    const { applyDefaultRoomSeed } = await import('./seedRoom')
+    await applyDefaultRoomSeed(yFiles, getYText)
+  }
+  if (yRoomMeta.get('nodeVersion') == null) {
+    yRoomMeta.set('nodeVersion', '20')
   }
 })
 
