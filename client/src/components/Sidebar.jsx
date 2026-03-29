@@ -474,6 +474,8 @@ export default function Sidebar({
   teacherLocked = false,
   onTeacherLockedChange,
   classState,
+  pendingExplain = null,
+  onPendingExplainConsumed,
 }) {
   const [tab, setTab] = useState("ai");
   const [prompt, setPrompt] = useState("");
@@ -482,6 +484,7 @@ export default function Sidebar({
   const [users, setUsers] = useState([]);
   const scrollRef = useRef(null);
   const textareaRef = useRef(null);
+  const handleQuickRef = useRef(null);
 
   // ── Teacher controls (props-driven, wired to App.jsx awareness) ─────────
   const handleBroadcast = (msg) => {
@@ -522,6 +525,19 @@ export default function Sidebar({
 
   const deleteMsg = (index) =>
     setMessages((prev) => prev.filter((_, i) => i !== index));
+
+  // ── Trigger explain from external selection (Monaco context menu) ────────
+  useEffect(() => {
+    if (!pendingExplain) return;
+    setTab("ai");
+    // Small delay so tab switch renders before the async fetch starts
+    const t = setTimeout(() => {
+      handleQuickRef.current?.({ type: "explain", snippet: pendingExplain });
+      onPendingExplainConsumed?.();
+    }, 80);
+    return () => clearTimeout(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingExplain]);
 
   // ── Ask AI (suggest + code block) ─────────────────────────────────────────
   const handleAsk = useCallback(async () => {
@@ -576,14 +592,16 @@ export default function Sidebar({
   }, [prompt, loading, activeFile, language, editorRef]);
 
   // ── Quick actions ──────────────────────────────────────────────────────────
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const handleQuick = useCallback(
     async (action) => {
       if (loading) return;
       setLoading(true);
       try {
-        if (action === "explain") {
+        if (action === "explain" || (action && typeof action === "object" && action.type === "explain")) {
+          const snippet = typeof action === "object" ? action.snippet : null;
           const editor = editorRef?.current?.getEditor?.();
-          const selection = editor
+          const selection = snippet || editor
             ?.getModel()
             ?.getValueInRange(editor.getSelection());
           if (!selection?.trim()) throw new Error("Select some code first.");
@@ -771,6 +789,10 @@ export default function Sidebar({
       onOpenWorkspaceFile,
     ],
   );
+
+  useEffect(() => {
+    handleQuickRef.current = handleQuick;
+  }, [handleQuick]);
 
   const TABS = [
     { id: "ai", label: "AI" },

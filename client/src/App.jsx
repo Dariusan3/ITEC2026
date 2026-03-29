@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
+import confetti from "canvas-confetti";
 import TopBar from "./components/TopBar";
 import FileTree from "./components/FileTree";
 import Editor from "./components/Editor";
@@ -133,6 +134,7 @@ export default function App() {
   const [showOnboarding, setShowOnboarding] = useState(
     () => !hasCompletedOnboarding(),
   );
+  const [pendingExplain, setPendingExplain] = useState(null);
   const editorRef = useRef(null);
   /** After Vite demo, the next Preview must stop the old container (e.g. monorepo concurrently). */
   const previewForceAfterViteDemoRef = useRef(false);
@@ -807,6 +809,13 @@ export default function App() {
                   return [...prev, { type: "info", text: "(no output)" }];
                 return prev;
               });
+              setOutput((prev) => {
+                const hasError = prev.some((l) => l.type === "stderr");
+                if (!hasError) {
+                  confetti({ particleCount: 80, spread: 60, origin: { y: 0.6 }, zIndex: 9999 });
+                }
+                return prev;
+              });
             } else {
               const lines = text.split("\n").filter((t) => t !== "");
               if (lines.length === 0) return;
@@ -995,6 +1004,7 @@ export default function App() {
                   activeFile={activeFile}
                   settings={settings}
                   readOnly={viewOnly || effectiveClassLock}
+                  onExplainSelection={setPendingExplain}
                 />
               )
             ) : (
@@ -1047,6 +1057,8 @@ export default function App() {
           teacherLocked={teacherLocked}
           onTeacherLockedChange={setTeacherLocked}
           classState={classState}
+          pendingExplain={pendingExplain}
+          onPendingExplainConsumed={() => setPendingExplain(null)}
         />
       </div>
     </div>

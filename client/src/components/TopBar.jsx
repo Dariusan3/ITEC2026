@@ -276,11 +276,12 @@ function OnlineUsers({ wsProvider }) {
       const localId = wsProvider.awareness.clientID;
       const states = [];
       wsProvider.awareness.getStates().forEach((state, id) => {
-        if (id !== localId && state.user?.name) {
+        if (state.user?.name) {
           states.push({
             id,
             name: state.user.name,
             color: state.user.color || "#cba6f7",
+            isLocal: id === localId,
           });
         }
       });
@@ -291,18 +292,38 @@ function OnlineUsers({ wsProvider }) {
     return () => wsProvider.awareness.off("change", update);
   }, [wsProvider]);
 
-  if (users.length === 0) return null;
+  const total = users.length;
+  const others = users.filter((u) => !u.isLocal);
 
   return (
     <div
-      className="flex items-center gap-1"
-      title={`${users.length} other${users.length > 1 ? "s" : ""} online`}
+      className="flex items-center gap-1.5"
+      title={`${total} user${total !== 1 ? "s" : ""} online`}
     >
-      {users.slice(0, 5).map((u) => (
+      {/* Pulsing green dot */}
+      <span className="relative flex h-2 w-2 shrink-0">
+        <span
+          className="absolute inline-flex h-full w-full animate-ping rounded-full opacity-75"
+          style={{ background: "var(--green)" }}
+        />
+        <span
+          className="relative inline-flex h-2 w-2 rounded-full"
+          style={{ background: "var(--green)" }}
+        />
+      </span>
+      {/* Count badge */}
+      <span
+        className="text-[11px] font-semibold tabular-nums"
+        style={{ color: "var(--green)" }}
+      >
+        {total}
+      </span>
+      {/* Avatars (others only, max 4) */}
+      {others.slice(0, 4).map((u) => (
         <div
           key={u.id}
           title={u.name}
-          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-none text-[9px] font-bold"
+          className="flex h-5 w-5 shrink-0 items-center justify-center rounded-none text-[8px] font-bold"
           style={{
             background: u.color,
             color: "#1e1e2e",
@@ -312,9 +333,9 @@ function OnlineUsers({ wsProvider }) {
           {u.name.slice(0, 2).toUpperCase()}
         </div>
       ))}
-      {users.length > 5 && (
+      {others.length > 4 && (
         <span className="text-[9px]" style={{ color: "var(--text-secondary)" }}>
-          +{users.length - 5}
+          +{others.length - 4}
         </span>
       )}
     </div>
@@ -967,6 +988,7 @@ export default function TopBar({
     >
       <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
         <BrandMark />
+        <OnlineUsers wsProvider={wsProvider} />
       </div>
 
       <div className="flex w-full min-w-0 flex-wrap items-center gap-2 border-t pt-2 sm:gap-2.5">

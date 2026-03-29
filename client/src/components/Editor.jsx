@@ -143,11 +143,13 @@ function normalizeAiSuggestion(raw) {
 }
 
 const Editor = forwardRef(function Editor(
-  { language, activeFile, settings = {}, readOnly = false },
+  { language, activeFile, settings = {}, readOnly = false, onExplainSelection },
   ref,
 ) {
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
+  const onExplainSelectionRef = useRef(onExplainSelection);
+  onExplainSelectionRef.current = onExplainSelection;
   const keymap = settings.keymap || "default";
   const containerRef = useRef(null);
   const editorRef = useRef(null);
@@ -452,6 +454,22 @@ const Editor = forwardRef(function Editor(
         } catch {
           /* silently ignore formatting errors */
         }
+      },
+    });
+
+    // "Explain with AI" right-click context menu action
+    editor.addAction({
+      id: "ai-explain-selection",
+      label: "✦ Explain with AI",
+      contextMenuGroupId: "navigation",
+      contextMenuOrder: 1,
+      run: (ed) => {
+        const selection = ed.getSelection();
+        const model = ed.getModel();
+        if (!model || !selection) return;
+        const selected = model.getValueInRange(selection).trim();
+        if (!selected) return;
+        onExplainSelectionRef.current?.(selected);
       },
     });
 
