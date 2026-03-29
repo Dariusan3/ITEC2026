@@ -107,6 +107,100 @@ function loadSettings() {
   }
 }
 
+function parsePackageJsonSafe(text) {
+  try {
+    return JSON.parse(String(text || ""));
+  } catch {
+    return null;
+  }
+}
+
+function detectWorkspaceProject(files) {
+  const paths = Object.keys(files || {}).sort((a, b) => a.localeCompare(b));
+  const packagePaths = paths.filter((p) => /(^|\/)package\.json$/.test(p));
+  const preferredLeafDirs = new Set(["client", "app", "frontend", "web", "site"]);
+
+  packagePaths.sort((a, b) => {
+    const aDir = a.includes("/") ? a.slice(0, a.lastIndexOf("/")) : "";
+    const bDir = b.includes("/") ? b.slice(0, b.lastIndexOf("/")) : "";
+    const aMeta = parsePackageJsonSafe(files[a]);
+    const bMeta = parsePackageJsonSafe(files[b]);
+    const aHasDev = !!(aMeta?.scripts?.dev || aMeta?.scripts?.["dev:vite"]);
+    const bHasDev = !!(bMeta?.scripts?.dev || bMeta?.scripts?.["dev:vite"]);
+    if (aHasDev !== bHasDev) return aHasDev ? -1 : 1;
+    const aPreferred = preferredLeafDirs.has(aDir.split("/").pop() || "");
+    const bPreferred = preferredLeafDirs.has(bDir.split("/").pop() || "");
+    if (aPreferred !== bPreferred) return aPreferred ? -1 : 1;
+    const aDepth = aDir ? aDir.split("/").length : 0;
+    const bDepth = bDir ? bDir.split("/").length : 0;
+    if (aDepth !== bDepth) return aDepth - bDepth;
+    return a.localeCompare(b);
+  });
+
+  const packageJsonPath = packagePaths[0] || "";
+  const projectRoot = packageJsonPath.includes("/")
+    ? packageJsonPath.slice(0, packageJsonPath.lastIndexOf("/"))
+    : "";
+  const prefix = projectRoot ? `${projectRoot}/` : "";
+  const withinRoot = paths
+    .filter((p) => !prefix || p.startsWith(prefix))
+    .map((p) => (prefix ? p.slice(prefix.length) : p));
+  const entryCandidates = [
+    "index.html",
+    "src/main.tsx",
+    "src/main.jsx",
+    "src/main.ts",
+    "src/main.js",
+    "src/App.tsx",
+    "src/App.jsx",
+    "src/App.ts",
+    "src/App.js",
+    "app/page.tsx",
+    "app/page.jsx",
+    "README.md",
+    "package.json",
+  ];
+  const entryRelative =
+    entryCandidates.find((candidate) => withinRoot.includes(candidate)) ||
+    withinRoot[0] ||
+    "";
+  const entryFile = entryRelative ? `${prefix}${entryRelative}` : "";
+  const pkg = packageJsonPath ? parsePackageJsonSafe(files[packageJsonPath]) : null;
+  const deps = new Set([
+    ...Object.keys(pkg?.dependencies || {}),
+    ...Object.keys(pkg?.devDependencies || {}),
+  ]);
+
+  let framework = "Workspace files";
+  if (deps.has("next")) framework = "Next.js";
+  else if (deps.has("vite") && deps.has("react")) framework = "Vite + React";
+  else if (deps.has("vite")) framework = "Vite app";
+  else if (deps.has("react")) framework = "React app";
+  else if (deps.has("express")) framework = "Express API";
+  else if (packageJsonPath) framework = "Node app";
+  else if (paths.includes("index.html")) framework = "Static site";
+
+  return {
+    hasPackageJson: !!packageJsonPath,
+    packageJsonPath,
+    projectRoot,
+    entryFile,
+    framework,
+  };
+}
+
+function formatLockTime(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleString([], {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 export default function App() {
   const [activeFile, setActiveFile] = useState("main.js");
   const [language, setLanguage] = useState("javascript");
@@ -123,10 +217,12 @@ export default function App() {
   const [roomRole, setRoomRole] = useState("member");
   const [teacherBroadcast, setTeacherBroadcast] = useState("");
   const [teacherLocked, setTeacherLocked] = useState(false);
+  const [teacherLockedAt, setTeacherLockedAt] = useState(null);
   const [classState, setClassState] = useState({
     locked: false,
     broadcast: "",
     teacherName: "",
+    lockedAt: null,
   });
   const [roomNodeVersion, setRoomNodeVersion] = useState("20");
   const [workspaceSearchOpen, setWorkspaceSearchOpen] = useState(false);
@@ -167,6 +263,12 @@ export default function App() {
     yRoomMeta.observe(sync);
     sync();
     return () => yRoomMeta.unobserve(sync);
+  }, []);
+
+  useEffect(() => {
+    const bump = () => setWorkspaceVersion((n) => n + 1);
+    ydoc.on("afterTransaction", bump);
+    return () => ydoc.off("afterTransaction", bump);
   }, []);
 
   useEffect(() => {
@@ -241,6 +343,7 @@ export default function App() {
   const [previewError, setPreviewError] = useState(null);
   const [previewNotice, setPreviewNotice] = useState(null);
   const [previewSyncInfo, setPreviewSyncInfo] = useState(null);
+  const [workspaceVersion, setWorkspaceVersion] = useState(0);
   const [previewFocus, setPreviewFocus] = useState(0);
 
   // Mount editor only after BOTH IDB and WS initial sync complete.
@@ -312,22 +415,42 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (roomRole !== "teacher") {
+      setTeacherLockedAt(null);
+      return;
+    }
+    if (teacherLocked) {
+      setTeacherLockedAt((prev) => prev || new Date().toISOString());
+    } else {
+      setTeacherLockedAt(null);
+    }
+  }, [roomRole, teacherLocked]);
+
+  useEffect(() => {
     wsProvider.awareness.setLocalStateField("org", {
       role: roomRole,
       locked: roomRole === "teacher" ? teacherLocked : false,
       broadcast: roomRole === "teacher" ? teacherBroadcast : "",
+      lockedAt:
+        roomRole === "teacher" && teacherLocked ? teacherLockedAt : null,
     });
-  }, [roomRole, teacherBroadcast, teacherLocked]);
+  }, [roomRole, teacherBroadcast, teacherLocked, teacherLockedAt]);
 
   useEffect(() => {
     const update = () => {
-      let next = { locked: false, broadcast: "", teacherName: "" };
+      let next = {
+        locked: false,
+        broadcast: "",
+        teacherName: "",
+        lockedAt: null,
+      };
       wsProvider.awareness.getStates().forEach((state) => {
         if (state.org?.role === "teacher") {
           next = {
             locked: !!state.org.locked,
             broadcast: state.org.broadcast || "",
             teacherName: state.user?.name || state.user?.login || "Teacher",
+            lockedAt: state.org.lockedAt || null,
           };
         }
       });
@@ -510,6 +633,11 @@ export default function App() {
     });
     return files;
   }, []);
+
+  const previewProjectInfo = useMemo(
+    () => detectWorkspaceProject(collectWorkspaceFiles()),
+    [collectWorkspaceFiles, workspaceVersion],
+  );
 
   useEffect(() => {
     previewBusyRef.current = previewBusy;
@@ -929,6 +1057,7 @@ export default function App() {
         onViteDemo={(viewOnly || effectiveClassLock) ? null : handleViteDemo}
         onFullstackDemo={(viewOnly || effectiveClassLock) ? null : handleFullstackDemo}
         onOpenWorkspaceSearch={() => setWorkspaceSearchOpen(true)}
+        onOpenWorkspaceFile={(path, lang) => handleFileSelect(path, lang || "javascript")}
         roomNodeVersion={roomNodeVersion}
         onRoomNodeVersionChange={(e) => setRoomNodeVersion(e.target.value)}
         roomRole={roomRole}
@@ -937,6 +1066,7 @@ export default function App() {
         onTeacherBroadcastChange={setTeacherBroadcast}
         teacherLocked={teacherLocked}
         onTeacherLockedChange={setTeacherLocked}
+        classState={classState}
         settings={settings}
         onSettingsChange={handleSettingsChange}
         onFollowUser={handleFollowUser}
@@ -968,7 +1098,9 @@ export default function App() {
               )}
               {effectiveClassLock && (
                 <span className={classState.broadcast ? "ml-3" : ""} style={{ color: "var(--accent)" }}>
-                  Room locked by teacher
+                  Room locked
+                  {classState.teacherName ? ` by ${classState.teacherName}` : ""}
+                  {classState.lockedAt ? ` · ${formatLockTime(classState.lockedAt)}` : ""}
                 </span>
               )}
             </div>
@@ -1039,6 +1171,8 @@ export default function App() {
             previewBusy={previewBusy}
             focusPreviewSignal={previewFocus}
             onPreviewStop={viewOnly ? undefined : handlePreviewStop}
+            onPreviewRestart={viewOnly ? undefined : () => handlePreviewStart({ force: true })}
+            previewProjectInfo={previewProjectInfo}
             previewDisabled={viewOnly}
           />
         </div>

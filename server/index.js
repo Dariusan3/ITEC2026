@@ -984,7 +984,7 @@ app.get("/auth/github", (req, res) => {
     return res.status(503).send("GitHub OAuth not configured");
   const params = new URLSearchParams({
     client_id: GITHUB_CLIENT_ID,
-    scope: "read:user",
+    scope: "read:user repo",
     redirect_uri: `${CLIENT_ORIGIN}/auth/github/callback`,
     state: req.query.room || "",
   });
@@ -1051,6 +1051,157 @@ app.get("/auth/me", (req, res) => {
   if (!req.session.user) return res.json({ user: null });
   const { id, name, login, avatar } = req.session.user;
   res.json({ user: { id, name, login, avatar } });
+});
+
+const GITHUB_IMPORT_LIMIT = 80;
+const GITHUB_IMPORT_MAX_BYTES = 200_000;
+const GITHUB_ALLOWED_EXTS = new Set([
+  "js", "jsx", "ts", "tsx", "py", "rs", "go", "java", "c", "h", "cpp",
+  "css", "scss", "html", "json", "md", "yaml", "yml", "toml", "sh",
+]);
+const GITHUB_SPECIAL_FILES = new Set([
+  "package.json",
+  "package-lock.json",
+  "pnpm-lock.yaml",
+  "yarn.lock",
+  "vite.config.js",
+  "vite.config.ts",
+  "vite.config.mjs",
+  "vite.config.cjs",
+  "tsconfig.json",
+  "tsconfig.app.json",
+  "index.html",
+]);
+
+function parseGitHubRepoUrl(raw) {
+  const match = String(raw || "").trim().match(
+    /github\.com\/([^/]+)\/([^/\s]+?)(?:\.git)?(?:\/tree\/([^/\s]+))?(?:[/?#].*)?$/,
+  );
+  if (!match) return null;
+  return {
+    owner: match[1],
+    repo: match[2],
+    branch: match[3] || "main",
+  };
+}
+
+function githubBlobPriority(relPath) {
+  const norm = String(relPath || "").replace(/\\/g, "/");
+  const base = norm.split("/").pop()?.toLowerCase() || "";
+  const depth = norm.split("/").length - 1;
+  if (norm === "package.json") return 0;
+  if (base === "package.json") return 1 + depth;
+  if (base === "index.html") return 10 + depth;
+  if (base.startsWith("vite.config.")) return 12 + depth;
+  if (base.startsWith("tsconfig")) return 14 + depth;
+  if (/\/src\/main\./i.test(`/${norm}`)) return 16 + depth;
+  if (/\/src\/app\./i.test(`/${norm}`)) return 18 + depth;
+  if (GITHUB_SPECIAL_FILES.has(base)) return 20 + depth;
+  return 100 + depth;
+}
+
+async function githubApiJson(url, token) {
+  const response = await fetch(url, {
+    headers: {
+      Accept: "application/vnd.github+json",
+      "User-Agent": "iTECify",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+  });
+  const data = await response.json().catch(() => ({}));
+  return { response, data };
+}
+
+app.post("/api/github/import", async (req, res) => {
+  const parsed = parseGitHubRepoUrl(req.body?.url);
+  if (!parsed) {
+    return res
+      .status(400)
+      .json({ error: "Invalid GitHub URL. Use https://github.com/owner/repo" });
+  }
+
+  const token = req.session?.user?.token || process.env.GITHUB_TOKEN || "";
+  const { owner, repo } = parsed;
+  let branch = parsed.branch;
+
+  try {
+    let tree = await githubApiJson(
+      `https://api.github.com/repos/${owner}/${repo}/git/trees/${branch}?recursive=1`,
+      token,
+    );
+
+    if (!tree.response.ok && (branch === "main" || branch === "master")) {
+      const alt = branch === "main" ? "master" : "main";
+      const fallback = await githubApiJson(
+        `https://api.github.com/repos/${owner}/${repo}/git/trees/${alt}?recursive=1`,
+        token,
+      );
+      if (fallback.response.ok) {
+        branch = alt;
+        tree = fallback;
+      }
+    }
+
+    if (!tree.response.ok) {
+      const error =
+        tree.response.status === 403
+          ? "GitHub denied access. Log in again with GitHub to refresh repo permissions, or check API rate limits."
+          : tree.response.status === 404
+            ? `Repo not found or private (${owner}/${repo})`
+            : tree.data.message || "GitHub API error";
+      return res.status(tree.response.status).json({ error });
+    }
+
+    const blobs = (tree.data.tree || [])
+      .filter((node) => {
+        if (node.type !== "blob") return false;
+        if ((node.size || 0) > GITHUB_IMPORT_MAX_BYTES) return false;
+        const relPath = String(node.path || "").replace(/\\/g, "/");
+        const ext = relPath.split(".").pop()?.toLowerCase() || "";
+        const base = relPath.split("/").pop()?.toLowerCase() || "";
+        return GITHUB_ALLOWED_EXTS.has(ext) || GITHUB_SPECIAL_FILES.has(base);
+      })
+      .sort((a, b) => {
+        const prio = githubBlobPriority(a.path) - githubBlobPriority(b.path);
+        return prio !== 0 ? prio : a.path.localeCompare(b.path);
+      })
+      .slice(0, GITHUB_IMPORT_LIMIT);
+
+    if (blobs.length === 0) {
+      return res
+        .status(400)
+        .json({ error: "No supported source files found (max 80, <=200KB)" });
+    }
+
+    const files = {};
+    await Promise.all(
+      blobs.map(async (node) => {
+        const blob = await githubApiJson(
+          `https://api.github.com/repos/${owner}/${repo}/git/blobs/${node.sha}`,
+          token,
+        );
+        if (!blob.response.ok) {
+          throw new Error(blob.data.message || `Could not load ${node.path}`);
+        }
+        if (
+          blob.data.encoding !== "base64" ||
+          typeof blob.data.content !== "string"
+        ) {
+          throw new Error(`Unsupported GitHub blob payload for ${node.path}`);
+        }
+        files[node.path] = Buffer.from(
+          blob.data.content.replace(/\n/g, ""),
+          "base64",
+        ).toString("utf8");
+      }),
+    );
+
+    res.json({ owner, repo, branch, count: Object.keys(files).length, files });
+  } catch (err) {
+    res.status(500).json({
+      error: err.message || "Failed to import from GitHub",
+    });
+  }
 });
 
 // Return rooms the logged-in user has visited

@@ -2,6 +2,15 @@ import { useEffect, useState } from "react";
 import * as Y from "yjs";
 import { SERVER_URL } from "../lib/config";
 
+function formatDurationMs(ms) {
+  if (!Number.isFinite(ms) || ms <= 0) return "0m";
+  const totalMinutes = Math.round(ms / 60000);
+  if (totalMinutes < 60) return `${totalMinutes}m`;
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return minutes ? `${hours}h ${minutes}m` : `${hours}h`;
+}
+
 function decodeBase64Update(snapshot) {
   const binary = atob(snapshot);
   const bytes = new Uint8Array(binary.length);
@@ -121,6 +130,39 @@ export default function ReplayApp() {
         <div className="mt-1 text-lg font-semibold">
           {session?.title || "Interview session"}
         </div>
+        <div className="mt-3 flex flex-wrap gap-2 text-[10px]">
+          <span
+            className="rounded-full border px-2.5 py-1 uppercase tracking-[0.14em]"
+            style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}
+          >
+            {files.length} files
+          </span>
+          <span
+            className="rounded-full border px-2.5 py-1 uppercase tracking-[0.14em]"
+            style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}
+          >
+            {timeline.length} checkpoints
+          </span>
+          {session?.participants?.length > 0 && (
+            <span
+              className="rounded-full border px-2.5 py-1 uppercase tracking-[0.14em]"
+              style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}
+            >
+              {session.participants.length} participants
+            </span>
+          )}
+          {session?.started_at && session?.ended_at && (
+            <span
+              className="rounded-full border px-2.5 py-1 uppercase tracking-[0.14em]"
+              style={{ borderColor: "var(--border)", color: "var(--accent)" }}
+            >
+              {formatDurationMs(
+                new Date(session.ended_at).getTime() -
+                  new Date(session.started_at).getTime(),
+              )}
+            </span>
+          )}
+        </div>
         {session?.started_at && (
           <div
             className="mt-1 text-xs"
@@ -190,6 +232,11 @@ export default function ReplayApp() {
                 >
                   Timeline
                 </div>
+                {timeline.length > 0 && (
+                  <div className="mb-2 text-[10px]" style={{ color: "var(--text-secondary)" }}>
+                    Viewing checkpoint {Math.min(timelineIndex + 1, timeline.length)} of {timeline.length}
+                  </div>
+                )}
                 {timeline.length > 1 && (
                   <input
                     type="range"

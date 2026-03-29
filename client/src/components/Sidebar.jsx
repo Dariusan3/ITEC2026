@@ -193,10 +193,17 @@ function CheckIcon({ size = 11 }) {
   );
 }
 
+function extractExplanationText(content) {
+  return String(content || "")
+    .replace(/^Selection from[^\n]*:\n```[\s\S]*?```\n*/i, "")
+    .trim();
+}
+
 // ─── AiMessage ───────────────────────────────────────────────────────────────
 
 function AiMessage({ msg, onDelete }) {
   const [copied, setCopied] = useState(false);
+  const [explanationCopied, setExplanationCopied] = useState(false);
   const meta = ROLE_META[msg.role] || ROLE_META.ai;
   const segments = parseSegments(msg.content || "");
   const isUser = meta.bubble;
@@ -205,6 +212,12 @@ function AiMessage({ msg, onDelete }) {
     navigator.clipboard.writeText(msg.content || "");
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
+  };
+
+  const copyExplanation = () => {
+    navigator.clipboard.writeText(extractExplanationText(msg.content || ""));
+    setExplanationCopied(true);
+    setTimeout(() => setExplanationCopied(false), 1500);
   };
 
   const timeStr = msg.ts
@@ -293,6 +306,21 @@ function AiMessage({ msg, onDelete }) {
             {timeStr}
           </span>
         )}
+        {msg.role === "explain" && (
+          <button
+            type="button"
+            onClick={copyExplanation}
+            className="rounded-none border px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.14em] transition-all hover:brightness-110"
+            style={{
+              borderColor: "color-mix(in srgb, var(--accent) 30%, var(--border))",
+              background: "color-mix(in srgb, var(--accent) 12%, var(--bg-tertiary))",
+              color: "var(--accent)",
+            }}
+            title="Copy explanation only"
+          >
+            {explanationCopied ? "Explanation copied" : "Copy explanation"}
+          </button>
+        )}
         <div className="ml-auto flex items-center gap-1 opacity-0 transition-opacity group-hover/msg:opacity-100">
           <MsgActionBtn onClick={copy} title="Copy message">
             {copied ? <CheckIcon /> : <CopyIcon />}
@@ -366,7 +394,10 @@ function AiMessage({ msg, onDelete }) {
 
 // ─── Thinking dots ───────────────────────────────────────────────────────────
 
-function ThinkingDots() {
+function ThinkingDots({
+  title = "AI is thinking",
+  description = "Generating a response for your current file.",
+}) {
   return (
     <div
       className="soft-card mx-2.5 my-2 flex items-center gap-3 px-3 py-3"
@@ -390,10 +421,10 @@ function ThinkingDots() {
           className="text-[11px] font-semibold"
           style={{ color: "var(--text-primary)" }}
         >
-          AI is thinking
+          {title}
         </p>
         <p className="text-[10px]" style={{ color: "var(--text-secondary)" }}>
-          Generating a response for your current file.
+          {description}
         </p>
       </div>
     </div>
@@ -481,6 +512,8 @@ export default function Sidebar({
   const [prompt, setPrompt] = useState("");
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [loadingMeta, setLoadingMeta] = useState(null);
+  const [statusToast, setStatusToast] = useState(null);
   const [users, setUsers] = useState([]);
   const scrollRef = useRef(null);
   const textareaRef = useRef(null);
@@ -526,13 +559,27 @@ export default function Sidebar({
   const deleteMsg = (index) =>
     setMessages((prev) => prev.filter((_, i) => i !== index));
 
+  const showToast = useCallback((message, tone = "accent") => {
+    setStatusToast({ message, tone });
+  }, []);
+
+  useEffect(() => {
+    if (!statusToast) return undefined;
+    const timeout = setTimeout(() => setStatusToast(null), 2200);
+    return () => clearTimeout(timeout);
+  }, [statusToast]);
+
   // ── Trigger explain from external selection (Monaco context menu) ────────
   useEffect(() => {
     if (!pendingExplain) return;
     setTab("ai");
     // Small delay so tab switch renders before the async fetch starts
     const t = setTimeout(() => {
-      handleQuickRef.current?.({ type: "explain", snippet: pendingExplain });
+      handleQuickRef.current?.(
+        typeof pendingExplain === "string"
+          ? { type: "explain", snippet: pendingExplain }
+          : { type: "explain", ...pendingExplain },
+      );
       onPendingExplainConsumed?.();
     }, 80);
     return () => clearTimeout(t);
@@ -546,6 +593,12 @@ export default function Sidebar({
     addMsg({ role: "user", content: userMsg });
     setPrompt("");
     setLoading(true);
+    setLoadingMeta({
+      title: "Generating suggestion",
+      description: activeFile
+        ? `Working on ${activeFile}.`
+        : "Working on your current file.",
+    });
     try {
       const code = activeFile ? getYText(activeFile).toString() : "";
       const res = await fetch(`${SERVER_URL}/api/ai/suggest`, {
@@ -588,6 +641,7 @@ export default function Sidebar({
       addMsg({ role: "error", content: err.message });
     } finally {
       setLoading(false);
+      setLoadingMeta(null);
     }
   }, [prompt, loading, activeFile, language, editorRef]);
 
@@ -599,12 +653,20 @@ export default function Sidebar({
       setLoading(true);
       try {
         if (action === "explain" || (action && typeof action === "object" && action.type === "explain")) {
-          const snippet = typeof action === "object" ? action.snippet : null;
+          const explainPayload = typeof action === "object" ? action : null;
+          const snippet = explainPayload?.snippet || null;
           const editor = editorRef?.current?.getEditor?.();
           const selection = snippet || editor
             ?.getModel()
             ?.getValueInRange(editor.getSelection());
           if (!selection?.trim()) throw new Error("Select some code first.");
+          setLoadingMeta({
+            title: "Explaining selection",
+            description: `${activeFile || "Current file"} · ${
+              selection.split("\n").length
+            } line${selection.split("\n").length === 1 ? "" : "s"} selected.`,
+          });
+          showToast("Explain with AI started. Opening the AI panel.");
           const res = await fetch(`${SERVER_URL}/api/ai/explain`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -612,8 +674,28 @@ export default function Sidebar({
           });
           const data = await res.json();
           if (!res.ok) throw new Error(data.error);
-          addMsg({ role: "explain", content: data.explanation });
+          if (explainPayload?.range) {
+            editorRef?.current?.highlightExplainRange?.({
+              file: explainPayload.file || activeFile,
+              range: explainPayload.range,
+            });
+          }
+          addMsg({
+            role: "explain",
+            content:
+              `Selection from ${
+                explainPayload?.file || activeFile || "current file"
+              }:\n` +
+              `\`\`\`${explainPayload?.language || language || ""}\n${selection.trim()}\n\`\`\`\n\n` +
+              `${data.explanation}`,
+          });
         } else if (action === "fix") {
+          setLoadingMeta({
+            title: "Analyzing last error",
+            description: activeFile
+              ? `Using ${activeFile} and the latest run output.`
+              : "Using the latest run output.",
+          });
           const errorBlob = buildFixErrorContext(output);
           if (!errorBlob)
             throw new Error(
@@ -649,6 +731,12 @@ export default function Sidebar({
           }
           addMsg({ role: "fix", content: data.explanation });
         } else if (action === "tests") {
+          setLoadingMeta({
+            title: "Generating tests",
+            description: activeFile
+              ? `Creating a test file for ${activeFile}.`
+              : "Creating a test file.",
+          });
           if (!activeFile) throw new Error("No active file.");
           const code = getYText(activeFile).toString();
           const res = await fetch(`${SERVER_URL}/api/ai/tests`, {
@@ -670,6 +758,12 @@ export default function Sidebar({
             content: `Test file created: **${testFile}**`,
           });
         } else if (action === "review") {
+          setLoadingMeta({
+            title: "Reviewing file",
+            description: activeFile
+              ? `Scanning ${activeFile} for issues.`
+              : "Scanning the current file for issues.",
+          });
           if (!activeFile) throw new Error("No active file.");
           const code = getYText(activeFile).toString();
           if (!code.trim()) throw new Error("Current file is empty.");
@@ -726,6 +820,10 @@ export default function Sidebar({
 
           addMsg({ role: "review", content: summary });
         } else if (action === "scaffold") {
+          setLoadingMeta({
+            title: "Building workspace",
+            description: "Creating multiple files from your prompt.",
+          });
           const userMsg = prompt.trim();
           if (!userMsg) {
             throw new Error(
@@ -777,6 +875,7 @@ export default function Sidebar({
         addMsg({ role: "error", content: err.message });
       } finally {
         setLoading(false);
+        setLoadingMeta(null);
       }
     },
     [
@@ -787,6 +886,7 @@ export default function Sidebar({
       editorRef,
       prompt,
       onOpenWorkspaceFile,
+      showToast,
     ],
   );
 
@@ -873,6 +973,27 @@ export default function Sidebar({
 
           {/* Messages */}
           <div ref={scrollRef} className="flex-1 overflow-y-auto px-2.5 py-2">
+            {statusToast && (
+              <div
+                className="mb-3 rounded-none border px-3 py-2 text-[10px] font-medium shadow-[0_12px_24px_rgba(0,0,0,0.14)]"
+                style={{
+                  borderColor:
+                    statusToast.tone === "error"
+                      ? "color-mix(in srgb, var(--red) 28%, var(--border))"
+                      : "color-mix(in srgb, var(--accent) 24%, var(--border))",
+                  background:
+                    statusToast.tone === "error"
+                      ? "color-mix(in srgb, var(--red) 10%, var(--bg-tertiary))"
+                      : "color-mix(in srgb, var(--accent) 10%, var(--bg-tertiary))",
+                  color:
+                    statusToast.tone === "error"
+                      ? "var(--red)"
+                      : "var(--accent)",
+                }}
+              >
+                {statusToast.message}
+              </div>
+            )}
             {messages.length === 0 && !loading && (
               <EmptyState
                 eyebrow="AI Workspace"
@@ -911,7 +1032,12 @@ export default function Sidebar({
               ))}
             </div>
 
-            {loading && <ThinkingDots />}
+            {loading && (
+              <ThinkingDots
+                title={loadingMeta?.title}
+                description={loadingMeta?.description}
+              />
+            )}
           </div>
 
           {/* Input area */}

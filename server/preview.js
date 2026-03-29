@@ -12,9 +12,17 @@ const PREVIEW_READY_MS = Math.max(
   parseInt(process.env.PREVIEW_READY_TIMEOUT_MS || "540000", 10) || 540000,
 );
 
-/** Faster npm, less noise — include=dev avoids omitting devDependencies in unusual environments */
-const NPM_INSTALL =
+/** Faster npm, less noise — include=dev avoids omitting devDependencies in unusual environments.
+ * Retry once with legacy peer deps because many imported hackathon repos have stale peer ranges.
+ */
+const NPM_INSTALL_STRICT =
   "npm install --include=dev --no-audit --no-fund --loglevel warn";
+const NPM_INSTALL_FALLBACK =
+  "npm install --include=dev --no-audit --no-fund --loglevel warn --legacy-peer-deps";
+const NPM_INSTALL =
+  `${NPM_INSTALL_STRICT} || (` +
+  `echo '[Preview] npm install failed, retrying with --legacy-peer-deps' && ` +
+  `${NPM_INSTALL_FALLBACK})`;
 
 const PROTECTED_SEGMENTS = new Set([
   "node_modules",

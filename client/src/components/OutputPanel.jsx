@@ -48,6 +48,8 @@ export default function OutputPanel({
   previewBusy = false,
   focusPreviewSignal = 0,
   onPreviewStop,
+  onPreviewRestart,
+  previewProjectInfo = null,
   previewDisabled = false,
 }) {
   const [collapsed, setCollapsed] = useState(false);
@@ -206,6 +208,17 @@ export default function OutputPanel({
         </div>
 
         <div className="flex shrink-0 items-center gap-1.5">
+          {tab === "preview" && onPreviewRestart && (
+            <button
+              type="button"
+              onClick={onPreviewRestart}
+              disabled={previewBusy}
+              className="rounded-none px-2 py-1 text-[10px] font-semibold uppercase tracking-wide hover:opacity-80 disabled:opacity-50"
+              style={{ color: "var(--accent)", marginRight: "6px" }}
+            >
+              Restart preview
+            </button>
+          )}
           {tab === "preview" && previewIframeSrc && onPreviewStop && (
             <button
               type="button"
@@ -391,24 +404,68 @@ export default function OutputPanel({
               </p>
             )}
             {previewError && (
-              <p
-                className="shrink-0 px-2 py-1.5 text-[11px]"
-                style={{ color: "var(--red)", background: "var(--bg-tertiary)" }}
+              <div
+                className="shrink-0 border-b px-3 py-2.5 text-[11px]"
+                style={{
+                  color: "var(--red)",
+                  background: "color-mix(in srgb, var(--red) 8%, var(--bg-tertiary))",
+                  borderColor: "var(--border)",
+                }}
               >
-                {previewError}
-              </p>
+                <div className="font-semibold">Preview failed</div>
+                <div className="mt-1">{previewError}</div>
+                {onPreviewRestart && (
+                  <div className="mt-2">
+                    <button
+                      type="button"
+                      onClick={onPreviewRestart}
+                      className="rounded-none border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide"
+                      style={{
+                        borderColor: "var(--red)",
+                        color: "var(--red)",
+                        background: "var(--bg-secondary)",
+                      }}
+                    >
+                      Retry from scratch
+                    </button>
+                  </div>
+                )}
+              </div>
             )}
             {!previewIframeSrc ? (
-              <p
-                className="p-3 text-xs leading-relaxed"
-                style={{ color: "var(--text-secondary)" }}
-              >
-                Start <strong>Preview</strong> from the top bar (next to Run). Requires{" "}
-                <strong>Docker</strong> and a project with <code className="text-[10px]">package.json</code>{" "}
-                (e.g. Vite or Next). Use <strong>Vite demo</strong> to load a React example.
-                The preview opens on a local container port (not the same URL as the editor)
-                so Vite scripts don't accidentally load the iTECify app.
-              </p>
+              <div className="p-3">
+                <div
+                  className="soft-card rounded-none border px-4 py-4 text-xs leading-relaxed"
+                  style={{ background: "var(--bg-tertiary)", borderColor: "var(--border)" }}
+                >
+                  <div className="mb-2 text-[11px] font-semibold" style={{ color: "var(--text-primary)" }}>
+                    Preview workspace
+                  </div>
+                  {previewProjectInfo?.framework && (
+                    <div className="mb-2 text-[11px]" style={{ color: "var(--text-primary)" }}>
+                      Detected: {previewProjectInfo.framework}
+                    </div>
+                  )}
+                  {previewProjectInfo?.packageJsonPath ? (
+                    <div className="mb-2 space-y-1 text-[10px]" style={{ color: "var(--text-secondary)" }}>
+                      <div>App root: {previewProjectInfo.projectRoot || "room root"}</div>
+                      <div>package.json: {previewProjectInfo.packageJsonPath}</div>
+                      {previewProjectInfo.entryFile && (
+                        <div>Entry file: {previewProjectInfo.entryFile}</div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="mb-2 text-[10px]" style={{ color: "var(--text-secondary)" }}>
+                      No package.json detected yet. Preview works best with Vite/Next/Node app folders.
+                    </div>
+                  )}
+                  <div style={{ color: previewProjectInfo?.hasPackageJson ? "var(--green)" : "var(--yellow)" }}>
+                    {previewProjectInfo?.hasPackageJson
+                      ? "This room looks preview-ready."
+                      : "Import a project or use Vite demo to make Preview work immediately."}
+                  </div>
+                </div>
+              </div>
             ) : (
               <iframe
                 title="Live preview"

@@ -51,6 +51,8 @@ self.MonacoEnvironment = {
 };
 
 const AI_BLOCK_CLASS = "ai-block-decoration";
+const EXPLAIN_RANGE_CLASS = "itecify-explain-range";
+const EXPLAIN_RANGE_INLINE_CLASS = "itecify-explain-inline";
 const DEFAULT_EDITOR_THEME = "itecify-midnight-mint";
 
 let themesRegistered = false;
@@ -148,6 +150,10 @@ const Editor = forwardRef(function Editor(
 ) {
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
+  const activeFileRef = useRef(activeFile);
+  activeFileRef.current = activeFile;
+  const languageRef = useRef(language);
+  languageRef.current = language;
   const onExplainSelectionRef = useRef(onExplainSelection);
   onExplainSelectionRef.current = onExplainSelection;
   const keymap = settings.keymap || "default";
@@ -155,6 +161,7 @@ const Editor = forwardRef(function Editor(
   const editorRef = useRef(null);
   const bindingRef = useRef(null);
   const decorationsRef = useRef(new Map());
+  const explainDecorationRef = useRef(null);
   const widgetsRef = useRef(new Map());
   const keymapRef = useRef(null);
   /** Offset pixeli pentru tragerea widget-ului AI (persistă până la Accept/Reject). */
@@ -176,6 +183,55 @@ const Editor = forwardRef(function Editor(
     getPosition: () => editorRef.current?.getPosition(),
     getEditor: () => editorRef.current,
     getText: () => (activeFile ? getYText(activeFile).toString() : ""),
+    highlightExplainRange: (payload) => {
+      const editor = editorRef.current;
+      const model = editor?.getModel?.();
+      const range = payload?.range;
+      if (!editor || !model || !range) return;
+
+      const safeStartLine = Math.max(
+        1,
+        Math.min(range.startLineNumber || 1, model.getLineCount()),
+      );
+      const safeEndLine = Math.max(
+        safeStartLine,
+        Math.min(range.endLineNumber || safeStartLine, model.getLineCount()),
+      );
+      const safeStartColumn = Math.max(
+        1,
+        Math.min(range.startColumn || 1, model.getLineMaxColumn(safeStartLine)),
+      );
+      const safeEndColumn = Math.max(
+        1,
+        Math.min(range.endColumn || safeStartColumn, model.getLineMaxColumn(safeEndLine)),
+      );
+
+      const safeRange = new monaco.Range(
+        safeStartLine,
+        safeStartColumn,
+        safeEndLine,
+        safeEndColumn,
+      );
+
+      if (!explainDecorationRef.current) {
+        explainDecorationRef.current = editor.createDecorationsCollection([]);
+      }
+      explainDecorationRef.current.set([
+        {
+          range: safeRange,
+          options: {
+            className: EXPLAIN_RANGE_CLASS,
+            inlineClassName: EXPLAIN_RANGE_INLINE_CLASS,
+          },
+        },
+      ]);
+
+      editor.revealLineInCenter(safeStartLine);
+      editor.setSelection(safeRange);
+    },
+    clearExplainHighlight: () => {
+      explainDecorationRef.current?.clear();
+    },
   }));
 
   const acceptBlock = useCallback((blockId) => {
@@ -469,7 +525,21 @@ const Editor = forwardRef(function Editor(
         if (!model || !selection) return;
         const selected = model.getValueInRange(selection).trim();
         if (!selected) return;
-        onExplainSelectionRef.current?.(selected);
+        const file =
+          decodeURIComponent(model.uri.path.replace(/^\/+/, "")) ||
+          activeFileRef.current ||
+          "";
+        onExplainSelectionRef.current?.({
+          file,
+          language: languageRef.current,
+          snippet: selected,
+          range: {
+            startLineNumber: selection.startLineNumber,
+            startColumn: selection.startColumn,
+            endLineNumber: selection.endLineNumber,
+            endColumn: selection.endColumn,
+          },
+        });
       },
     });
 
@@ -529,6 +599,7 @@ const Editor = forwardRef(function Editor(
     publishCursor();
 
     return () => {
+      explainDecorationRef.current?.clear();
       binding.destroy();
       bindingRef.current = null;
     };
@@ -624,6 +695,29 @@ const Editor = forwardRef(function Editor(
     applyRemoteStyles();
     return () => {
       wsProvider.awareness.off("change", applyRemoteStyles);
+      document.getElementById(STYLE_ID)?.remove();
+    };
+  }, []);
+
+  useEffect(() => {
+    const STYLE_ID = "itecify-explain-highlight-styles";
+    let el = document.getElementById(STYLE_ID);
+    if (!el) {
+      el = document.createElement("style");
+      el.id = STYLE_ID;
+      document.head.appendChild(el);
+    }
+    el.textContent = `
+      .monaco-editor .${EXPLAIN_RANGE_CLASS} {
+        background: linear-gradient(180deg, rgba(143, 247, 167, 0.18) 0%, rgba(124, 240, 201, 0.12) 100%);
+        box-shadow: inset 0 0 0 1px rgba(143, 247, 167, 0.22);
+      }
+      .monaco-editor .${EXPLAIN_RANGE_INLINE_CLASS} {
+        background: rgba(143, 247, 167, 0.14);
+        border-bottom: 1px solid rgba(143, 247, 167, 0.45);
+      }
+    `;
+    return () => {
       document.getElementById(STYLE_ID)?.remove();
     };
   }, []);

@@ -59,6 +59,185 @@ const LANGUAGES = [
   { id: "swift",       label: "Swift",       abbr: "SW",  color: "#fab387" },
 ];
 
+const IMPORT_ENTRY_CANDIDATES = [
+  "index.html",
+  "src/main.tsx",
+  "src/main.jsx",
+  "src/main.ts",
+  "src/main.js",
+  "src/App.tsx",
+  "src/App.jsx",
+  "src/App.ts",
+  "src/App.js",
+  "main.tsx",
+  "main.jsx",
+  "main.ts",
+  "main.js",
+  "app/page.tsx",
+  "app/page.jsx",
+  "README.md",
+  "package.json",
+];
+
+function parsePackageJsonSafe(text) {
+  try {
+    return JSON.parse(String(text || ""));
+  } catch {
+    return null;
+  }
+}
+
+function guessImportLanguage(name) {
+  const ext = String(name || "").split(".").pop()?.toLowerCase() || "";
+  const map = {
+    js: "javascript",
+    jsx: "react-jsx",
+    ts: "typescript",
+    tsx: "typescript",
+    py: "python",
+    rs: "rust",
+    go: "go",
+    java: "java",
+    c: "c",
+    h: "c",
+    cpp: "cpp",
+    css: "css",
+    scss: "css",
+    html: "html",
+    json: "json",
+    md: "markdown",
+  };
+  return map[ext] || "javascript";
+}
+
+function detectImportedProjectSummary(filesRecord) {
+  const paths = Object.keys(filesRecord || {}).sort((a, b) => a.localeCompare(b));
+  const packagePaths = paths.filter((p) => /(^|\/)package\.json$/.test(p));
+  const preferredLeafDirs = new Set(["client", "app", "frontend", "web", "site"]);
+
+  packagePaths.sort((a, b) => {
+    const aDir = a.includes("/") ? a.slice(0, a.lastIndexOf("/")) : "";
+    const bDir = b.includes("/") ? b.slice(0, b.lastIndexOf("/")) : "";
+    const aMeta = parsePackageJsonSafe(filesRecord[a]);
+    const bMeta = parsePackageJsonSafe(filesRecord[b]);
+    const aHasDev = !!(aMeta?.scripts?.dev || aMeta?.scripts?.["dev:vite"]);
+    const bHasDev = !!(bMeta?.scripts?.dev || bMeta?.scripts?.["dev:vite"]);
+    if (aHasDev !== bHasDev) return aHasDev ? -1 : 1;
+    const aPreferred = preferredLeafDirs.has(aDir.split("/").pop() || "");
+    const bPreferred = preferredLeafDirs.has(bDir.split("/").pop() || "");
+    if (aPreferred !== bPreferred) return aPreferred ? -1 : 1;
+    const aDepth = aDir ? aDir.split("/").length : 0;
+    const bDepth = bDir ? bDir.split("/").length : 0;
+    if (aDepth !== bDepth) return aDepth - bDepth;
+    return a.localeCompare(b);
+  });
+
+  const packageJsonPath = packagePaths[0] || "";
+  const projectRoot = packageJsonPath.includes("/")
+    ? packageJsonPath.slice(0, packageJsonPath.lastIndexOf("/"))
+    : "";
+  const prefix = projectRoot ? `${projectRoot}/` : "";
+  const withinRoot = paths
+    .filter((p) => !prefix || p.startsWith(prefix))
+    .map((p) => (prefix ? p.slice(prefix.length) : p));
+  const entryRelative =
+    IMPORT_ENTRY_CANDIDATES.find((candidate) => withinRoot.includes(candidate)) ||
+    withinRoot[0] ||
+    "";
+  const entryFile = entryRelative ? `${prefix}${entryRelative}` : "";
+  const pkg = packageJsonPath ? parsePackageJsonSafe(filesRecord[packageJsonPath]) : null;
+  const depNames = new Set([
+    ...Object.keys(pkg?.dependencies || {}),
+    ...Object.keys(pkg?.devDependencies || {}),
+  ]);
+  let framework = "Source files";
+  if (depNames.has("next")) framework = "Next.js";
+  else if (depNames.has("vite") && depNames.has("react")) framework = "Vite + React";
+  else if (depNames.has("vite")) framework = "Vite app";
+  else if (depNames.has("react")) framework = "React app";
+  else if (depNames.has("express")) framework = "Express app";
+  else if (packageJsonPath) framework = "Node app";
+  else if (paths.includes("index.html")) framework = "Static site";
+
+  return {
+    framework,
+    packageJsonPath,
+    projectRoot,
+    entryFile,
+    hasPackageJson: !!packageJsonPath,
+    fileCount: paths.length,
+  };
+}
+
+function formatShortTimestamp(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleString([], {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function formatSessionDuration(start, end) {
+  if (!start || !end) return "";
+  const started = new Date(start).getTime();
+  const ended = new Date(end).getTime();
+  if (!Number.isFinite(started) || !Number.isFinite(ended) || ended <= started) {
+    return "";
+  }
+  const totalMinutes = Math.max(1, Math.round((ended - started) / 60000));
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
+}
+
+function Badge({ children, tone = "neutral" }) {
+  const tones = {
+    neutral: {
+      borderColor: "var(--border)",
+      color: "var(--text-secondary)",
+      background: "var(--bg-secondary)",
+    },
+    accent: {
+      borderColor: "color-mix(in srgb, var(--accent) 32%, var(--border))",
+      color: "var(--accent)",
+      background: "color-mix(in srgb, var(--accent) 12%, var(--bg-secondary))",
+    },
+    blue: {
+      borderColor: "color-mix(in srgb, var(--blue) 28%, var(--border))",
+      color: "var(--blue)",
+      background: "color-mix(in srgb, var(--blue) 12%, var(--bg-secondary))",
+    },
+    red: {
+      borderColor: "color-mix(in srgb, var(--red) 28%, var(--border))",
+      color: "var(--red)",
+      background: "color-mix(in srgb, var(--red) 12%, var(--bg-secondary))",
+    },
+    green: {
+      borderColor: "color-mix(in srgb, var(--green) 28%, var(--border))",
+      color: "var(--green)",
+      background: "color-mix(in srgb, var(--green) 12%, var(--bg-secondary))",
+    },
+    yellow: {
+      borderColor: "color-mix(in srgb, var(--yellow) 30%, var(--border))",
+      color: "var(--yellow)",
+      background: "color-mix(in srgb, var(--yellow) 12%, var(--bg-secondary))",
+    },
+  };
+  const colors = tones[tone] || tones.neutral;
+  return (
+    <span
+      className="rounded-full border px-2 py-1 text-[9px] uppercase tracking-[0.16em]"
+      style={colors}
+    >
+      {children}
+    </span>
+  );
+}
+
 /* ── shared button styles ─────────────────────────────────────── */
 
 function Divider() {
@@ -359,6 +538,7 @@ export default function TopBar({
   onViteDemo,
   onFullstackDemo,
   onOpenWorkspaceSearch,
+  onOpenWorkspaceFile,
   roomNodeVersion = "20",
   onRoomNodeVersionChange,
   roomRole = "member",
@@ -367,6 +547,7 @@ export default function TopBar({
   onTeacherBroadcastChange,
   teacherLocked = false,
   onTeacherLockedChange,
+  classState = null,
   viewOnly = false,
 }) {
   const [users, setUsers] = useState([]);
@@ -533,10 +714,7 @@ export default function TopBar({
   const [githubUrl, setGithubUrl] = useState("");
   const [githubState, setGithubState] = useState("idle"); // idle | loading | done | error
   const [githubMsg, setGithubMsg] = useState("");
-
-  const ALLOWED_EXTS = new Set([
-    "js","jsx","ts","tsx","py","rs","go","java","c","h","cpp","css","scss","html","json","md","yaml","yml","toml","sh","env.example",
-  ]);
+  const [githubSummary, setGithubSummary] = useState(null);
 
   const handleGithubImport = async () => {
     const raw = githubUrl.trim();
@@ -544,65 +722,64 @@ export default function TopBar({
     // Parse: https://github.com/owner/repo[.git][/tree/branch[/path]]
     const match = raw.match(/github\.com\/([^/]+)\/([^/\s]+?)(?:\.git)?(?:\/tree\/([^/\s]+))?(?:[/?#].*)?$/);
     if (!match) { setGithubMsg("Invalid GitHub URL. Use https://github.com/owner/repo"); return; }
-    const [, owner, repo, branch = "main"] = match;
     setGithubState("loading");
     setGithubMsg("");
+    setGithubSummary(null);
     try {
-      const treeRes = await fetch(
-        `https://api.github.com/repos/${owner}/${repo}/git/trees/${branch}?recursive=1`,
-      );
-      if (!treeRes.ok) {
-        const alt = branch === "main" ? "master" : "main";
-        const altRes = await fetch(
-          `https://api.github.com/repos/${owner}/${repo}/git/trees/${alt}?recursive=1`,
-        );
-        if (!altRes.ok) throw new Error(`Repo not found or private (${owner}/${repo})`);
-        const altData = await altRes.json();
-        return loadTree(altData, owner, repo);
+      const res = await fetch(`${SERVER_URL}/api/github/import`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ url: raw }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to import from GitHub");
       }
-      const treeData = await treeRes.json();
-      await loadTree(treeData, owner, repo);
+      await loadImportedFiles(data.files || {});
+      const summary = detectImportedProjectSummary(data.files || {});
+      setGithubSummary(summary);
+      const parts = [`Loaded ${data.count || Object.keys(data.files || {}).length} files from ${data.owner}/${data.repo}.`];
+      if (summary.projectRoot) parts.push(`Detected app root: ${summary.projectRoot}/`);
+      if (summary.hasPackageJson) parts.push("Ready for Preview.");
+      setGithubState("done");
+      setGithubMsg(parts.join(" "));
+      setTimeout(() => {
+        setShowGithub(false);
+        setGithubState("idle");
+        setGithubUrl("");
+      }, 2200);
     } catch (e) {
       setGithubState("error");
-      setGithubMsg(e.message || "Failed to import");
+      const msg = e.message || "Failed to import";
+      setGithubMsg(
+        /GitHub denied access/i.test(msg)
+          ? `${msg} Sign out and log in with GitHub again if this repo is private.`
+          : msg,
+      );
     }
   };
 
-  const loadTree = async (treeData, owner, repo) => {
-    const blobs = (treeData.tree || []).filter((node) => {
-      if (node.type !== "blob") return false;
-      if (node.size > 200_000) return false;
-      const ext = node.path.split(".").pop().toLowerCase();
-      return ALLOWED_EXTS.has(ext);
-    }).slice(0, 30);
-
-    if (blobs.length === 0) throw new Error("No supported source files found (max 30, ≤200KB)");
-
-    const guessLang = (name) => {
-      const ext = name.split(".").pop().toLowerCase();
-      const map = { js:"javascript",jsx:"javascript",ts:"typescript",tsx:"typescript",py:"python",rs:"rust",go:"go",java:"java",c:"c",h:"c",cpp:"c",css:"css",scss:"css",html:"html",json:"json" };
-      return map[ext] || "javascript";
-    };
-
+  const loadImportedFiles = async (filesRecord) => {
+    const entries = Object.entries(filesRecord || {});
+    if (entries.length === 0) {
+      throw new Error("No supported source files found (max 80, <=200KB)");
+    }
     // Clear existing files
     [...yFiles.keys()].forEach((k) => yFiles.delete(k));
 
     await Promise.all(
-      blobs.map(async (node) => {
-        const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${node.path}`);
-        const data = await res.json();
-        const content = atob(data.content.replace(/\n/g, ""));
-        const lang = guessLang(node.path);
-        yFiles.set(node.path, { language: lang });
-        const yText = getYText(node.path);
+      entries.map(async ([path, content]) => {
+        yFiles.set(path, { language: guessImportLanguage(path) });
+        const yText = getYText(path);
         if (yText.length > 0) yText.delete(0, yText.length);
         yText.insert(0, content);
       }),
     );
-
-    setGithubState("done");
-    setGithubMsg(`Loaded ${blobs.length} files from ${owner}/${repo}`);
-    setTimeout(() => { setShowGithub(false); setGithubState("idle"); setGithubUrl(""); setGithubMsg(""); }, 2000);
+    const summary = detectImportedProjectSummary(filesRecord);
+    if (summary.entryFile && onOpenWorkspaceFile) {
+      onOpenWorkspaceFile(summary.entryFile, guessImportLanguage(summary.entryFile));
+    }
   };
 
   const handleSetPassword = async () => {
@@ -1297,6 +1474,17 @@ export default function TopBar({
                 <p className="mb-2 text-[11px] font-semibold" style={{ color: "var(--text-primary)" }}>
                   Interview mode
                 </p>
+                <div
+                  className="mb-2 rounded-xl border px-3 py-2 text-[10px]"
+                  style={{ borderColor: "var(--border)", background: "color-mix(in srgb, var(--bg-secondary) 74%, transparent)" }}
+                >
+                  <div style={{ color: interviewSession ? "var(--red)" : "var(--text-primary)" }}>
+                    {interviewSession ? "Recording is live in this room." : "No active recording."}
+                  </div>
+                  <div style={{ color: "var(--text-secondary)" }}>
+                    Sessions become replay links you can share after stopping.
+                  </div>
+                </div>
                 <input
                   value={interviewTitle}
                   onChange={(e) => setInterviewTitle(e.target.value)}
@@ -1348,17 +1536,44 @@ export default function TopBar({
                     Previous sessions
                   </p>
                   <div className="max-h-40 overflow-auto space-y-1">
+                    {interviewSessions.length === 0 && (
+                      <div
+                        className="rounded-xl border px-3 py-2 text-[10px]"
+                        style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}
+                      >
+                        No saved interview sessions yet.
+                      </div>
+                    )}
                     {interviewSessions.map((session) => (
                       <a
                         key={session.id}
                         href={`${window.location.pathname}?replay=${session.id}`}
-                        className="block rounded-xl border px-3 py-2 text-[10px]"
+                        className="block rounded-xl border px-3 py-2 text-[10px] transition-all hover:brightness-110"
                         style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
                       >
-                        <div>{session.title || "Untitled session"}</div>
-                        <div style={{ color: "var(--text-secondary)" }}>
-                          {new Date(session.started_at).toLocaleString()}
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-semibold">{session.title || "Untitled session"}</span>
+                          <div className="flex items-center gap-1">
+                            {session.id === interviewSession?.id && <Badge tone="red">live</Badge>}
+                            {session.ended_at && <Badge tone="green">saved</Badge>}
+                          </div>
                         </div>
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          <Badge tone="neutral">{formatShortTimestamp(session.started_at)}</Badge>
+                          {session.participants?.length ? (
+                            <Badge tone="blue">{session.participants.length} people</Badge>
+                          ) : null}
+                          {session.ended_at ? (
+                            <Badge tone="yellow">
+                              {formatSessionDuration(session.started_at, session.ended_at) || "session"}
+                            </Badge>
+                          ) : null}
+                        </div>
+                        {session.notes && (
+                          <div className="mt-2 line-clamp-2" style={{ color: "var(--text-secondary)" }}>
+                            {session.notes}
+                          </div>
+                        )}
                       </a>
                     ))}
                   </div>
@@ -1383,6 +1598,52 @@ export default function TopBar({
                 <p className="mb-2 text-[11px] font-semibold" style={{ color: "var(--text-primary)" }}>
                   Classroom mode
                 </p>
+                <div
+                  className="mb-3 rounded-xl border px-3 py-2 text-[10px]"
+                  style={{ borderColor: "var(--border)", background: "color-mix(in srgb, var(--bg-secondary) 74%, transparent)" }}
+                >
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span style={{ color: "var(--text-primary)" }}>Current role</span>
+                    <Badge
+                      tone={
+                        roomRole === "teacher"
+                          ? "accent"
+                          : roomRole === "student"
+                            ? "blue"
+                            : "neutral"
+                      }
+                    >
+                      {roomRole}
+                    </Badge>
+                    {adminState.isOwner && <Badge tone="accent">owner</Badge>}
+                    {!adminState.isOwner && adminState.isAdmin && <Badge tone="blue">admin</Badge>}
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    <Badge tone={classState?.locked ? "red" : "green"}>
+                      {classState?.locked ? "editing locked" : "editing open"}
+                    </Badge>
+                    {classState?.teacherName && (
+                      <Badge tone="neutral">{classState.teacherName}</Badge>
+                    )}
+                    {classState?.lockedAt && (
+                      <Badge tone="yellow">{formatShortTimestamp(classState.lockedAt)}</Badge>
+                    )}
+                  </div>
+                  {classState?.locked && (
+                    <div className="mt-2" style={{ color: "var(--text-secondary)" }}>
+                      Locked
+                      {classState.teacherName ? ` by ${classState.teacherName}` : ""}
+                      {classState.lockedAt
+                        ? ` at ${formatShortTimestamp(classState.lockedAt)}`
+                        : ""}
+                    </div>
+                  )}
+                  {(classState?.broadcast || teacherBroadcast) && (
+                    <div className="mt-1" style={{ color: "var(--text-secondary)" }}>
+                      Broadcast: {classState?.broadcast || teacherBroadcast}
+                    </div>
+                  )}
+                </div>
                 {(adminState.isOwner || adminState.isAdmin) && (
                   <p className="mb-2 text-[10px]" style={{ color: "var(--text-secondary)" }}>
                     {adminState.isOwner ? "You own this room." : "You are a room admin."}
@@ -1439,21 +1700,22 @@ export default function TopBar({
                                   {online ? " · online" : ""}
                                 </div>
                               </div>
-                              <span className="rounded-full border px-2 py-1 text-[9px] uppercase tracking-[0.16em]" style={{ borderColor: "var(--border)", color: member.role === "teacher" ? "var(--accent)" : "var(--text-secondary)" }}>
+                              <Badge
+                                tone={
+                                  member.role === "teacher"
+                                    ? "accent"
+                                    : member.role === "student"
+                                      ? "blue"
+                                      : "neutral"
+                                }
+                              >
                                 {member.role}
-                              </span>
+                              </Badge>
                             </div>
                             <div className="mt-1 flex flex-wrap gap-1">
-                              {member.is_owner && (
-                                <span className="rounded-full border px-2 py-1 text-[9px] uppercase tracking-[0.16em]" style={{ borderColor: "var(--accent)", color: "var(--accent)" }}>
-                                  owner
-                                </span>
-                              )}
-                              {member.is_admin && !member.is_owner && (
-                                <span className="rounded-full border px-2 py-1 text-[9px] uppercase tracking-[0.16em]" style={{ borderColor: "var(--blue)", color: "var(--blue)" }}>
-                                  admin
-                                </span>
-                              )}
+                              {member.is_owner && <Badge tone="accent">owner</Badge>}
+                              {member.is_admin && !member.is_owner && <Badge tone="blue">admin</Badge>}
+                              {online && <Badge tone="green">online</Badge>}
                             </div>
                             {roomRole === "teacher" && String(member.user_id) !== String(user?.id || "") && (
                               <div className="mt-2 flex gap-1">
@@ -1721,14 +1983,39 @@ export default function TopBar({
             {showGithub && (
               <div
                 className="floating-panel absolute right-0 top-[calc(100%+10px)] z-50 p-3"
-                style={{ width: 300 }}
+                style={{ width: 320 }}
               >
                 <p className="mb-2 text-[11px] font-semibold" style={{ color: "var(--text-primary)" }}>
                   Import from GitHub
                 </p>
                 <p className="mb-2.5 text-[10px] leading-relaxed" style={{ color: "var(--text-secondary)" }}>
-                  Paste a public repo URL. Up to 30 source files will be loaded into this room.
+                  Paste a repo URL. The importer detects the app root, loads project files into this room, then opens the best entry file automatically.
                 </p>
+                <div
+                  className="mb-2 rounded-xl border px-3 py-2 text-[10px]"
+                  style={{ borderColor: "var(--border)", background: "color-mix(in srgb, var(--bg-secondary) 78%, transparent)" }}
+                >
+                  <div style={{ color: "var(--text-primary)" }}>
+                    Private repos: log in with GitHub first.
+                  </div>
+                  <div style={{ color: "var(--text-secondary)" }}>
+                    {user ? `Signed in as @${user.login}` : "No GitHub session detected yet."}
+                  </div>
+                </div>
+                {!user && (
+                  <button
+                    type="button"
+                    onClick={loginGitHub}
+                    className="mb-2 w-full rounded-xl border px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.16em]"
+                    style={{
+                      borderColor: "var(--border)",
+                      background: "var(--bg-tertiary)",
+                      color: "var(--text-primary)",
+                    }}
+                  >
+                    Login with GitHub
+                  </button>
+                )}
                 <input
                   autoFocus
                   value={githubUrl}
@@ -1742,6 +2029,32 @@ export default function TopBar({
                     color: "var(--text-primary)",
                   }}
                 />
+                {githubSummary && (
+                  <div
+                    className="mb-2 rounded-xl border px-3 py-2 text-[10px]"
+                    style={{ borderColor: "var(--border)", background: "color-mix(in srgb, var(--accent) 8%, var(--bg-tertiary))" }}
+                  >
+                    <div className="font-semibold" style={{ color: "var(--text-primary)" }}>
+                      {githubSummary.framework}
+                    </div>
+                    <div style={{ color: "var(--text-secondary)" }}>
+                      Root: {githubSummary.projectRoot || "room root"}
+                    </div>
+                    {githubSummary.packageJsonPath && (
+                      <div style={{ color: "var(--text-secondary)" }}>
+                        package.json: {githubSummary.packageJsonPath}
+                      </div>
+                    )}
+                    {githubSummary.entryFile && (
+                      <div style={{ color: "var(--text-secondary)" }}>
+                        Opened: {githubSummary.entryFile}
+                      </div>
+                    )}
+                    <div style={{ color: githubSummary.hasPackageJson ? "var(--green)" : "var(--yellow)" }}>
+                      {githubSummary.hasPackageJson ? "Ready for Preview" : "Imported source files only"}
+                    </div>
+                  </div>
+                )}
                 {githubMsg && (
                   <p
                     className="mb-2 text-[10px]"
@@ -1766,7 +2079,13 @@ export default function TopBar({
                   </button>
                   <button
                     type="button"
-                    onClick={() => { setShowGithub(false); setGithubUrl(""); setGithubMsg(""); setGithubState("idle"); }}
+                    onClick={() => {
+                      setShowGithub(false);
+                      setGithubUrl("");
+                      setGithubMsg("");
+                      setGithubState("idle");
+                      setGithubSummary(null);
+                    }}
                     className="liquid-surface rounded-xl border px-3 py-2 text-[11px] font-semibold uppercase tracking-wide transition-all"
                     style={{ background: "var(--bg-tertiary)", borderColor: "var(--border)", color: "var(--text-secondary)" }}
                   >
