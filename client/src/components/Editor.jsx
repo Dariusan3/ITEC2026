@@ -155,6 +155,8 @@ const Editor = forwardRef(function Editor(
   const decorationsRef = useRef(new Map());
   const widgetsRef = useRef(new Map());
   const keymapRef = useRef(null);
+  /** Offset pixeli pentru tragerea widget-ului AI (persistă până la Accept/Reject). */
+  const aiWidgetDragRef = useRef(new Map());
 
   const publishCursor = useCallback(() => {
     const editor = editorRef.current;
@@ -179,37 +181,49 @@ const Editor = forwardRef(function Editor(
     if (!block || !editorRef.current) return;
     const editor = editorRef.current;
     const model = editor.getModel();
+    if (!model) return;
+    const code = normalizeAiSuggestion(block.suggestion);
     const sel = editor.getSelection();
-    const hasSelection =
-      sel && (sel.startLineNumber !== sel.endLineNumber || sel.startColumn !== sel.endColumn);
-    if (hasSelection) {
-      const code = normalizeAiSuggestion(block.suggestion);
+    const hasLiveSelection =
+      sel &&
+      (sel.startLineNumber !== sel.endLineNumber ||
+        sel.startColumn !== sel.endColumn);
+
+    const rr = block.replaceRange;
+    let storedRange = null;
+    if (
+      rr &&
+      typeof rr.startLineNumber === "number" &&
+      typeof rr.endLineNumber === "number"
+    ) {
+      const sl = Math.max(1, Math.min(rr.startLineNumber, model.getLineCount()));
+      const el = Math.max(1, Math.min(rr.endLineNumber, model.getLineCount()));
+      const sc = Math.max(1, Math.min(rr.startColumn ?? 1, model.getLineMaxColumn(sl)));
+      const ec = Math.max(1, Math.min(rr.endColumn ?? 1, model.getLineMaxColumn(el)));
+      storedRange = new monaco.Range(sl, sc, el, ec);
+      if (storedRange.isEmpty()) storedRange = null;
+    }
+
+    if (storedRange) {
+      editor.executeEdits("ai-accept", [{ range: storedRange, text: code }]);
+    } else if (hasLiveSelection) {
+      editor.executeEdits("ai-accept", [{ range: sel, text: code }]);
+    } else {
+      const targetLine = Math.max(1, Math.min(block.line ?? 1, model.getLineCount()));
+      const maxCol = model.getLineMaxColumn(targetLine);
       editor.executeEdits("ai-accept", [
         {
-          range: sel,
+          range: new monaco.Range(targetLine, 1, targetLine, maxCol),
           text: code,
         },
       ]);
-    } else {
-      const targetLine = Math.min(block.line, model.getLineCount());
-      const lineContent = model.getLineContent(targetLine);
-      const code = normalizeAiSuggestion(block.suggestion);
-      editor.executeEdits("ai-accept", [
-        {
-          range: {
-            startLineNumber: targetLine,
-            startColumn: lineContent.length + 1,
-            endLineNumber: targetLine,
-            endColumn: lineContent.length + 1,
-          },
-          text: "\n" + code,
-        },
-      ]);
     }
+    aiWidgetDragRef.current.delete(blockId);
     yAiBlocks.delete(blockId);
   }, []);
 
   const rejectBlock = useCallback((blockId) => {
+    aiWidgetDragRef.current.delete(blockId);
     yAiBlocks.delete(blockId);
   }, []);
 
@@ -241,7 +255,7 @@ const Editor = forwardRef(function Editor(
       const domNode = document.createElement("div");
       domNode.className = "ai-block-widget";
       domNode.innerHTML = `
-        <div class="ai-block-header">
+        <div class="ai-block-header" title="Trage pentru a muta sugestia">
           <span class="ai-block-label">Claude suggests:</span>
           <span class="ai-block-explanation">${escapeHtml(block.explanation)}</span>
         </div>
@@ -257,7 +271,12 @@ const Editor = forwardRef(function Editor(
         .querySelector(".ai-block-reject")
         .addEventListener("click", () => rejectBlock(blockId));
 
+      const drag = aiWidgetDragRef.current.get(blockId);
+      if (drag) domNode.style.transform = `translate(${drag.x}px, ${drag.y}px)`;
+      else domNode.style.transform = "";
+
       const widget = {
+        allowEditorOverflow: true,
         getId: () => `ai-widget-${blockId}`,
         getDomNode: () => domNode,
         getPosition: () => ({
@@ -265,6 +284,34 @@ const Editor = forwardRef(function Editor(
           preference: [monaco.editor.ContentWidgetPositionPreference.BELOW],
         }),
       };
+
+      const headerEl = domNode.querySelector(".ai-block-header");
+      if (headerEl) {
+        headerEl.style.cursor = "grab";
+        headerEl.addEventListener("mousedown", (e) => {
+          if (e.button !== 0) return;
+          const t = e.target;
+          if (t.closest("button")) return;
+          e.preventDefault();
+          const prev = aiWidgetDragRef.current.get(blockId) || { x: 0, y: 0 };
+          const startX = e.clientX;
+          const startY = e.clientY;
+          const onMove = (ev) => {
+            const nx = prev.x + (ev.clientX - startX);
+            const ny = prev.y + (ev.clientY - startY);
+            aiWidgetDragRef.current.set(blockId, { x: nx, y: ny });
+            domNode.style.transform = `translate(${nx}px, ${ny}px)`;
+            editor.layoutContentWidget(widget);
+          };
+          const onUp = () => {
+            window.removeEventListener("mousemove", onMove);
+            window.removeEventListener("mouseup", onUp);
+          };
+          window.addEventListener("mousemove", onMove);
+          window.addEventListener("mouseup", onUp);
+        });
+      }
+
       editor.addContentWidget(widget);
       widgetsRef.current.set(blockId, widget);
     });
@@ -325,6 +372,15 @@ const Editor = forwardRef(function Editor(
         insertTextRules:
           monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
       },
+      {
+        label: "rfc",
+        kind: monaco.languages.CompletionItemKind.Snippet,
+        documentation: "React functional component",
+        insertText:
+          "export default function ${1:Component}() {\n  return (\n    <div>\n      ${2}\n    </div>\n  )\n}",
+        insertTextRules:
+          monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+      },
     ];
 
     const provideSnippets = () => ({ suggestions: snippetProposals });
@@ -352,6 +408,15 @@ const Editor = forwardRef(function Editor(
       renderLineHighlight: "gutter",
       tabSize: 2,
       readOnly,
+      quickSuggestions: {
+        other: true,
+        comments: false,
+        strings: true,
+      },
+      suggestOnTriggerCharacters: true,
+      tabCompletion: "on",
+      wordBasedSuggestions: "matchingDocuments",
+      snippetSuggestions: "top",
     });
     editorRef.current = editor;
 

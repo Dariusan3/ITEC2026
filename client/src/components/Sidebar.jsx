@@ -490,12 +490,29 @@ export default function Sidebar({ editorRef, activeFile, language, output }) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed");
       addMsg({ role: "ai", content: data.explanation, blockId: data.id });
+
+      const ed = editorRef?.current?.getEditor?.();
+      const sel = ed?.getSelection?.();
+      const hasRange =
+        sel &&
+        (sel.startLineNumber !== sel.endLineNumber ||
+          sel.startColumn !== sel.endColumn);
+      const replaceRange = hasRange
+        ? {
+            startLineNumber: sel.startLineNumber,
+            startColumn: sel.startColumn,
+            endLineNumber: sel.endLineNumber,
+            endColumn: sel.endColumn,
+          }
+        : null;
+
       yAiBlocks.set(data.id, {
         id: data.id,
         suggestion: data.suggestion,
         explanation: data.explanation,
         status: "pending",
         line: getCursorLine(editorRef),
+        replaceRange,
       });
     } catch (err) {
       addMsg({ role: "error", content: err.message });

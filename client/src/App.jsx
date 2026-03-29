@@ -11,7 +11,6 @@ import WorkspaceSearch from "./components/WorkspaceSearch";
 import ConfirmModal from "./components/ConfirmModal";
 import OnboardingTour, { hasCompletedOnboarding } from "./components/OnboardingTour";
 import TabBar from "./components/TabBar";
-import EmojiReactions from "./components/EmojiReactions";
 import {
   yFiles,
   getYText,
@@ -498,7 +497,7 @@ export default function App() {
           setPreviewIframeSrc(nextSrc);
           previewIframeReloadAtRef.current = rev;
         } else {
-          const minMs = 2800;
+          const minMs = 500;
           if (rev - previewIframeReloadAtRef.current >= minMs) {
             setPreviewIframeSrc(nextSrc);
             previewIframeReloadAtRef.current = rev;
@@ -881,7 +880,6 @@ export default function App() {
             onCloseToLeft={handleCloseToLeft}
             onCloseAll={handleCloseAll}
           />
-          <EmojiReactions editorRef={editorRef} activeFile={activeFile} />
           <TimeTravel editorRef={editorRef} activeFile={activeFile} />
           <div className="flex-1 overflow-hidden">
             {editorReady ? (
