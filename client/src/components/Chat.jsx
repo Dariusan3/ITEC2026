@@ -1,6 +1,36 @@
 import { useState, useEffect, useRef } from "react";
 import { ydoc, name, color, wsProvider } from "../lib/yjs";
 
+const EmptyChatState = () => (
+  <div
+    className="soft-card mx-2.5 my-4 flex flex-col items-center gap-2 px-4 py-6 text-center"
+    style={{ background: "var(--bg-tertiary)" }}
+  >
+    <div
+      className="flex h-10 w-10 items-center justify-center rounded-none text-sm font-bold"
+      style={{
+        background:
+          "color-mix(in srgb, var(--accent) 14%, var(--bg-secondary))",
+        color: "var(--accent)",
+      }}
+    >
+      C
+    </div>
+    <p
+      className="text-[12px] font-semibold"
+      style={{ color: "var(--text-primary)" }}
+    >
+      Start the conversation
+    </p>
+    <p
+      className="max-w-[18rem] text-[10px] leading-relaxed"
+      style={{ color: "var(--text-secondary)" }}
+    >
+      Messages here are shared live with everyone in the room through Yjs sync.
+    </p>
+  </div>
+);
+
 export default function Chat() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
@@ -83,37 +113,6 @@ export default function Chat() {
     setTyping(false);
   };
 
-  const EmptyChatState = () => (
-    <div
-      className="soft-card mx-2.5 my-4 flex flex-col items-center gap-2 px-4 py-6 text-center"
-      style={{ background: "var(--bg-tertiary)" }}
-    >
-      <div
-        className="flex h-10 w-10 items-center justify-center rounded-none text-sm font-bold"
-        style={{
-          background:
-            "color-mix(in srgb, var(--accent) 14%, var(--bg-secondary))",
-          color: "var(--accent)",
-        }}
-      >
-        C
-      </div>
-      <p
-        className="text-[12px] font-semibold"
-        style={{ color: "var(--text-primary)" }}
-      >
-        Start the conversation
-      </p>
-      <p
-        className="max-w-[18rem] text-[10px] leading-relaxed"
-        style={{ color: "var(--text-secondary)" }}
-      >
-        Messages here are shared live with everyone in the room through Yjs
-        sync.
-      </p>
-    </div>
-  );
-
   return (
     <div className="flex h-full flex-col">
       {/* Header — same visual language as "AI Assistant" + badge in Sidebar */}
@@ -126,16 +125,6 @@ export default function Chat() {
           style={{ color: "var(--accent)" }}
         >
           Room Chat
-        </span>
-        <span
-          className="shrink-0 rounded-none border px-2.5 py-1 font-mono text-[10px] shadow-[0_10px_18px_rgba(0,0,0,0.1)] sm:text-[11px]"
-          style={{
-            background: "var(--bg-tertiary)",
-            borderColor: "var(--border)",
-            color: "var(--text-secondary)",
-          }}
-        >
-          Yjs shared
         </span>
       </div>
 

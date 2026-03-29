@@ -60,7 +60,9 @@ export default function Terminal() {
         } else if (msg.type === "term:exit") {
           term.writeln("\r\n[Session ended]");
         }
-      } catch {}
+      } catch (error) {
+        console.error("Failed to parse terminal message:", error);
+      }
     };
 
     // Send keystrokes to server

@@ -467,6 +467,7 @@ async function ensureImage(docker, image, platformSpec) {
  */
 async function startPreview(roomId, files, docker, platformSpec, options = {}) {
   const force = !!options.force;
+  const recoveredMissingContainer = !!options._recoveredMissingContainer;
   const nodeTag = sanitizeNodeTag(options.nodeVersion);
   const nodeImage = `node:${nodeTag}-slim`;
   const safe = sanitizeRoomId(roomId);
@@ -519,12 +520,27 @@ async function startPreview(roomId, files, docker, platformSpec, options = {}) {
         new Set(newKeys),
       );
       existing.fileKeysSnapshot = newKeys;
-      return {
-        hostPort: existing.hostPort,
-        internalPort: existing.internalPort,
-        safeRoomId: safe,
-        mode: "sync",
-      };
+      try {
+        await waitForPreviewHttpOrContainerDeath(
+          docker,
+          existing.containerId,
+          existing.hostPort,
+          12000,
+        );
+      } catch (e) {
+        console.warn(
+          `[Preview] ${safe}: existing sync container is no longer serving HTTP, restarting from scratch (${e.message})`,
+        );
+        await stopPreview(safe, docker);
+      }
+      if (previewSessions.has(safe)) {
+        return {
+          hostPort: existing.hostPort,
+          internalPort: existing.internalPort,
+          safeRoomId: safe,
+          mode: "sync",
+        };
+      }
     }
   }
 
@@ -586,6 +602,21 @@ async function startPreview(roomId, files, docker, platformSpec, options = {}) {
     );
   } catch (e) {
     await stopPreview(safe, docker);
+    const msg = e.message || String(e);
+    const missingContainer =
+      /no longer exists/i.test(msg) ||
+      /no such container/i.test(msg) ||
+      (/not found/i.test(msg) && /container/i.test(msg));
+    if (missingContainer && !recoveredMissingContainer) {
+      console.warn(
+        `[Preview] ${safe}: container vanished before port binding was ready, retrying once from scratch`,
+      );
+      return startPreview(roomId, files, docker, platformSpec, {
+        ...options,
+        force: true,
+        _recoveredMissingContainer: true,
+      });
+    }
     throw e;
   }
   const fileKeysSnapshot = Object.keys(files).filter(isSafeRelPath);
@@ -611,6 +642,17 @@ async function startPreview(roomId, files, docker, platformSpec, options = {}) {
   } catch (e) {
     await logPreviewContainerTail(docker, containerId, "timeout / eroare ready");
     await stopPreview(safe, docker);
+    const msg = e.message || String(e);
+    if (/no longer exists/i.test(msg) && !recoveredMissingContainer) {
+      console.warn(
+        `[Preview] ${safe}: container disappeared during startup, retrying once from scratch`,
+      );
+      return startPreview(roomId, files, docker, platformSpec, {
+        ...options,
+        force: true,
+        _recoveredMissingContainer: true,
+      });
+    }
     throw e;
   }
 

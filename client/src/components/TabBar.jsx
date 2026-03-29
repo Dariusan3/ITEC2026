@@ -3,63 +3,73 @@ import { useRef, useState, useEffect, useCallback } from "react";
 const LANG_COLOR = {
   javascript: "#f9e2af",
   typescript: "#89b4fa",
-  python:     "#a6e3a1",
-  rust:       "#fab387",
-  go:         "#89dceb",
-  java:       "#f38ba8",
-  kotlin:     "#89b4fa",
-  scala:      "#f38ba8",
-  c:          "#fab387",
-  cpp:        "#fab387",
-  html:       "#f38ba8",
-  css:        "#89dceb",
-  json:       "#cba6f7",
-  yaml:       "#a6e3a1",
-  xml:        "#f38ba8",
-  markdown:   "#cba6f7",
-  sql:        "#cba6f7",
-  toml:       "#fab387",
+  python: "#a6e3a1",
+  rust: "#fab387",
+  go: "#89dceb",
+  java: "#f38ba8",
+  kotlin: "#89b4fa",
+  scala: "#f38ba8",
+  c: "#fab387",
+  cpp: "#fab387",
+  html: "#f38ba8",
+  css: "#89dceb",
+  json: "#cba6f7",
+  yaml: "#a6e3a1",
+  xml: "#f38ba8",
+  markdown: "#cba6f7",
+  sql: "#cba6f7",
+  toml: "#fab387",
   dockerfile: "#89dceb",
-  shell:      "#a6e3a1",
-  ruby:       "#f38ba8",
-  php:        "#89b4fa",
-  lua:        "#89b4fa",
-  r:          "#89b4fa",
-  swift:      "#fab387",
+  shell: "#a6e3a1",
+  ruby: "#f38ba8",
+  php: "#89b4fa",
+  lua: "#89b4fa",
+  r: "#89b4fa",
+  swift: "#fab387",
 };
 
 const LANG_ABBR = {
   javascript: "JS",
   typescript: "TS",
-  python:     "PY",
-  rust:       "RS",
-  go:         "GO",
-  java:       "JV",
-  kotlin:     "KT",
-  scala:      "SC",
-  c:          "C",
-  cpp:        "C++",
-  html:       "HT",
-  css:        "CS",
-  json:       "{}",
-  yaml:       "YML",
-  xml:        "XML",
-  markdown:   "MD",
-  sql:        "SQL",
-  toml:       "TM",
+  python: "PY",
+  rust: "RS",
+  go: "GO",
+  java: "JV",
+  kotlin: "KT",
+  scala: "SC",
+  c: "C",
+  cpp: "C++",
+  html: "HT",
+  css: "CS",
+  json: "{}",
+  yaml: "YML",
+  xml: "XML",
+  markdown: "MD",
+  sql: "SQL",
+  toml: "TM",
   dockerfile: "DF",
-  shell:      "SH",
-  ruby:       "RB",
-  php:        "PHP",
-  lua:        "LU",
-  r:          "R",
-  swift:      "SW",
+  shell: "SH",
+  ruby: "RB",
+  php: "PHP",
+  lua: "LU",
+  r: "R",
+  swift: "SW",
 };
 
 /** VS-Code-style right-click context menu for a tab */
-function TabContextMenu({ x, y, filename, idx, totalTabs, onClose, onDismiss,
-  onCloseOthers, onCloseToRight, onCloseToLeft, onCloseAll }) {
-
+function TabContextMenu({
+  x,
+  y,
+  filename,
+  idx,
+  totalTabs,
+  onClose,
+  onDismiss,
+  onCloseOthers,
+  onCloseToRight,
+  onCloseToLeft,
+  onCloseAll,
+}) {
   const menuRef = useRef(null);
 
   // Dismiss on outside click or Escape
@@ -67,7 +77,9 @@ function TabContextMenu({ x, y, filename, idx, totalTabs, onClose, onDismiss,
     const onDoc = (e) => {
       if (!menuRef.current?.contains(e.target)) onDismiss();
     };
-    const onKey = (e) => { if (e.key === "Escape") onDismiss(); };
+    const onKey = (e) => {
+      if (e.key === "Escape") onDismiss();
+    };
     document.addEventListener("mousedown", onDoc);
     document.addEventListener("keydown", onKey);
     return () => {
@@ -89,27 +101,42 @@ function TabContextMenu({ x, y, filename, idx, totalTabs, onClose, onDismiss,
     {
       label: "Close",
       shortcut: "Ctrl+W",
-      onClick: () => { onClose(filename); onDismiss(); },
+      onClick: () => {
+        onClose(filename);
+        onDismiss();
+      },
     },
     {
       label: "Close Others",
       disabled: totalTabs <= 1,
-      onClick: () => { onCloseOthers(filename); onDismiss(); },
+      onClick: () => {
+        onCloseOthers(filename);
+        onDismiss();
+      },
     },
     {
       label: "Close to the Left",
       disabled: idx === 0,
-      onClick: () => { onCloseToLeft(filename); onDismiss(); },
+      onClick: () => {
+        onCloseToLeft(filename);
+        onDismiss();
+      },
     },
     {
       label: "Close to the Right",
       disabled: idx >= totalTabs - 1,
-      onClick: () => { onCloseToRight(filename); onDismiss(); },
+      onClick: () => {
+        onCloseToRight(filename);
+        onDismiss();
+      },
     },
     { divider: true },
     {
       label: "Close All",
-      onClick: () => { onCloseAll(); onDismiss(); },
+      onClick: () => {
+        onCloseAll();
+        onDismiss();
+      },
     },
   ];
 
@@ -142,16 +169,20 @@ function TabContextMenu({ x, y, filename, idx, totalTabs, onClose, onDismiss,
               background: "transparent",
             }}
             onMouseEnter={(e) => {
-              if (!item.disabled) e.currentTarget.style.background = "color-mix(in srgb, var(--accent) 12%, var(--bg-tertiary))";
+              if (!item.disabled)
+                e.currentTarget.style.background =
+                  "color-mix(in srgb, var(--accent) 12%, var(--bg-tertiary))";
             }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = "transparent";
+            }}
           >
             <span>{item.label}</span>
             {item.shortcut && (
               <span className="text-[9px] opacity-40">{item.shortcut}</span>
             )}
           </button>
-        )
+        ),
       )}
     </div>
   );
@@ -159,8 +190,16 @@ function TabContextMenu({ x, y, filename, idx, totalTabs, onClose, onDismiss,
 
 /** Draggable VS-Code-style file tab bar with right-click context menu. */
 export default function TabBar({
-  tabs, activeFile, yFiles, onSelect, onClose, onReorder,
-  onCloseOthers, onCloseToRight, onCloseToLeft, onCloseAll,
+  tabs,
+  activeFile,
+  yFiles,
+  onSelect,
+  onClose,
+  onReorder,
+  onCloseOthers,
+  onCloseToRight,
+  onCloseToLeft,
+  onCloseAll,
 }) {
   const dragSrc = useRef(null);
   const [dragOverIdx, setDragOverIdx] = useState(null);
@@ -175,7 +214,9 @@ export default function TabBar({
   const handleDragOver = (e, idx) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
-    setDragOverIdx(idx);
+    if (dragSrc.current !== idx) {
+      setDragOverIdx(idx);
+    }
   };
 
   const handleDrop = (e, idx) => {
@@ -224,7 +265,7 @@ export default function TabBar({
           const shortName = filename.includes("/")
             ? filename.split("/").pop()
             : filename;
-          const isDragOver = dragOverIdx === idx && dragSrc.current !== idx;
+          const isDragOver = dragOverIdx === idx;
 
           return (
             <div
@@ -249,9 +290,13 @@ export default function TabBar({
                 borderTop: isActive
                   ? "2px solid var(--accent)"
                   : "2px solid transparent",
-                color: isActive ? "var(--text-primary)" : "var(--text-secondary)",
+                color: isActive
+                  ? "var(--text-primary)"
+                  : "var(--text-secondary)",
                 transition: "background 0.1s, color 0.1s",
-                outline: isDragOver ? "1px solid rgba(203,166,247,0.4)" : "none",
+                outline: isDragOver
+                  ? "1px solid rgba(203,166,247,0.4)"
+                  : "none",
                 outlineOffset: -1,
               }}
             >
@@ -275,7 +320,10 @@ export default function TabBar({
               {/* Close button */}
               <button
                 type="button"
-                onClick={(e) => { e.stopPropagation(); onClose(filename); }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onClose(filename);
+                }}
                 className="ml-auto flex h-4 w-4 shrink-0 items-center justify-center rounded-sm opacity-0 group-hover:opacity-60 hover:opacity-100! transition-opacity"
                 style={{
                   color: "var(--text-secondary)",
@@ -285,7 +333,12 @@ export default function TabBar({
                 title="Close tab"
               >
                 <svg width="8" height="8" viewBox="0 0 8 8" fill="currentColor">
-                  <path d="M1 1l6 6M7 1L1 7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                  <path
+                    d="M1 1l6 6M7 1L1 7"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                  />
                 </svg>
               </button>
             </div>

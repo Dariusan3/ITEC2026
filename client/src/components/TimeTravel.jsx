@@ -24,11 +24,15 @@ export default function TimeTravel({ editorRef, activeFile }) {
       const res = await fetch(`${SERVER_URL}/api/snapshots?${q}`);
       const data = await res.json();
       setSnapshots(data.snapshots || []);
-    } catch {}
+    } catch {
+      // Silently ignore errors
+    }
   }, []);
 
   useEffect(() => {
-    fetchSnapshots();
+    queueMicrotask(() => {
+      fetchSnapshots();
+    });
     const interval = setInterval(fetchSnapshots, 15000);
     return () => clearInterval(interval);
   }, [fetchSnapshots]);
@@ -93,7 +97,9 @@ export default function TimeTravel({ editorRef, activeFile }) {
             editor.getModel()?.setValue(text);
           }
         }
-      } catch {}
+      } catch {
+        // Silently ignore errors
+      }
     },
     [snapshots, editorRef, exitReplay, activeFile],
   );

@@ -30,60 +30,63 @@ export default function WorkspaceSearch({
     return list.sort((a, b) => a.name.localeCompare(b.name));
   }, [open, fileStamp]);
 
-  const runSearch = useCallback((q) => {
-    const needle = q.trim();
-    if (!needle) {
-      setResults([]);
-      return;
-    }
-    const lower = needle.toLowerCase();
-    const maxResults = 80;
-    const out = [];
-
-    for (const { name, language } of filesList) {
-      if (out.length >= maxResults) break;
-      if (name.toLowerCase().includes(lower)) {
-        out.push({
-          file: name,
-          line: 1,
-          column: 1,
-          preview: name,
-          language,
-          kind: "file",
-        });
-        continue;
+  const runSearch = useCallback(
+    (q) => {
+      const needle = q.trim();
+      if (!needle) {
+        setResults([]);
+        return;
       }
-      const text = getYText(name).toString();
-      const lines = text.split("\n");
-      let pos = 0;
-      for (let i = 0; i < lines.length; i++) {
+      const lower = needle.toLowerCase();
+      const maxResults = 80;
+      const out = [];
+
+      for (const { name, language } of filesList) {
         if (out.length >= maxResults) break;
-        const line = lines[i];
-        const idx = line.toLowerCase().indexOf(lower);
-        if (idx !== -1) {
-          const start = Math.max(0, idx - 24);
-          const snippet = line.slice(start, start + 48 + needle.length);
+        if (name.toLowerCase().includes(lower)) {
           out.push({
             file: name,
-            line: i + 1,
-            column: idx + 1,
-            preview: snippet.trim() || line.slice(0, 60),
+            line: 1,
+            column: 1,
+            preview: name,
             language,
-            kind: "content",
+            kind: "file",
           });
+          continue;
         }
-        pos += line.length + 1;
+        const text = getYText(name).toString();
+        const lines = text.split("\n");
+        for (let i = 0; i < lines.length; i++) {
+          if (out.length >= maxResults) break;
+          const line = lines[i];
+          const idx = line.toLowerCase().indexOf(lower);
+          if (idx !== -1) {
+            const start = Math.max(0, idx - 24);
+            const snippet = line.slice(start, start + 48 + needle.length);
+            out.push({
+              file: name,
+              line: i + 1,
+              column: idx + 1,
+              preview: snippet.trim() || line.slice(0, 60),
+              language,
+              kind: "content",
+            });
+          }
+        }
       }
-    }
-    setResults(out.slice(0, maxResults));
-  }, [filesList]);
+      setResults(out.slice(0, maxResults));
+    },
+    [filesList],
+  );
 
   useEffect(() => {
     if (!open) return;
-    setQuery(initialQuery);
-    runSearch(initialQuery);
-    const t = setTimeout(() => inputRef.current?.focus(), 50);
-    return () => clearTimeout(t);
+    const t1 = setTimeout(() => runSearch(initialQuery), 0);
+    const t2 = setTimeout(() => inputRef.current?.focus(), 50);
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
   }, [open, initialQuery, runSearch]);
 
   useEffect(() => {
@@ -143,12 +146,18 @@ export default function WorkspaceSearch({
           style={{ color: "var(--text-primary)" }}
         >
           {results.length === 0 && query.trim().length >= 2 && (
-            <li className="px-4 py-6 text-center text-xs" style={{ color: "var(--text-secondary)" }}>
+            <li
+              className="px-4 py-6 text-center text-xs"
+              style={{ color: "var(--text-secondary)" }}
+            >
               No results
             </li>
           )}
           {query.trim().length < 2 && (
-            <li className="px-4 py-6 text-center text-xs" style={{ color: "var(--text-secondary)" }}>
+            <li
+              className="px-4 py-6 text-center text-xs"
+              style={{ color: "var(--text-secondary)" }}
+            >
               Type at least 2 characters
             </li>
           )}
@@ -163,18 +172,25 @@ export default function WorkspaceSearch({
                   color: "var(--text-primary)",
                 }}
                 onClick={() => {
-                  onOpenResult(r.file, r.language, { line: r.line, column: r.column });
+                  onOpenResult(r.file, r.language, {
+                    line: r.line,
+                    column: r.column,
+                  });
                   onClose();
                 }}
               >
-                <span className="font-mono text-[11px]" style={{ color: "var(--accent)" }}>
-                  {r.file}
-                 {" "}
+                <span
+                  className="font-mono text-[11px]"
+                  style={{ color: "var(--accent)" }}
+                >
+                  {r.file}{" "}
                   <span style={{ color: "var(--text-secondary)" }}>
                     :{r.line}:{r.column}
                   </span>
                 </span>
-                <span className="line-clamp-2 text-[10px] opacity-90">{r.preview}</span>
+                <span className="line-clamp-2 text-[10px] opacity-90">
+                  {r.preview}
+                </span>
               </button>
             </li>
           ))}
